@@ -70,8 +70,11 @@ export class AccessModule {
   }
 
   isAllowed(userId: string): boolean {
+    this.load() // always re-read from disk to get latest state
     const user = this.store.users[userId]
-    return !!user && (user.status === "active" || user.status === "admin")
+    const result = !!user && (user.status === "active" || user.status === "admin")
+    console.log(`[access] isAllowed(${userId}) = ${result}, status = ${user?.status ?? "not found"}`)
+    return result
   }
 
   getUser(userId: string): UserRecord | undefined {
