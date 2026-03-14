@@ -16,7 +16,7 @@ export class ClaudeCliRepository implements ILlmGateway {
     this.model = model
   }
 
-  async complete(systemPrompt: string, history: Event[], _tools: Tool[]): Promise<ModelResponse> {
+  async complete(systemPrompt: string, history: Event[], tools: Tool[]): Promise<ModelResponse> {
     const contextLines: string[] = []
     for (const event of history.slice(-10)) {
       if (event.type === "user") {
@@ -26,14 +26,36 @@ export class ClaudeCliRepository implements ILlmGateway {
       }
     }
 
+    // Describe available tools in the prompt
+    let toolsSection = ""
+    if (tools.length > 0) {
+      const toolList = tools.map(t => `- **${t.name}**: ${t.description}`).join("\n")
+      toolsSection = `\n\n## Available Tools\nYou have access to these tools. To call a tool, respond with JSON on a single line starting with TOOL_CALL:\n${toolList}\n\nFormat: TOOL_CALL: {"tool": "tool_name", "params": {...}}\n\nAfter the tool runs, you'll get a TOOL_RESULT and should continue.\n`
+    }
+
     const prompt = [
-      systemPrompt,
+      systemPrompt + toolsSection,
       "",
       ...(contextLines.length > 1 ? ["--- Conversation ---", ...contextLines.slice(0, -1), "---", ""] : []),
       contextLines[contextLines.length - 1] ?? "",
     ].join("\n")
 
     const text = await this.runCli(prompt)
+
+    // Parse tool call if present
+    const toolCallMatch = text.match(/^TOOL_CALL:\s*(\{.+\})/m)
+    if (toolCallMatch) {
+      try {
+        const parsed = JSON.parse(toolCallMatch[1]) as { tool: string; params: unknown }
+        return {
+          text: text.replace(/^TOOL_CALL:.+$/m, "").trim(),
+          toolCalls: [{ name: parsed.tool, params: parsed.params }],
+        }
+      } catch {
+        // not valid JSON, treat as plain text
+      }
+    }
+
     return { text }
   }
 
