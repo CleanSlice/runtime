@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import type { ILlmGateway } from "../../../domain/llm.gateway"
 import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../tool/tool.module"
-import type { Event } from "../../../../event/event.module"
+import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
 export class ClaudeRepository implements ILlmGateway {

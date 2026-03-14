@@ -1,5 +1,5 @@
 import type { ISessionGateway } from "../domain/session.gateway"
-import type { Event } from "../../event/event.module"
+import type { Event } from "../../event"
 import { mkdirSync } from "fs"
 import { appendFile } from "fs/promises"
 

@@ -1,5 +1,5 @@
 import type { Tool } from "../../tool/tool.module"
-import type { Event } from "../../event/event.module"
+import type { Event } from "../../event"
 
 export interface ModelResponse {
   text: string

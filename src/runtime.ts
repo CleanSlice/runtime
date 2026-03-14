@@ -1,7 +1,7 @@
 import type { ChannelGateway, Message } from "./slices/channel/channel.module"
 import type { Tool } from "./slices/tool/tool.module"
 import type { ModelLlm } from "./slices/llm/llm.module"
-import type { Event } from "./slices/event/event.module"
+import type { Event } from "./slices/event"
 import { ChannelServer } from "./slices/channel/channel.module"
 import { SessionManager } from "./slices/session/session.module"
 import { SessionStore } from "./slices/session/data/session.store"

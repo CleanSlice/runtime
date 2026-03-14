@@ -1,6 +1,6 @@
 import type { ILlmGateway } from "./llm.gateway"
 import type { Tool } from "../../tool/tool.module"
-import type { Event } from "../../event/event.module"
+import type { Event } from "../../event"
 import type { ModelResponse } from "./llm.types"
 
 export class LlmService {

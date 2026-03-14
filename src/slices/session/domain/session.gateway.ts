@@ -1,4 +1,4 @@
-import type { Event } from "../../event/event.module"
+import type { Event } from "../../event"
 
 export interface ISessionGateway {
   append(sessionId: string, event: Event): Promise<void>
