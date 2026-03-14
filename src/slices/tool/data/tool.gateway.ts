@@ -7,7 +7,11 @@ import { BrowserTool } from "./repositories/browser/browser.repository"
 import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
 import { WebSearchTool } from "./repositories/websearch/websearch.repository"
+import { WebFetchTool } from "./repositories/websearch/webfetch.repository"
 import { ImageAnalyzeTool } from "./repositories/image/image.repository"
+import { PdfAnalyzeTool } from "./repositories/image/pdf.repository"
+import { TelegramSendTool } from "./repositories/message/telegram_send.repository"
+import { TtsTool } from "./repositories/message/tts.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -23,7 +27,11 @@ export class ToolGateway implements IToolGateway {
     this.register(CronRemoveRepository as Tool)
     this.register(CronDisableRepository as Tool)
     this.register(WebSearchTool)
+    this.register(WebFetchTool)
     this.register(ImageAnalyzeTool)
+    this.register(PdfAnalyzeTool)
+    this.register(TelegramSendTool)
+    this.register(TtsTool)
   }
 
   private register(tool: Tool): void {
