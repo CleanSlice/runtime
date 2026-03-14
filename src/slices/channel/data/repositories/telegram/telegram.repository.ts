@@ -36,10 +36,11 @@ export class TelegramRepository {
   }
 
   async send(chatId: string, text: string): Promise<void> {
+    // No parse_mode by default — avoids Markdown conflicts with URLs/underscores
     await fetch(`${this.baseUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+      body: JSON.stringify({ chat_id: chatId, text }),
     })
   }
 
