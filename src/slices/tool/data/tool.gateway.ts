@@ -4,6 +4,7 @@ import { ExecTool } from "./repositories/exec/exec.repository"
 import { FileTool } from "./repositories/file/file.repository"
 import { HttpTool } from "./repositories/http/http.repository"
 import { BrowserTool } from "./repositories/browser/browser.repository"
+import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
 
 export class ToolGateway implements IToolGateway {
@@ -14,6 +15,7 @@ export class ToolGateway implements IToolGateway {
     this.register(FileTool)
     this.register(HttpTool)
     this.register(BrowserTool)
+    this.register(BrowserScreenshotTool)
     this.register(CronListRepository as Tool)
     this.register(CronAddRepository as Tool)
     this.register(CronRemoveRepository as Tool)

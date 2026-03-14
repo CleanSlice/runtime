@@ -106,7 +106,7 @@ export class AgentRuntime {
           let result: unknown
           if (tool) {
             try {
-              result = await tool.execute(call.params, { sessionId, agentDir: this.agentDir, send })
+              result = await tool.execute(call.params, { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send })
             } catch (err) {
               result = { error: String(err) }
             }
