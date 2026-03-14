@@ -2,8 +2,8 @@ import type { Message } from "./slices/channel"
 import type { Tool } from "./slices/tool"
 import type { ILlmGateway } from "./slices/llm"
 import type { Event } from "./slices/event"
-import { ChannelModule } from "./slices/channel/channel.module"
-import type { IChannelGateway } from "./slices/channel"
+import { ChannelService } from "./slices/channel"
+import { ChannelGateway, type ChannelGatewayConfig } from "./slices/channel/data/channel.gateway"
 import { SessionManager } from "./slices/session"
 import { SessionGateway } from "./slices/session"
 import { AgentGateway } from "./slices/agent"
@@ -15,7 +15,7 @@ import { randomUUID } from "crypto"
 export interface RuntimeConfig {
   agentDir?: string
   llm: ILlmGateway
-  channels: Parameters<ChannelModule["add"]>[0][]
+  channels: ChannelGatewayConfig[]
   tools?: Tool[]
 }
 
@@ -23,7 +23,7 @@ export class AgentRuntime {
   private agentDir: string
   private llm: ILlmGateway
   private tools: Tool[]
-  private channel: ChannelModule
+  private channel: ChannelService
   private sessions: SessionManager
   private store: SessionGateway
   private memory: MemoryManager
@@ -34,9 +34,9 @@ export class AgentRuntime {
     this.llm = config.llm
     this.tools = config.tools ?? []
 
-    this.channel = new ChannelModule()
-    for (const ch of config.channels) {
-      this.channel.add(ch)
+    this.channel = new ChannelService()
+    for (const cfg of config.channels) {
+      this.channel.add(new ChannelGateway(cfg))
     }
 
     this.sessions = new SessionManager()
