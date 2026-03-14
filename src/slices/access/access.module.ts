@@ -1,68 +1,29 @@
-/**
- * Viral invite-based access control.
- *
- * Flow:
- * 1. New user sends /start → status = "pending", gets invite link
- * 2. Someone clicks their invite link → inviter is activated
- * 3. New user (the one who clicked) is now "pending" and needs to invite someone
- *
- * Admin users bypass all checks.
- */
-
-import { mkdirSync } from "fs"
 import { randomUUID } from "crypto"
-
-export type UserStatus = "active" | "pending" | "admin"
-
-export interface UserRecord {
-  userId: string
-  status: UserStatus
-  inviteCode: string       // their personal invite code
-  invitedBy?: string       // who invited them
-  activatedAt?: number
-  createdAt: number
-}
-
-export interface AccessStore {
-  users: Record<string, UserRecord>
-}
+import { FileAccessGateway } from "./data/access.gateway"
+import type { IAccessStrategy, UserRecord } from "./domain/access.types"
 
 export class AccessModule {
-  private storePath: string
-  private store: AccessStore = { users: {} }
+  private gateway: FileAccessGateway
   private adminIds: string[]
+  private strategy: IAccessStrategy
 
-  constructor(agentDir: string, adminIds: string[] = []) {
-    this.storePath = `${agentDir}/data/access.json`
+  constructor(agentDir: string, adminIds: string[] = [], strategy: IAccessStrategy) {
     this.adminIds = adminIds
-    mkdirSync(`${agentDir}/data`, { recursive: true })
-    this.load()
+    this.gateway = new FileAccessGateway(agentDir)
+    this.strategy = strategy
 
     // Ensure admins are always active
     for (const id of adminIds) {
-      if (!this.store.users[id]) {
-        this.store.users[id] = {
+      if (!this.gateway.getUser(id)) {
+        this.gateway.setUser({
           userId: id,
           status: "admin",
           inviteCode: randomUUID().slice(0, 8),
           createdAt: Date.now(),
-        }
-        this.save()
+        })
+        this.gateway.save()
       }
     }
-  }
-
-  private load(): void {
-    try {
-      const text = require("fs").readFileSync(this.storePath, "utf-8")
-      this.store = JSON.parse(text)
-    } catch {
-      this.store = { users: {} }
-    }
-  }
-
-  private save(): void {
-    require("fs").writeFileSync(this.storePath, JSON.stringify(this.store, null, 2))
   }
 
   isAdmin(userId: string): boolean {
@@ -70,79 +31,49 @@ export class AccessModule {
   }
 
   isAllowed(userId: string): boolean {
-    this.load() // always re-read from disk to get latest state
-    const user = this.store.users[userId]
-    const result = !!user && (user.status === "active" || user.status === "admin")
-    console.log(`[access] isAllowed(${userId}) = ${result}, status = ${user?.status ?? "not found"}`)
-    return result
+    this.gateway.load()
+    const result = this.strategy.check(userId, this.gateway, this.adminIds)
+    console.log(`[access] isAllowed(${userId}) = ${result.allowed}`)
+    return result.allowed
   }
 
-  getUser(userId: string): UserRecord | undefined {
-    return this.store.users[userId]
+  processInvite(newUserId: string, code: string): {
+    activated?: UserRecord
+    newUser?: UserRecord
+    alreadyActive?: boolean
+  } {
+    if (!this.strategy.handleInput) return {}
+    return this.strategy.handleInput(newUserId, code, this.gateway)
   }
 
-  /** Register new user as pending. Returns their invite link info. */
+  getInviteLink(userId: string, botUsername: string): string {
+    if (!this.strategy.getInviteLink) return ""
+    return this.strategy.getInviteLink(userId, this.gateway, botUsername)
+  }
+
   registerPending(userId: string): UserRecord {
-    if (this.store.users[userId]) return this.store.users[userId]
+    if (this.strategy.onNewUser) {
+      return this.strategy.onNewUser(userId, this.gateway)
+    }
+    const existing = this.gateway.getUser(userId)
+    if (existing) return existing
     const record: UserRecord = {
       userId,
       status: "pending",
       inviteCode: randomUUID().slice(0, 8),
       createdAt: Date.now(),
     }
-    this.store.users[userId] = record
-    this.save()
+    this.gateway.setUser(record)
+    this.gateway.save()
     return record
   }
 
-  /** Process invite code — activate the inviter, register the new user as pending */
-  processInvite(newUserId: string, inviteCode: string): {
-    activated?: UserRecord  // the person who gets activated
-    newUser: UserRecord     // the new user (pending)
-    alreadyActive?: boolean
-  } {
-    // Find who owns this invite code
-    const inviter = Object.values(this.store.users).find(u => u.inviteCode === inviteCode)
-
-    // Register new user as pending (with invitedBy)
-    let newUser = this.store.users[newUserId]
-    if (!newUser) {
-      newUser = {
-        userId: newUserId,
-        status: "pending",
-        inviteCode: randomUUID().slice(0, 8),
-        invitedBy: inviter?.userId,
-        createdAt: Date.now(),
-      }
-      this.store.users[newUserId] = newUser
-    }
-
-    if (!inviter) {
-      this.save()
-      return { newUser }
-    }
-
-    // Activate the inviter if they were pending
-    if (inviter.status === "pending") {
-      inviter.status = "active"
-      inviter.activatedAt = Date.now()
-      this.save()
-      return { activated: inviter, newUser }
-    }
-
-    // Inviter already active
-    this.save()
-    return { activated: inviter, newUser, alreadyActive: true }
-  }
-
-  getInviteLink(userId: string, botUsername: string): string {
-    const user = this.store.users[userId]
-    if (!user) return ""
-    return `https://t.me/${botUsername}?start=${user.inviteCode}`
+  getUser(userId: string): UserRecord | undefined {
+    return this.gateway.getUser(userId)
   }
 
   stats(): { total: number; active: number; pending: number } {
-    const users = Object.values(this.store.users)
+    const users = this.gateway.getAllUsers()
     return {
       total: users.length,
       active: users.filter(u => u.status === "active" || u.status === "admin").length,

@@ -9,6 +9,7 @@ import { MemoryModule } from "./slices/memory/memory.module"
 import { CronModule } from "./slices/cron/cron.module"
 import { HeartbeatModule } from "./slices/heartbeat/heartbeat.module"
 import { AccessModule } from "./slices/access/access.module"
+import { InviteRepository } from "./slices/access/data/repositories/invite/invite.repository"
 import { LlmModule } from "./slices/llm/llm.module"
 import { randomUUID } from "crypto"
 
@@ -44,7 +45,7 @@ export class AgentRuntime {
     this.heartbeat = new HeartbeatModule(this.agentDir, 30 * 60 * 1000) // every 30 min
     // Admin IDs from env or config — always have access
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
-    this.access = new AccessModule(this.agentDir, adminIds)
+    this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
   }
 
   async start(): Promise<void> {
