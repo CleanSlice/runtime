@@ -1,6 +1,7 @@
 import type { Message } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
-import { ChannelGateway, type ChannelConfig } from "./domain/channel.types"
+import { ChannelGateway } from "./data/channel.gateway"
+import type { ChannelConfig } from "./domain/channel.types"
 
 export class ChannelModule {
   private service: ChannelService

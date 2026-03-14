@@ -1,23 +1,21 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
 import type { ChannelConfig } from "../domain/channel.types"
 import type { Message } from "../domain/channel.types"
-import { ChannelGateway } from "./domain/channel.types"
-
-  token: string
+import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
-  private repository: ChannelGateway
+  private repository: TelegramRepository
 
   constructor(config: ChannelConfig) {
     this.name = config.type
     this.repository = this.createRepository(config)
   }
 
-  private createRepository(config: ChannelConfig): ChannelGateway {
+  private createRepository(config: ChannelConfig): TelegramRepository {
     switch (config.type) {
       case "telegram":
-        return new ChannelGateway(config.token)
+        return new TelegramRepository(config.token)
     }
   }
 

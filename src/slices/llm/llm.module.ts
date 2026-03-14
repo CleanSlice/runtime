@@ -1,4 +1,5 @@
-import { LlmGateway, type LlmConfig } from "./domain/llm.types"
+import { LlmGateway } from "./data/llm.gateway"
+import type { LlmConfig } from "./domain/llm.types"
 import { LlmService } from "./domain/llm.service"
 import type { ModelResponse } from "./domain/llm.types"
 import type { Tool } from "../tool"
