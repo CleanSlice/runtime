@@ -1,12 +1,13 @@
-import type { Channel } from "./domain/Channel"
-import type { Message } from "../../shared/types/Message"
+import type { ChannelGateway } from "./channel.gateway"
+import type { Message } from "../../../shared/types/Message"
 
-export class ChannelServer {
-  private channels: Channel[] = []
+export class ChannelService {
+  private channels: ChannelGateway[] = []
   private handler?: (msg: Message) => Promise<void>
 
-  add(channel: Channel): void {
+  add(channel: ChannelGateway): void {
     this.channels.push(channel)
+    if (this.handler) channel.onMessage(this.handler)
   }
 
   onMessage(handler: (msg: Message) => Promise<void>): void {

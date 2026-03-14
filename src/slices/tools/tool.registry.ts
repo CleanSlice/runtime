@@ -1,4 +1,4 @@
-import type { Tool } from "./domain/Tool"
+import type { Tool } from "./domain/tool.types"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
 export class ToolRegistry {

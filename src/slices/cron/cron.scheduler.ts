@@ -1,5 +1,5 @@
-import type { Job } from "./domain/Job"
-import { JobStore } from "./data/JobStore"
+import type { Job } from "./domain/cron.types"
+import { CronStore } from "./data/cron.store"
 
 function parseCron(expr: string): { minute: number | null; hour: number | null; dom: number | null; month: number | null; dow: number | null } {
   const parts = expr.trim().split(/\s+/)
@@ -25,12 +25,12 @@ function shouldRun(job: Job, now: Date): boolean {
 }
 
 export class CronScheduler {
-  private store: JobStore
+  private store: CronStore
   private interval?: ReturnType<typeof setInterval>
   private handler?: (job: Job) => Promise<void>
 
   constructor(agentDir: string) {
-    this.store = new JobStore(agentDir)
+    this.store = new CronStore(agentDir)
   }
 
   onJob(handler: (job: Job) => Promise<void>): void {

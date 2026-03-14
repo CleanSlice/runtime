@@ -1,6 +1,6 @@
 import { AgentRuntime } from "./runtime"
 import { ClaudeAdapter } from "./slices/adapters"
-import { TelegramChannel } from "./slices/channel/data/TelegramChannel"
+import { TelegramChannel } from "./slices/channel/data/telegram.channel"
 
 const runtime = new AgentRuntime({
   model: new ClaudeAdapter({ model: "claude-sonnet-4-6" }),

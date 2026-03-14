@@ -1,21 +1,21 @@
-import type { Channel } from "./slices/channel/domain/Channel"
+import type { ChannelGateway } from "./slices/channel/domain/channel.gateway"
 import type { Tool } from "./shared/types/Tool"
 import type { Message } from "./shared/types/Message"
-import type { ModelAdapter } from "./slices/adapters/domain/ModelAdapter"
+import type { ModelAdapter } from "./slices/adapters/domain/adapter.types"
 import type { Event } from "./shared/types/Event"
-import { ChannelServer } from "./slices/channel/server"
-import { SessionManager } from "./slices/session/manager"
-import { JsonlStore } from "./slices/session/data/JsonlStore"
-import { loadAgentConfig } from "./slices/agent/data/FileLoader"
-import { buildSystemPrompt } from "./slices/agent/context"
+import { ChannelServer } from "./slices/channel/channel.server"
+import { SessionManager } from "./slices/session/session.manager"
+import { SessionStore } from "./slices/session/data/session.store"
+import { loadAgentConfig } from "./slices/agent/data/agent.loader"
+import { buildSystemPrompt } from "./slices/agent/agent.context"
 import { MemoryManager } from "./slices/memory/index"
-import { CronScheduler } from "./slices/cron/scheduler"
+import { CronScheduler } from "./slices/cron/cron.scheduler"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
   agentDir?: string
   model: ModelAdapter
-  channels: Channel[]
+  channels: ChannelGateway[]
   tools?: Tool[]
 }
 
@@ -25,7 +25,7 @@ export class AgentRuntime {
   private tools: Tool[]
   private channelServer: ChannelServer
   private sessionManager: SessionManager
-  private jsonlStore: JsonlStore
+  private sessionStore: SessionStore
   private memoryManager: MemoryManager
   private cronScheduler: CronScheduler
 
@@ -40,7 +40,7 @@ export class AgentRuntime {
     }
 
     this.sessionManager = new SessionManager()
-    this.jsonlStore = new JsonlStore(this.agentDir)
+    this.sessionStore = new SessionStore(this.agentDir)
     this.memoryManager = new MemoryManager(this.agentDir)
     this.cronScheduler = new CronScheduler(this.agentDir)
   }
@@ -87,14 +87,14 @@ export class AgentRuntime {
       ts: Date.now(),
       data: { text: msg.text, from: msg.from },
     }
-    await this.jsonlStore.append(sessionId, userEvent)
+    await this.sessionStore.append(sessionId, userEvent)
 
     // 2. Load agent context
     const agentConfig = await loadAgentConfig(this.agentDir)
     const systemPrompt = buildSystemPrompt(agentConfig)
 
     // 3. Load session history
-    let history = await this.jsonlStore.read(sessionId)
+    let history = await this.sessionStore.read(sessionId)
 
     // 4. Agent loop (tool use)
     let continueLoop = true
@@ -111,7 +111,7 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { name: call.name, params: call.params, toolUseId },
           }
-          await this.jsonlStore.append(sessionId, callEvent)
+          await this.sessionStore.append(sessionId, callEvent)
           history.push(callEvent)
 
           const tool = this.tools.find(t => t.name === call.name)
@@ -136,7 +136,7 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { toolUseId, result },
           }
-          await this.jsonlStore.append(sessionId, resultEvent)
+          await this.sessionStore.append(sessionId, resultEvent)
           history.push(resultEvent)
         }
         // Continue loop to get model's next response
@@ -151,7 +151,7 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { text: response.text },
           }
-          await this.jsonlStore.append(sessionId, assistantEvent)
+          await this.sessionStore.append(sessionId, assistantEvent)
           await send(response.text)
         }
       }

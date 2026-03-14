@@ -1,8 +1,9 @@
+import type { SessionGateway } from "../domain/session.gateway"
 import type { Event } from "../../../shared/types/Event"
 import { mkdirSync } from "fs"
 import { appendFile } from "fs/promises"
 
-export class JsonlStore {
+export class SessionStore implements SessionGateway {
   private dir: string
 
   constructor(agentDir: string) {
@@ -29,3 +30,6 @@ export class JsonlStore {
     }
   }
 }
+
+// Legacy class alias
+export { SessionStore as JsonlStore }

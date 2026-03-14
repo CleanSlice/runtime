@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite"
-import type { MemoryEntry } from "../domain/Memory"
+import type { MemoryGateway } from "../domain/memory.gateway"
+import type { MemoryEntry } from "../domain/memory.types"
 
-export class SqliteIndex {
+export class MemorySqlite implements MemoryGateway {
   private db: Database
 
   constructor(agentDir: string) {

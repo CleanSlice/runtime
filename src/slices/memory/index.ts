@@ -1,15 +1,15 @@
-import { SqliteIndex } from "./data/SqliteIndex"
-import type { MemoryEntry } from "./domain/Memory"
+import { MemorySqlite } from "./data/memory.sqlite"
+import type { MemoryEntry } from "./domain/memory.types"
 import { randomUUID } from "crypto"
 import { existsSync } from "fs"
 
 const MD_FILES = ["SOUL.md", "USER.md", "MEMORY.md", "HEARTBEAT.md"]
 
 export class MemoryManager {
-  private index: SqliteIndex
+  private index: MemorySqlite
 
   constructor(private agentDir: string) {
-    this.index = new SqliteIndex(agentDir)
+    this.index = new MemorySqlite(agentDir)
   }
 
   async load(): Promise<void> {

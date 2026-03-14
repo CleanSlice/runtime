@@ -1,4 +1,4 @@
-import type { AgentConfig } from "./domain/Agent"
+import type { AgentConfig } from "./domain/agent.types"
 
 export function buildSystemPrompt(config: AgentConfig): string {
   const parts: string[] = []

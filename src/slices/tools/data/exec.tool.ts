@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../domain/Tool"
+import type { Tool, ToolContext } from "../domain/tool.types"
 
 const schema = z.object({
   command: z.string().describe("Shell command to execute"),
