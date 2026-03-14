@@ -6,7 +6,7 @@ interface AccessStore {
   users: Record<string, UserRecord>
 }
 
-export class FileAccessGateway implements IAccessGateway {
+export class AccessGateway implements IAccessGateway {
   private storePath: string
   private store: AccessStore = { users: {} }
 

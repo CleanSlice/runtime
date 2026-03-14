@@ -1,83 +1,39 @@
-import { randomUUID } from "crypto"
-import { FileAccessGateway } from "./data/access.gateway"
+import { AccessService } from "./domain/access.service"
+import { AccessGateway } from "./data/access.gateway"
 import type { IAccessStrategy, UserRecord } from "./domain/access.types"
 
 export class AccessModule {
-  private gateway: FileAccessGateway
-  private adminIds: string[]
-  private strategy: IAccessStrategy
+  private service: AccessService
 
   constructor(agentDir: string, adminIds: string[] = [], strategy: IAccessStrategy) {
-    this.adminIds = adminIds
-    this.gateway = new FileAccessGateway(agentDir)
-    this.strategy = strategy
-
-    // Ensure admins are always active
-    for (const id of adminIds) {
-      if (!this.gateway.getUser(id)) {
-        this.gateway.setUser({
-          userId: id,
-          status: "admin",
-          inviteCode: randomUUID().slice(0, 8),
-          createdAt: Date.now(),
-        })
-        this.gateway.save()
-      }
-    }
+    this.service = new AccessService(new AccessGateway(agentDir), strategy, adminIds)
   }
 
   isAdmin(userId: string): boolean {
-    return this.adminIds.includes(userId)
+    return this.service.isAdmin(userId)
   }
 
   isAllowed(userId: string): boolean {
-    this.gateway.load()
-    const result = this.strategy.check(userId, this.gateway, this.adminIds)
-    console.log(`[access] isAllowed(${userId}) = ${result.allowed}`)
-    return result.allowed
+    return this.service.isAllowed(userId)
   }
 
-  processInvite(newUserId: string, code: string): {
-    activated?: UserRecord
-    newUser?: UserRecord
-    alreadyActive?: boolean
-  } {
-    if (!this.strategy.handleInput) return {}
-    return this.strategy.handleInput(newUserId, code, this.gateway)
+  processInvite(newUserId: string, code: string) {
+    return this.service.processInvite(newUserId, code)
   }
 
   getInviteLink(userId: string, botUsername: string): string {
-    if (!this.strategy.getInviteLink) return ""
-    return this.strategy.getInviteLink(userId, this.gateway, botUsername)
+    return this.service.getInviteLink(userId, botUsername)
   }
 
   registerPending(userId: string): UserRecord {
-    if (this.strategy.onNewUser) {
-      return this.strategy.onNewUser(userId, this.gateway)
-    }
-    const existing = this.gateway.getUser(userId)
-    if (existing) return existing
-    const record: UserRecord = {
-      userId,
-      status: "pending",
-      inviteCode: randomUUID().slice(0, 8),
-      createdAt: Date.now(),
-    }
-    this.gateway.setUser(record)
-    this.gateway.save()
-    return record
+    return this.service.registerPending(userId)
   }
 
   getUser(userId: string): UserRecord | undefined {
-    return this.gateway.getUser(userId)
+    return this.service.getUser(userId)
   }
 
-  stats(): { total: number; active: number; pending: number } {
-    const users = this.gateway.getAllUsers()
-    return {
-      total: users.length,
-      active: users.filter(u => u.status === "active" || u.status === "admin").length,
-      pending: users.filter(u => u.status === "pending").length,
-    }
+  stats() {
+    return this.service.stats()
   }
 }
