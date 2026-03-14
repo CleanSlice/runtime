@@ -1,14 +1,14 @@
 import type { Job } from "./domain/cron.types"
-import { shouldRun } from "./domain/cron.parser"
+import { CronService } from "./domain/cron.service"
 import { CronGateway } from "./data/cron.gateway"
 
 export class CronScheduler {
-  private store: CronGateway
+  private service: CronService
   private interval?: ReturnType<typeof setInterval>
   private handler?: (job: Job) => Promise<void>
 
   constructor(agentDir: string) {
-    this.store = new CronGateway(agentDir)
+    this.service = new CronService(new CronGateway(agentDir))
   }
 
   onJob(handler: (job: Job) => Promise<void>): void {
@@ -18,12 +18,11 @@ export class CronScheduler {
   start(): void {
     this.interval = setInterval(async () => {
       const now = new Date()
-      const jobs = await this.store.load()
+      const jobs = await this.service.list()
       for (const job of jobs) {
         if (!job.enabled) continue
-        if (shouldRun(job, now)) {
-          job.lastRunAt = Date.now()
-          await this.store.save(jobs)
+        if (this.service.shouldRun(job, now)) {
+          await this.service.updateLastRun(job.id, Date.now())
           await this.handler?.(job)
         }
       }
