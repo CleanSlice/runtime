@@ -5,6 +5,8 @@ import { mkdirSync } from "fs"
 
 const schema = z.object({
   url: z.string().describe("URL to take a screenshot of"),
+  fullPage: z.boolean().optional().default(true).describe("Capture full page (default: true)"),
+  width: z.number().optional().default(1280).describe("Viewport width in pixels"),
 })
 
 export const BrowserScreenshotTool: Tool = {
@@ -12,7 +14,7 @@ export const BrowserScreenshotTool: Tool = {
   description: "Take a screenshot of a website and send it to the user via Telegram. Returns the file path.",
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
-    const { url } = schema.parse(params)
+    const { url, fullPage, width } = schema.parse(params)
 
     // Snap chromium can only write to $HOME — use home dir
     const home = process.env.HOME ?? "/home/dmitriyzhuk"
@@ -20,16 +22,19 @@ export const BrowserScreenshotTool: Tool = {
     const outPath = `${home}/${filename}`
 
     // Use chromium to take screenshot
-    const proc = Bun.spawn([
+    const args = [
       "chromium-browser",
       "--headless",
       "--no-sandbox",
       "--disable-gpu",
       "--disable-dev-shm-usage",
       `--screenshot=${outPath}`,
-      "--window-size=1280,900",
-      url,
-    ], {
+      `--window-size=${width ?? 1280},900`,
+    ]
+    if (fullPage !== false) args.push("--full-page-screenshot")
+    args.push(url)
+
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
     })
