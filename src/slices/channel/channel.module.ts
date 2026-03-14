@@ -1,7 +1,7 @@
 import type { IChannelGateway } from "./domain/channel.gateway"
 import type { Message } from "./domain/channel.types"
 
-export class ChannelServer {
+export class ChannelModule {
   private channels: IChannelGateway[] = []
   private handler?: (msg: Message) => Promise<void>
 
