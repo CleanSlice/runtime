@@ -4,7 +4,7 @@ import { existsSync } from "fs"
 
 const MD_FILES = ["SOUL.md", "USER.md", "MEMORY.md", "HEARTBEAT.md"]
 
-export class MemoryManager {
+export class MemoryModule {
   private index: MemoryGateway
 
   constructor(private agentDir: string) {

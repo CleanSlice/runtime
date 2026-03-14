@@ -1,29 +1,27 @@
-import type { Session } from "./domain/session.types"
+import type { Event } from "../event"
+import { SessionGateway } from "./data/session.gateway"
+import { SessionService } from "./domain/session.service"
 
-export class SessionManager {
-  private sessions: Map<string, Session> = new Map()
+export class SessionModule {
+  private service: SessionService
 
-  getSessionId(channelId: string, userId: string): string {
-    return `${channelId}:${userId}`
+  constructor(agentDir: string) {
+    this.service = new SessionService(new SessionGateway(agentDir))
   }
 
-  getOrCreate(channelId: string, userId: string): Session {
-    const id = this.getSessionId(channelId, userId)
-    if (this.sessions.has(id)) return this.sessions.get(id)!
-
-    const session: Session = {
-      id,
-      channelId,
-      userId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    this.sessions.set(id, session)
-    return session
+  getOrCreate(channelId: string, userId: string) {
+    return this.service.getOrCreate(channelId, userId)
   }
 
   touch(sessionId: string): void {
-    const session = this.sessions.get(sessionId)
-    if (session) session.updatedAt = Date.now()
+    this.service.touch(sessionId)
+  }
+
+  async append(sessionId: string, event: Event): Promise<void> {
+    await this.service.append(sessionId, event)
+  }
+
+  async read(sessionId: string): Promise<Event[]> {
+    return this.service.read(sessionId)
   }
 }

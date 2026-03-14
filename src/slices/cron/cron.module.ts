@@ -2,7 +2,7 @@ import type { CronJob } from "./domain/cron.types"
 import { CronService } from "./domain/cron.service"
 import { CronGateway } from "./data/cron.gateway"
 
-export class CronScheduler {
+export class CronModule {
   private service: CronService
   private interval?: ReturnType<typeof setInterval>
   private handler?: (job: CronJob) => Promise<void>

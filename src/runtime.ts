@@ -1,15 +1,12 @@
-import type { Message } from "./slices/channel"
 import type { Tool } from "./slices/tool"
 import type { ILlmGateway } from "./slices/llm"
 import type { Event } from "./slices/event"
-import { ChannelService } from "./slices/channel"
-import { ChannelGateway, type ChannelGatewayConfig } from "./slices/channel/data/channel.gateway"
-import { SessionManager } from "./slices/session"
-import { SessionGateway } from "./slices/session"
-import { AgentGateway } from "./slices/agent"
-import { buildSystemPrompt } from "./slices/agent"
-import { MemoryManager } from "./slices/memory/memory.module"
-import { CronScheduler } from "./slices/cron/cron.module"
+import type { ChannelGatewayConfig } from "./slices/channel/data/channel.gateway"
+import { ChannelModule } from "./slices/channel/channel.module"
+import { SessionModule } from "./slices/session/session.module"
+import { AgentModule } from "./slices/agent/agent.module"
+import { MemoryModule } from "./slices/memory/memory.module"
+import { CronModule } from "./slices/cron/cron.module"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
@@ -23,26 +20,22 @@ export class AgentRuntime {
   private agentDir: string
   private llm: ILlmGateway
   private tools: Tool[]
-  private channel: ChannelService
-  private sessions: SessionManager
-  private store: SessionGateway
-  private memory: MemoryManager
-  private cron: CronScheduler
+  private channel: ChannelModule
+  private session: SessionModule
+  private agent: AgentModule
+  private memory: MemoryModule
+  private cron: CronModule
 
   constructor(config: RuntimeConfig) {
     this.agentDir = config.agentDir ?? ".agent"
     this.llm = config.llm
     this.tools = config.tools ?? []
 
-    this.channel = new ChannelService()
-    for (const cfg of config.channels) {
-      this.channel.add(new ChannelGateway(cfg))
-    }
-
-    this.sessions = new SessionManager()
-    this.store = new SessionGateway(this.agentDir)
-    this.memory = new MemoryManager(this.agentDir)
-    this.cron = new CronScheduler(this.agentDir)
+    this.channel = new ChannelModule(config.channels)
+    this.session = new SessionModule(this.agentDir)
+    this.agent = new AgentModule(this.agentDir)
+    this.memory = new MemoryModule(this.agentDir)
+    this.cron = new CronModule(this.agentDir)
   }
 
   async start(): Promise<void> {
@@ -52,15 +45,14 @@ export class AgentRuntime {
     await this.channel.start()
 
     this.cron.onJob(async job => {
-      const msg: Message = {
+      await this.handleMessage({
         id: randomUUID(),
         text: job.message,
         from: "cron",
         channel: "internal",
         ts: Date.now(),
         sessionId: `cron:${job.id}`,
-      }
-      await this.handleMessage(msg)
+      })
     })
     this.cron.start()
   }
@@ -70,9 +62,9 @@ export class AgentRuntime {
     this.cron.stop()
   }
 
-  async handleMessage(msg: Message): Promise<void> {
-    const session = this.sessions.getOrCreate(msg.channel, msg.from)
-    const sessionId = session.id
+  async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
+    const sessionObj = this.session.getOrCreate(msg.channel, msg.from)
+    const sessionId = sessionObj.id
 
     const send = async (text: string) => {
       if (msg.channel !== "internal") {
@@ -80,24 +72,17 @@ export class AgentRuntime {
       }
     }
 
-    // 1. Append user event
     const userEvent: Event = {
       id: randomUUID(),
       type: "user",
       ts: Date.now(),
       data: { text: msg.text, from: msg.from },
     }
-    await this.store.append(sessionId, userEvent)
+    await this.session.append(sessionId, userEvent)
 
-    // 2. Load agent context
-    const agent = new AgentGateway()
-    const agentConfig = await agent.load(this.agentDir)
-    const systemPrompt = buildSystemPrompt(agentConfig)
+    const systemPrompt = await this.agent.buildPrompt()
+    const history = await this.session.read(sessionId)
 
-    // 3. Load session history
-    const history = await this.store.read(sessionId)
-
-    // 4. Agent loop (tool use)
     let continueLoop = true
     while (continueLoop) {
       const response = await this.llm.complete(systemPrompt, history, this.tools)
@@ -111,7 +96,7 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { name: call.name, params: call.params, toolUseId },
           }
-          await this.store.append(sessionId, callEvent)
+          await this.session.append(sessionId, callEvent)
           history.push(callEvent)
 
           const tool = this.tools.find(t => t.name === call.name)
@@ -132,7 +117,7 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { toolUseId, result },
           }
-          await this.store.append(sessionId, resultEvent)
+          await this.session.append(sessionId, resultEvent)
           history.push(resultEvent)
         }
       } else {
@@ -144,12 +129,12 @@ export class AgentRuntime {
             ts: Date.now(),
             data: { text: response.text },
           }
-          await this.store.append(sessionId, assistantEvent)
+          await this.session.append(sessionId, assistantEvent)
           await send(response.text)
         }
       }
     }
 
-    this.sessions.touch(sessionId)
+    this.session.touch(sessionId)
   }
 }

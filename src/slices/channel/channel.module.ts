@@ -1,32 +1,30 @@
-import type { IChannelGateway } from "./domain/channel.gateway"
 import type { Message } from "./domain/channel.types"
+import { ChannelService } from "./domain/channel.service"
+import { ChannelGateway, type ChannelGatewayConfig } from "./data/channel.gateway"
 
 export class ChannelModule {
-  private channels: IChannelGateway[] = []
-  private handler?: (msg: Message) => Promise<void>
+  private service: ChannelService
 
-  add(channel: IChannelGateway): void {
-    this.channels.push(channel)
-  }
-
-  onMessage(handler: (msg: Message) => Promise<void>): void {
-    this.handler = handler
-    for (const ch of this.channels) {
-      ch.onMessage(handler)
+  constructor(configs: ChannelGatewayConfig[]) {
+    this.service = new ChannelService()
+    for (const cfg of configs) {
+      this.service.add(new ChannelGateway(cfg))
     }
   }
 
+  onMessage(handler: (msg: Message) => Promise<void>): void {
+    this.service.onMessage(handler)
+  }
+
   async start(): Promise<void> {
-    await Promise.all(this.channels.map(ch => ch.start()))
+    await this.service.start()
   }
 
   async stop(): Promise<void> {
-    await Promise.all(this.channels.map(ch => ch.stop()))
+    await this.service.stop()
   }
 
   async send(channel: string, to: string, text: string): Promise<void> {
-    const ch = this.channels.find(c => c.name === channel)
-    if (!ch) throw new Error(`Channel not found: ${channel}`)
-    await ch.send(to, text)
+    await this.service.send(channel, to, text)
   }
 }

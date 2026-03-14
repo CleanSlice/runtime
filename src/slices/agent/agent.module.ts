@@ -1,27 +1,14 @@
-import type { AgentConfig } from "./domain/agent.types"
+import { AgentGateway } from "./data/agent.gateway"
+import { AgentService } from "./domain/agent.service"
 
-export function buildSystemPrompt(config: AgentConfig): string {
-  const parts: string[] = []
+export class AgentModule {
+  private service: AgentService
 
-  if (config.soul) {
-    parts.push(`# Soul\n\n${config.soul}`)
+  constructor(private agentDir: string) {
+    this.service = new AgentService(new AgentGateway())
   }
 
-  if (config.user) {
-    parts.push(`# User Context\n\n${config.user}`)
+  async buildPrompt(): Promise<string> {
+    return this.service.buildPrompt(this.agentDir)
   }
-
-  if (config.memory) {
-    parts.push(`# Memory\n\n${config.memory}`)
-  }
-
-  if (config.heartbeat) {
-    parts.push(`# Heartbeat\n\n${config.heartbeat}`)
-  }
-
-  for (const skill of config.skills) {
-    parts.push(`# Skill\n\n${skill}`)
-  }
-
-  return parts.join("\n\n---\n\n")
 }
