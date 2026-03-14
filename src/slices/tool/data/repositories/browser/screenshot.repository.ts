@@ -14,9 +14,10 @@ export const BrowserScreenshotTool: Tool = {
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url } = schema.parse(params)
 
-    const screenshotsDir = `${ctx.agentDir}/screenshots`
-    mkdirSync(screenshotsDir, { recursive: true })
-    const outPath = `${screenshotsDir}/${randomUUID()}.png`
+    // Snap chromium can only write to $HOME — use home dir
+    const home = process.env.HOME ?? "/home/dmitriyzhuk"
+    const filename = `screenshot-${randomUUID()}.png`
+    const outPath = `${home}/${filename}`
 
     // Use chromium to take screenshot
     const proc = Bun.spawn([
@@ -24,6 +25,7 @@ export const BrowserScreenshotTool: Tool = {
       "--headless",
       "--no-sandbox",
       "--disable-gpu",
+      "--disable-dev-shm-usage",
       `--screenshot=${outPath}`,
       "--window-size=1280,900",
       url,
@@ -33,6 +35,7 @@ export const BrowserScreenshotTool: Tool = {
     })
 
     await proc.exited
+    await new Promise(r => setTimeout(r, 500)) // wait for file flush
 
     // Check file exists
     const file = Bun.file(outPath)
@@ -41,23 +44,26 @@ export const BrowserScreenshotTool: Tool = {
       return { error: "Screenshot failed — file not created" }
     }
 
-    // Send via Telegram if we have a chat_id
+    // Send via Telegram
     const telegramToken = process.env.TELEGRAM_TOKEN
     const chatId = ctx.from
     if (telegramToken && chatId && chatId !== "cron") {
-      {
-        const form = new FormData()
-        form.append("chat_id", chatId)
-        form.append("caption", `Screenshot: ${url}`)
-        form.append("photo", new Blob([await file.arrayBuffer()], { type: "image/png" }), "screenshot.png")
+      const form = new FormData()
+      form.append("chat_id", chatId)
+      form.append("caption", `📸 ${url}`)
+      form.append("photo", new Blob([await file.arrayBuffer()], { type: "image/png" }), "screenshot.png")
 
-        const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
-          method: "POST",
-          body: form,
-        })
-        const data = await res.json() as { ok: boolean }
-        if (data.ok) return { ok: true, sent: true, url, path: outPath }
-      }
+      const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
+        method: "POST",
+        body: form,
+      })
+      const data = await res.json() as { ok: boolean; description?: string }
+
+      // Cleanup
+      await Bun.spawn(["rm", "-f", outPath]).exited
+
+      if (data.ok) return { ok: true, sent: true, url }
+      return { error: `Telegram send failed: ${data.description}` }
     }
 
     return { ok: true, sent: false, path: outPath, url }
