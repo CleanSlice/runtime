@@ -1,8 +1,8 @@
 import type { Tool } from "../../tool/tool.module"
 import type { Event } from "../../event/event.module"
-import type { ModelResponse } from "./adapter.types"
+import type { ModelResponse } from "./llm.types"
 
-export interface AdapterGateway {
+export interface LlmGateway {
   complete(
     systemPrompt: string,
     history: Event[],

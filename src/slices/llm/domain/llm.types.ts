@@ -6,7 +6,7 @@ export interface ModelResponse {
   toolCalls?: Array<{ name: string; params: unknown }>
 }
 
-export interface ModelAdapter {
+export interface ModelLlm {
   complete(
     systemPrompt: string,
     history: Event[],

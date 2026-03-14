@@ -1,9 +1,9 @@
 import { AgentRuntime } from "./runtime"
-import { ClaudeAdapter } from "./slices/adapter"
+import { ClaudeLlm } from "./slices/llm"
 import { TelegramChannel } from "./slices/channel/data/telegram.channel"
 
 const runtime = new AgentRuntime({
-  model: new ClaudeAdapter({ model: "claude-sonnet-4-6" }),
+  model: new ClaudeLlm({ model: "claude-sonnet-4-6" }),
   channels: [
     new TelegramChannel({ token: process.env.TELEGRAM_TOKEN ?? "" }),
   ],

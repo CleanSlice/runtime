@@ -1,10 +1,10 @@
-import type { AdapterGateway } from "./adapter.gateway"
+import type { LlmGateway } from "./llm.gateway"
 import type { Tool } from "../../tool/tool.module"
 import type { Event } from "../../event/event.module"
-import type { ModelResponse } from "./adapter.types"
+import type { ModelResponse } from "./llm.types"
 
-export class AdapterService {
-  constructor(private gateway: AdapterGateway) {}
+export class LlmService {
+  constructor(private gateway: LlmGateway) {}
 
   async complete(
     systemPrompt: string,

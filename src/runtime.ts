@@ -1,6 +1,6 @@
 import type { ChannelGateway, Message } from "./slices/channel/channel.module"
 import type { Tool } from "./slices/tool/tool.module"
-import type { ModelAdapter } from "./slices/adapter/adapter.module"
+import type { ModelLlm } from "./slices/llm/llm.module"
 import type { Event } from "./slices/event/event.module"
 import { ChannelServer } from "./slices/channel/channel.server"
 import { SessionManager } from "./slices/session/session.manager"
@@ -13,14 +13,14 @@ import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
   agentDir?: string
-  model: ModelAdapter
+  model: ModelLlm
   channels: ChannelGateway[]
   tools?: Tool[]
 }
 
 export class AgentRuntime {
   private agentDir: string
-  private model: ModelAdapter
+  private model: ModelLlm
   private tools: Tool[]
   private channelServer: ChannelServer
   private sessionManager: SessionManager
