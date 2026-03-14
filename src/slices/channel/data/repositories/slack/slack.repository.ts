@@ -48,15 +48,19 @@ export class SlackRepository {
         }
         const event = ev.payload.event
         if (event.type === "message" && this.handler) {
-          await this.handler({
-            id: randomUUID(),
-            text: event.text,
-            from: event.user,
-            channel: "slack",
-            ts: Date.now(),
-            sessionId: "",
-            metadata: { channel: event.channel, ts: event.ts },
-          })
+          const handler = this.handler
+          // Non-blocking — handle in parallel
+          ;(async () => {
+            await handler({
+              id: randomUUID(),
+              text: event.text,
+              from: event.user,
+              channel: "slack",
+              ts: Date.now(),
+              sessionId: "",
+              metadata: { channel: event.channel, ts: event.ts },
+            })
+          })()
         }
       }
     }

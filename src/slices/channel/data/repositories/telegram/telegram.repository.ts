@@ -66,26 +66,26 @@ export class TelegramRepository {
           const msg = update.message
           if (msg?.text && this.handler) {
             const chatId = String(msg.chat.id)
+            const handler = this.handler
 
-            // Show typing indicator immediately
-            await this.sendTyping(chatId)
-
-            // Keep typing indicator alive while processing
-            const typingInterval = setInterval(() => this.sendTyping(chatId), 4000)
-
-            try {
-              await this.handler({
-                id: randomUUID(),
-                text: msg.text,
-                from: chatId,
-                channel: "telegram",
-                ts: msg.date * 1000,
-                sessionId: "",
-                metadata: { chatId: msg.chat.id, username: msg.from?.username },
-              })
-            } finally {
-              clearInterval(typingInterval)
-            }
+            // Process each message in parallel — don't block poll loop
+            ;(async () => {
+              await this.sendTyping(chatId)
+              const typingInterval = setInterval(() => this.sendTyping(chatId), 4000)
+              try {
+                await handler({
+                  id: randomUUID(),
+                  text: msg.text!,
+                  from: chatId,
+                  channel: "telegram",
+                  ts: msg.date * 1000,
+                  sessionId: "",
+                  metadata: { chatId: msg.chat.id, username: msg.from?.username },
+                })
+              } finally {
+                clearInterval(typingInterval)
+              }
+            })()
           }
         }
       } catch {
