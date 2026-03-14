@@ -39,7 +39,15 @@ export class TelegramRepository {
     await fetch(`${this.baseUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+    })
+  }
+
+  async sendTyping(chatId: string): Promise<void> {
+    await fetch(`${this.baseUrl}/sendChatAction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, action: "typing" }),
     })
   }
 
@@ -48,26 +56,36 @@ export class TelegramRepository {
     while (this.running) {
       try {
         const res = await fetch(`${this.baseUrl}/getUpdates?offset=${this.offset}&timeout=30`)
-        if (!res.ok) { console.log("[telegram] fetch error", res.status); await this.wait(5000); continue }
+        if (!res.ok) { await this.wait(5000); continue }
 
         const json = (await res.json()) as { ok: boolean; result: TelegramUpdate[]; description?: string }
-        if (!json.ok) { console.log("[telegram] api error:", json.description); await this.wait(5000); continue }
+        if (!json.ok) { await this.wait(5000); continue }
 
-        console.log(`[telegram] updates: ${json.result.length}, offset: ${this.offset}`)
         for (const update of json.result) {
           this.offset = update.update_id + 1
           const msg = update.message
-          console.log(`[telegram] update: text="${msg?.text}" handler=${!!this.handler}`)
           if (msg?.text && this.handler) {
-            await this.handler({
-              id: randomUUID(),
-              text: msg.text,
-              from: String(msg.from?.id ?? msg.chat.id),
-              channel: "telegram",
-              ts: msg.date * 1000,
-              sessionId: "",
-              metadata: { chatId: msg.chat.id, username: msg.from?.username },
-            })
+            const chatId = String(msg.chat.id)
+
+            // Show typing indicator immediately
+            await this.sendTyping(chatId)
+
+            // Keep typing indicator alive while processing
+            const typingInterval = setInterval(() => this.sendTyping(chatId), 4000)
+
+            try {
+              await this.handler({
+                id: randomUUID(),
+                text: msg.text,
+                from: chatId,
+                channel: "telegram",
+                ts: msg.date * 1000,
+                sessionId: "",
+                metadata: { chatId: msg.chat.id, username: msg.from?.username },
+              })
+            } finally {
+              clearInterval(typingInterval)
+            }
           }
         }
       } catch {
