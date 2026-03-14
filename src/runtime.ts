@@ -30,7 +30,7 @@ export class AgentRuntime {
   private heartbeat: HeartbeatModule
 
   constructor(config: RuntimeConfig) {
-    this.agentDir = config.agentDir ?? ".agent"
+    this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
     this.tools = config.tools ?? []
 
     this.llm = new LlmModule(config.llm)

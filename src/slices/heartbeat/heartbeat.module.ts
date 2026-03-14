@@ -18,15 +18,22 @@ export class HeartbeatModule {
   }
 
   start(): void {
-    this.interval = setInterval(async () => {
-      const heartbeatFile = `${this.agentDir}/HEARTBEAT.md`
-      if (!existsSync(heartbeatFile)) return
+    // Also run once at startup after a short delay
+    setTimeout(() => this.tick(), 5000)
 
-      const prompt = HEARTBEAT_PROMPT
-      await this.handler?.(prompt)
-    }, this.intervalMs)
+    this.interval = setInterval(() => this.tick(), this.intervalMs)
+  }
 
-    console.log(`[heartbeat] started, interval=${this.intervalMs / 60000}min`)
+  private async tick(): Promise<void> {
+    const heartbeatFile = `${this.agentDir}/HEARTBEAT.md`
+    if (!existsSync(heartbeatFile)) {
+      console.log(`[heartbeat] no HEARTBEAT.md found at ${heartbeatFile}`)
+      return
+    }
+    console.log(`[heartbeat] tick — running`)
+    await this.handler?.(HEARTBEAT_PROMPT)
+
+    console.log(`[heartbeat] started, interval=${this.intervalMs / 60000}min, agentDir=${this.agentDir}`)
   }
 
   stop(): void {
