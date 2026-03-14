@@ -1,36 +1,14 @@
 import type { Job } from "./domain/cron.types"
-import { FileCronGateway } from "./data/cron.gateway"
-
-function parseCron(expr: string): { minute: number | null; hour: number | null; dom: number | null; month: number | null; dow: number | null } {
-  const parts = expr.trim().split(/\s+/)
-  const parse = (p: string) => (p === "*" ? null : parseInt(p, 10))
-  return {
-    minute: parse(parts[0] ?? "*"),
-    hour: parse(parts[1] ?? "*"),
-    dom: parse(parts[2] ?? "*"),
-    month: parse(parts[3] ?? "*"),
-    dow: parse(parts[4] ?? "*"),
-  }
-}
-
-function shouldRun(job: Job, now: Date): boolean {
-  const cron = parseCron(job.schedule)
-  return (
-    (cron.minute === null || cron.minute === now.getMinutes()) &&
-    (cron.hour === null || cron.hour === now.getHours()) &&
-    (cron.dom === null || cron.dom === now.getDate()) &&
-    (cron.month === null || cron.month === now.getMonth() + 1) &&
-    (cron.dow === null || cron.dow === now.getDay())
-  )
-}
+import { shouldRun } from "./domain/cron.parser"
+import { CronGateway } from "./data/cron.gateway"
 
 export class CronScheduler {
-  private store: FileCronGateway
+  private store: CronGateway
   private interval?: ReturnType<typeof setInterval>
   private handler?: (job: Job) => Promise<void>
 
   constructor(agentDir: string) {
-    this.store = new FileCronGateway(agentDir)
+    this.store = new CronGateway(agentDir)
   }
 
   onJob(handler: (job: Job) => Promise<void>): void {
