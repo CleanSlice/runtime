@@ -1,36 +1,23 @@
-import { MemoryGateway } from "./data/memory.gateway"
 import type { MemoryEntry } from "./domain/memory.types"
-import { existsSync } from "fs"
-
-const MD_FILES = ["SOUL.md", "USER.md", "MEMORY.md", "HEARTBEAT.md"]
+import { MemoryService } from "./domain/memory.service"
+import { MemoryGateway } from "./data/memory.gateway"
 
 export class MemoryModule {
-  private index: MemoryGateway
+  private service: MemoryService
 
   constructor(private agentDir: string) {
-    this.index = new MemoryGateway(agentDir)
+    this.service = new MemoryService(new MemoryGateway(agentDir))
   }
 
   async load(): Promise<void> {
-    for (const file of MD_FILES) {
-      const path = `${this.agentDir}/${file}`
-      if (!existsSync(path)) continue
-      const content = await Bun.file(path).text()
-      const entry: MemoryEntry = {
-        id: file,
-        content,
-        source: file,
-        ts: Date.now(),
-      }
-      this.index.insert(entry)
-    }
+    await this.service.load(this.agentDir)
   }
 
   search(query: string): MemoryEntry[] {
-    return this.index.search(query)
+    return this.service.search(query)
   }
 
   insert(entry: MemoryEntry): void {
-    this.index.insert(entry)
+    this.service.insert(entry)
   }
 }
