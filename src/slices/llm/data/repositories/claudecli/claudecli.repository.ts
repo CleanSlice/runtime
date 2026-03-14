@@ -26,18 +26,19 @@ export class ClaudeCliRepository implements ILlmGateway {
       }
     }
 
-    // Describe available tools in the prompt
+    // Describe available tools — placed at the END of prompt for better compliance
     let toolsSection = ""
     if (tools.length > 0) {
-      const toolList = tools.map(t => `- **${t.name}**: ${t.description}`).join("\n")
-      toolsSection = `\n\n## Available Tools\nYou have access to these tools. To call a tool, respond with JSON on a single line starting with TOOL_CALL:\n${toolList}\n\nFormat: TOOL_CALL: {"tool": "tool_name", "params": {...}}\n\nAfter the tool runs, you'll get a TOOL_RESULT and should continue.\n`
+      const toolList = tools.map(t => `- ${t.name}: ${t.description}`).join("\n")
+      toolsSection = `\n\n## Tools\nIf the user asks you to perform an action, use a tool. Respond ONLY with this format (no other text):\nTOOL_CALL: {"tool": "tool_name", "params": {...}}\n\nAvailable:\n${toolList}`
     }
 
     const prompt = [
-      systemPrompt + toolsSection,
+      systemPrompt,
       "",
       ...(contextLines.length > 1 ? ["--- Conversation ---", ...contextLines.slice(0, -1), "---", ""] : []),
       contextLines[contextLines.length - 1] ?? "",
+      toolsSection,
     ].join("\n")
 
     const text = await this.runCli(prompt)
