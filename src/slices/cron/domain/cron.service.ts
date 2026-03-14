@@ -1,6 +1,5 @@
 import type { ICronGateway } from "./cron.gateway"
 import type { Job } from "./cron.types"
-import { parseCron } from "../data/cron.parser"
 
 export class CronService {
   constructor(private gateway: ICronGateway) {}
@@ -30,7 +29,7 @@ export class CronService {
   }
 
   shouldRun(job: Job, now: Date): boolean {
-    const cron = parseCron(job.schedule)
+    const cron = this.gateway.parse(job.schedule)
     return (
       (cron.minute === null || cron.minute === now.getMinutes()) &&
       (cron.hour   === null || cron.hour   === now.getHours())   &&

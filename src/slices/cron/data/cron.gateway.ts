@@ -1,5 +1,6 @@
 import type { ICronGateway } from "../domain/cron.gateway"
 import type { Job } from "../domain/cron.types"
+import { parseCron, type CronExpression } from "./cron.parser"
 import { mkdirSync } from "fs"
 
 export class CronGateway implements ICronGateway {
@@ -21,5 +22,9 @@ export class CronGateway implements ICronGateway {
 
   async save(jobs: Job[]): Promise<void> {
     await Bun.write(this.path, JSON.stringify(jobs, null, 2))
+  }
+
+  parse(schedule: string): CronExpression {
+    return parseCron(schedule)
   }
 }
