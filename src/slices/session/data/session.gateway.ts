@@ -3,7 +3,7 @@ import type { Event } from "../../event/event.module"
 import { mkdirSync } from "fs"
 import { appendFile } from "fs/promises"
 
-export class JsonlSessionGateway implements ISessionGateway {
+export class SessionGateway implements ISessionGateway {
   private dir: string
 
   constructor(agentDir: string) {

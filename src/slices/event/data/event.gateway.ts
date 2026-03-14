@@ -1,7 +1,7 @@
 import type { IEventGateway } from "../domain/event.gateway"
 import type { Event } from "../domain/event.types"
 
-export class JsonlEventGateway implements IEventGateway {
+export class EventGateway implements IEventGateway {
   private store: Map<string, Event[]> = new Map()
 
   async append(sessionId: string, event: Event): Promise<void> {
