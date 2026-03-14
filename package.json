@@ -1,0 +1,20 @@
+{
+  "name": "@cleanslice/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.0",
+    "zod": "^3.23.0",
+    "gray-matter": "^4.0.3",
+    "zod-to-json-schema": "^3.23.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "@types/node": "^22.0.0"
+  }
+}

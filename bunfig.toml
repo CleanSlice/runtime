@@ -1,0 +1,5 @@
+[run]
+smol = true
+
+[install]
+exact = true
