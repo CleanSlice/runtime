@@ -1,6 +1,6 @@
 import type { SessionGateway } from "./session.gateway"
 import type { Session } from "./session.types"
-import type { Event } from "../../../shared/types/Event"
+import type { Event } from "../../event/event.module"
 
 export class SessionService {
   private sessions: Map<string, Session> = new Map()

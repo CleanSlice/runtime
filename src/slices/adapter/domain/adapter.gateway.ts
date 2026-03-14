@@ -1,5 +1,5 @@
-import type { Tool } from "../../../shared/types/Tool"
-import type { Event } from "../../../shared/types/Event"
+import type { Tool } from "../../tool/tool.module"
+import type { Event } from "../../event/event.module"
 import type { ModelResponse } from "./adapter.types"
 
 export interface AdapterGateway {

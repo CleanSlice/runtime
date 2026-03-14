@@ -1,4 +1,4 @@
-import type { Message } from "../../../shared/types/Message"
+import type { Message } from "./channel.types"
 
 export interface ChannelGateway {
   readonly name: string

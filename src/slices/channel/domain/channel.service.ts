@@ -1,5 +1,5 @@
 import type { ChannelGateway } from "./channel.gateway"
-import type { Message } from "../../../shared/types/Message"
+import type { Message } from "./channel.types"
 
 export class ChannelService {
   private channels: ChannelGateway[] = []

@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 import type { AdapterGateway } from "../domain/adapter.gateway"
 import type { ModelResponse } from "../domain/adapter.types"
-import type { Tool } from "../../../shared/types/Tool"
-import type { Event } from "../../../shared/types/Event"
+import type { Tool } from "../../tool/tool.module"
+import type { Event } from "../../event/event.module"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
 export class ClaudeAdapter implements AdapterGateway {

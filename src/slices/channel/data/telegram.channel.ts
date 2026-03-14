@@ -1,5 +1,5 @@
 import type { ChannelGateway } from "../domain/channel.gateway"
-import type { Message } from "../../../shared/types/Message"
+import type { Message } from "../domain/channel.types"
 import { randomUUID } from "crypto"
 
 interface TelegramUpdate {
