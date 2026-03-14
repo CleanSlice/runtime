@@ -1,4 +1,4 @@
-import type { ICronGateway } from "./cron.gateway"
+import type { ICronGateway } from "./fileCron.gateway"
 import type { Job } from "./cron.types"
 
 export class CronService {
