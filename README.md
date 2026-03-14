@@ -24,11 +24,10 @@ echo "Name: Your Name" > .agent/USER.md
 
 ```ts
 import { AgentRuntime } from "./src/runtime"
-import { ClaudeRepository } from "./src/slices/llm/data/repositories/claude/claude.repository"
 
 const runtime = new AgentRuntime({
   agentDir: ".agent",
-  llm: new ClaudeRepository({ apiKey: process.env.ANTHROPIC_API_KEY! }),
+  llm: { provider: "claude", apiKey: process.env.ANTHROPIC_API_KEY },
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_TOKEN! },
   ],
@@ -174,9 +173,9 @@ Swap the underlying model without changing anything else:
 
 ```ts
 const runtime = new AgentRuntime({
-  llm: new ClaudeRepository({ apiKey: '...' }),
-  // llm: new OpenAIRepository({ apiKey: '...' }),
-  // llm: new OllamaRepository({ model: 'llama3' }),
+  llm: { provider: "claude", apiKey: "..." },
+  // llm: { provider: "openai", apiKey: "..." },
+  // llm: { provider: "ollama", model: "llama3" },
 })
 ```
 

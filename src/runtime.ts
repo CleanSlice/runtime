@@ -1,24 +1,25 @@
 import type { Tool } from "./slices/tool"
-import type { ILlmGateway } from "./slices/llm"
 import type { Event } from "./slices/event"
 import type { ChannelGatewayConfig } from "./slices/channel/data/channel.gateway"
+import type { LlmGatewayConfig } from "./slices/llm/llm.module"
 import { ChannelModule } from "./slices/channel/channel.module"
 import { SessionModule } from "./slices/session/session.module"
 import { AgentModule } from "./slices/agent/agent.module"
 import { MemoryModule } from "./slices/memory/memory.module"
 import { CronModule } from "./slices/cron/cron.module"
+import { LlmModule } from "./slices/llm/llm.module"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
   agentDir?: string
-  llm: ILlmGateway
+  llm: LlmGatewayConfig
   channels: ChannelGatewayConfig[]
   tools?: Tool[]
 }
 
 export class AgentRuntime {
   private agentDir: string
-  private llm: ILlmGateway
+  private llm: LlmModule
   private tools: Tool[]
   private channel: ChannelModule
   private session: SessionModule
@@ -28,9 +29,9 @@ export class AgentRuntime {
 
   constructor(config: RuntimeConfig) {
     this.agentDir = config.agentDir ?? ".agent"
-    this.llm = config.llm
     this.tools = config.tools ?? []
 
+    this.llm = new LlmModule(config.llm)
     this.channel = new ChannelModule(config.channels)
     this.session = new SessionModule(this.agentDir)
     this.agent = new AgentModule(this.agentDir)
