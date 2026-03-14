@@ -16,3 +16,4 @@ export interface ModelLlm {
 
 export type LlmConfig =
   | { provider: "claude"; apiKey?: string; model?: string }
+  | { provider: "claude-cli"; cliBin?: string; model?: string }

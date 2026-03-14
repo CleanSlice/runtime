@@ -1,6 +1,7 @@
 import type { ILlmGateway } from "../domain/llm.gateway"
 import type { LlmConfig } from "../domain/llm.types"
 import { ClaudeRepository } from "./repositories/claude/claude.repository"
+import { ClaudeCliRepository } from "./repositories/claudecli/claudecli.repository"
 
 export class LlmGateway implements ILlmGateway {
   private repository: ILlmGateway
@@ -14,6 +15,11 @@ export class LlmGateway implements ILlmGateway {
       case "claude":
         return new ClaudeRepository({
           apiKey: config.apiKey,
+          model: config.model ?? "claude-sonnet-4-6",
+        })
+      case "claude-cli":
+        return new ClaudeCliRepository({
+          cliBin: config.cliBin ?? "/home/dmitriyzhuk/.local/bin/claude",
           model: config.model ?? "claude-sonnet-4-6",
         })
     }

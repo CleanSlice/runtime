@@ -44,17 +44,20 @@ export class TelegramRepository {
   }
 
   private async poll(): Promise<void> {
+    console.log("[telegram] polling started")
     while (this.running) {
       try {
         const res = await fetch(`${this.baseUrl}/getUpdates?offset=${this.offset}&timeout=30`)
-        if (!res.ok) { await this.wait(5000); continue }
+        if (!res.ok) { console.log("[telegram] fetch error", res.status); await this.wait(5000); continue }
 
-        const json = (await res.json()) as { ok: boolean; result: TelegramUpdate[] }
-        if (!json.ok) continue
+        const json = (await res.json()) as { ok: boolean; result: TelegramUpdate[]; description?: string }
+        if (!json.ok) { console.log("[telegram] api error:", json.description); await this.wait(5000); continue }
 
+        console.log(`[telegram] updates: ${json.result.length}, offset: ${this.offset}`)
         for (const update of json.result) {
           this.offset = update.update_id + 1
           const msg = update.message
+          console.log(`[telegram] update: text="${msg?.text}" handler=${!!this.handler}`)
           if (msg?.text && this.handler) {
             await this.handler({
               id: randomUUID(),

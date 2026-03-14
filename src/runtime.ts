@@ -64,6 +64,8 @@ export class AgentRuntime {
   }
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
+    console.log(`[msg] from=${msg.from} channel=${msg.channel} text="${msg.text}"`)
+    try {
     const sessionObj = this.session.getOrCreate(msg.channel, msg.from)
     const sessionId = sessionObj.id
 
@@ -137,5 +139,8 @@ export class AgentRuntime {
     }
 
     this.session.touch(sessionId)
+    } catch (err) {
+      console.error(`[error] handleMessage failed:`, err)
+    }
   }
 }
