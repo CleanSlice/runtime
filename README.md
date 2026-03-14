@@ -2,12 +2,76 @@
 
 > Agent runtime for the CleanSlice ecosystem. Run any agent defined as files — with a gateway, model adapter, and pluggable tool layer.
 
+## Quickstart
+
+**Prerequisites:** [Bun](https://bun.sh) installed.
+
+```bash
+git clone https://github.com/CleanSlice/runtime.git
+cd runtime
+bun install
+```
+
+**1. Create your agent files:**
+
+```bash
+mkdir .agent
+echo "You are a helpful assistant." > .agent/SOUL.md
+echo "Name: Your Name" > .agent/USER.md
+```
+
+**2. Create an entrypoint** (`index.ts`):
+
+```ts
+import { AgentRuntime } from "./src/runtime"
+import { ClaudeRepository } from "./src/slices/llm/data/repositories/claude/claude.repository"
+
+const runtime = new AgentRuntime({
+  agentDir: ".agent",
+  llm: new ClaudeRepository({ apiKey: process.env.ANTHROPIC_API_KEY! }),
+  channels: [
+    { type: "telegram", token: process.env.TELEGRAM_TOKEN! },
+  ],
+})
+
+await runtime.start()
+console.log("Agent running.")
+```
+
+**3. Run:**
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... TELEGRAM_TOKEN=123:abc bun run index.ts
+```
+
+Or with a `.env` file:
+
+```bash
+cp .env.example .env   # fill in your keys
+bun run index.ts
+```
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | ✅ | Claude API key |
+| `TELEGRAM_TOKEN` | if using Telegram | Bot token from @BotFather |
+
+**Run tests:**
+
+```bash
+bun test
+```
+
+---
+
 ## What is this?
 
 An **agent** is just files:
 
 ```
-agent/
+.agent/
 ├── SOUL.md        ← who the agent is
 ├── USER.md        ← who it works with
 ├── MEMORY.md      ← what it knows
@@ -17,9 +81,11 @@ agent/
 
 The **runtime** is what brings those files to life. It handles:
 
-- **Gateway** — WebSocket daemon that routes messages between channels (Telegram, Slack, Discord...) and the agent
-- **Model adapter** — pluggable LLM backend (Claude, GPT, local models)
-- **Tool layer** — exec, browser, HTTP, message, memory and more
+- **Channels** — routes messages between Telegram, Slack, Discord... and the agent
+- **LLM** — pluggable model backend (Claude, GPT, local models)
+- **Tools** — exec, browser, HTTP, message, memory and more
+- **Sessions** — append-only JSONL conversation history
+- **Cron** — built-in scheduler for recurring tasks
 
 The model is **interchangeable**. The agent files stay the same.
 
@@ -32,15 +98,10 @@ The model is **interchangeable**. The agent files stay the same.
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
-│                   Gateway Daemon                     │
-│  WebSocket server · session routing · cron scheduler │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
 │                  Agent Runtime                       │
 │                                                      │
 │  ┌─────────────┐   ┌──────────────┐   ┌──────────┐  │
-│  │  File Layer │   │ Model Adapter│   │  Tools   │  │
+│  │  File Layer │   │     LLM      │   │  Tools   │  │
 │  │  SOUL.md    │   │              │   │          │  │
 │  │  USER.md    │──▶│  Claude      │──▶│  exec    │  │
 │  │  MEMORY.md  │   │  GPT         │   │  browser │  │
@@ -107,89 +168,16 @@ runtime.cron.add({
 })
 ```
 
-### Model Adapter
+### LLM
 
-Swap the underlying LLM without changing anything else:
+Swap the underlying model without changing anything else:
 
 ```ts
 const runtime = new AgentRuntime({
-  model: new ClaudeAdapter({ model: 'claude-sonnet-4-6' }),
-  // model: new OpenAIAdapter({ model: 'gpt-4o' }),
-  // model: new OllamaAdapter({ model: 'llama3' }),
+  llm: new ClaudeRepository({ apiKey: '...' }),
+  // llm: new OpenAIRepository({ apiKey: '...' }),
+  // llm: new OllamaRepository({ model: 'llama3' }),
 })
-```
-
-## File structure
-
-```
-packages/
-├── gateway/       ← WebSocket daemon, channel connectors
-├── runtime/       ← Core agent loop, tool execution, session management
-├── tools/         ← Built-in tool implementations
-├── adapters/      ← Model adapters (Claude, OpenAI, Ollama...)
-└── memory/        ← JSONL session store, SQLite memory index
-```
-
-## Quickstart
-
-**Prerequisites:** [Bun](https://bun.sh) installed.
-
-```bash
-git clone https://github.com/CleanSlice/runtime.git
-cd runtime
-bun install
-```
-
-**1. Create your agent files:**
-
-```bash
-mkdir .agent
-echo "You are a helpful assistant." > .agent/SOUL.md
-echo "Name: Your Name" > .agent/USER.md
-```
-
-**2. Create an entrypoint** (`index.ts`):
-
-```ts
-import { AgentRuntime } from "./src/runtime"
-import { ClaudeRepository } from "./src/slices/llm/data/repositories/claude/claude.repository"
-
-const runtime = new AgentRuntime({
-  agentDir: ".agent",
-  llm: new ClaudeRepository({ apiKey: process.env.ANTHROPIC_API_KEY! }),
-  channels: [
-    { type: "telegram", token: process.env.TELEGRAM_TOKEN! },
-  ],
-})
-
-await runtime.start()
-console.log("Agent running.")
-```
-
-**3. Run:**
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... TELEGRAM_TOKEN=123:abc bun run index.ts
-```
-
-Or with a `.env` file:
-
-```bash
-cp .env.example .env   # fill in your keys
-bun run index.ts
-```
-
-**Environment variables:**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | ✅ | Claude API key |
-| `TELEGRAM_TOKEN` | if using Telegram | Bot token from @BotFather |
-
-**Run tests:**
-
-```bash
-bun test
 ```
 
 ## Tech stack
@@ -198,7 +186,6 @@ bun test
 - **Bun** — runtime and package manager
 - **Zod** — schema validation for tool inputs
 - **SQLite** (via `bun:sqlite`) — memory indexing
-- **WebSockets** — gateway communication
 
 ## Status
 
