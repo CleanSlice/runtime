@@ -2,7 +2,7 @@ import type { IAgentGateway } from "../domain/agent.gateway"
 import type { AgentConfig } from "../domain/agent.types"
 import { existsSync } from "fs"
 
-export class FileAgentGateway implements IAgentGateway {
+export class AgentGateway implements IAgentGateway {
   private async readIfExists(path: string): Promise<string | undefined> {
     try {
       if (!existsSync(path)) return undefined
