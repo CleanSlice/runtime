@@ -2,22 +2,22 @@ import type { IAgentGateway } from "../domain/agent.gateway"
 import type { AgentConfig } from "../domain/agent.types"
 import { existsSync } from "fs"
 
-async function readIfExists(path: string): Promise<string | undefined> {
-  try {
-    if (!existsSync(path)) return undefined
-    return await Bun.file(path).text()
-  } catch {
-    return undefined
-  }
-}
-
 export class FileAgentGateway implements IAgentGateway {
+  private async readIfExists(path: string): Promise<string | undefined> {
+    try {
+      if (!existsSync(path)) return undefined
+      return await Bun.file(path).text()
+    } catch {
+      return undefined
+    }
+  }
+
   async load(agentDir: string): Promise<AgentConfig> {
     const [soul, user, memory, heartbeat] = await Promise.all([
-      readIfExists(`${agentDir}/SOUL.md`),
-      readIfExists(`${agentDir}/USER.md`),
-      readIfExists(`${agentDir}/MEMORY.md`),
-      readIfExists(`${agentDir}/HEARTBEAT.md`),
+      this.readIfExists(`${agentDir}/SOUL.md`),
+      this.readIfExists(`${agentDir}/USER.md`),
+      this.readIfExists(`${agentDir}/MEMORY.md`),
+      this.readIfExists(`${agentDir}/HEARTBEAT.md`),
     ])
 
     const skills: string[] = []
