@@ -11,9 +11,17 @@ export class ClaudeRepository implements ILlmGateway {
 
   constructor({ model, apiKey }: { model: string; apiKey?: string }) {
     this.model = model
-    this.client = new Anthropic({
-      apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY,
-    })
+
+    const key = apiKey ?? process.env.ANTHROPIC_API_KEY
+    const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
+
+    if (oauthToken && !key) {
+      // OAuth token (sk-ant-oat01-...) — used by OpenClaw/Claude Code CLI
+      this.client = new Anthropic({ authToken: oauthToken })
+    } else {
+      // Standard API key (sk-ant-api03-...)
+      this.client = new Anthropic({ apiKey: key })
+    }
   }
 
   async complete(
