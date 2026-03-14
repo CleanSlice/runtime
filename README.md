@@ -132,28 +132,64 @@ packages/
 
 ## Quickstart
 
+**Prerequisites:** [Bun](https://bun.sh) installed.
+
 ```bash
-npx create-cleanslice my-agent
-cd my-agent
-npm run dev
+git clone https://github.com/CleanSlice/runtime.git
+cd runtime
+bun install
 ```
 
-Or use the runtime directly:
+**1. Create your agent files:**
+
+```bash
+mkdir .agent
+echo "You are a helpful assistant." > .agent/SOUL.md
+echo "Name: Your Name" > .agent/USER.md
+```
+
+**2. Create an entrypoint** (`index.ts`):
 
 ```ts
-import { AgentRuntime } from '@cleanslice/runtime'
-import { ClaudeAdapter } from '@cleanslice/adapters'
-import { TelegramChannel } from '@cleanslice/gateway'
+import { AgentRuntime } from "./src/runtime"
+import { ClaudeRepository } from "./src/slices/llm/data/repositories/claude/claude.repository"
 
 const runtime = new AgentRuntime({
-  agentDir: './agent',
-  model: new ClaudeAdapter({ model: 'claude-sonnet-4-6' }),
+  agentDir: ".agent",
+  llm: new ClaudeRepository({ apiKey: process.env.ANTHROPIC_API_KEY! }),
   channels: [
-    new TelegramChannel({ token: process.env.TELEGRAM_TOKEN }),
+    { type: "telegram", token: process.env.TELEGRAM_TOKEN! },
   ],
 })
 
 await runtime.start()
+console.log("Agent running.")
+```
+
+**3. Run:**
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... TELEGRAM_TOKEN=123:abc bun run index.ts
+```
+
+Or with a `.env` file:
+
+```bash
+cp .env.example .env   # fill in your keys
+bun run index.ts
+```
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | ✅ | Claude API key |
+| `TELEGRAM_TOKEN` | if using Telegram | Bot token from @BotFather |
+
+**Run tests:**
+
+```bash
+bun test
 ```
 
 ## Tech stack
