@@ -16,8 +16,8 @@ export class SlackRepository {
 
   async start(): Promise<void> {
     const res = await fetch("https://slack.com/api/apps.connections.open", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${this.appToken}` },
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.appToken}`, "Content-Type": "application/json" },
     })
     const json = (await res.json()) as { ok: boolean; url: string }
     if (!json.ok) throw new Error("[slack] Failed to open connection")
