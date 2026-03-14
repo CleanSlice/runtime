@@ -1,11 +1,10 @@
 import { AgentRuntime } from "./runtime"
-import { ClaudeLlm } from "./slices/llm"
-import { ChannelGateway } from "./slices/channel/data/telegram.channel"
 
 const runtime = new AgentRuntime({
-  model: new ClaudeLlm({ model: "claude-sonnet-4-6" }),
+  agentDir: ".agent",
+  llm: { provider: "claude", apiKey: process.env.ANTHROPIC_API_KEY },
   channels: [
-    new ChannelGateway({ token: process.env.TELEGRAM_TOKEN ?? "" }),
+    { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },
   ],
 })
 
