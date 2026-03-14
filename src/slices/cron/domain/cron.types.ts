@@ -8,4 +8,6 @@ export interface CronJob {
   channel?: string  // channel name (e.g. "telegram")
   enabled: boolean
   lastRunAt?: number
+  runOnce?: boolean      // if true, delete job after first run
+  runAt?: number         // unix timestamp ms — run once at specific time
 }

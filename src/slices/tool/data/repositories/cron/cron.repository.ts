@@ -43,29 +43,40 @@ export const CronListRepository = {
 
 export const CronAddRepository = {
   name: "cron_add",
-  description: "Add a new cron job. Schedule is a standard cron expression (e.g. '0 9 * * *' = 9am daily).",
+  description: "Add a scheduled job. For recurring tasks use schedule (cron expression). For one-time reminders use delayMinutes or runAt (unix timestamp ms).",
   schema: z.object({
     name: z.string(),
-    schedule: z.string(),
+    schedule: z.string().optional().default("* * * * *").describe("Cron expression for recurring tasks"),
     message: z.string().describe("What the agent should do when this job fires"),
-    to: z.string().optional().describe("Telegram chat ID to deliver response"),
+    to: z.string().optional().describe("Chat ID to deliver response"),
     channel: z.string().optional().default("telegram"),
+    runOnce: z.boolean().optional().describe("If true, delete after first run"),
+    delayMinutes: z.number().optional().describe("Run once after N minutes from now"),
+    runAt: z.number().optional().describe("Run once at this unix timestamp (ms)"),
   }),
   async execute(params: unknown, ctx: ToolContext) {
-    const p = params as { name: string; schedule: string; message: string; to?: string; channel?: string }
+    const p = params as {
+      name: string; schedule?: string; message: string; to?: string; channel?: string;
+      runOnce?: boolean; delayMinutes?: number; runAt?: number
+    }
     const jobs = await loadJobs(ctx)
+
+    const runAt = p.runAt ?? (p.delayMinutes ? Date.now() + p.delayMinutes * 60_000 : undefined)
+
     const job: CronJob = {
       id: randomUUID(),
       name: p.name,
-      schedule: p.schedule,
+      schedule: p.schedule ?? "* * * * *",
       message: p.message,
-      to: p.to,
-      channel: p.channel ?? "telegram",
+      to: p.to ?? ctx.from,
+      channel: p.channel ?? ctx.channel ?? "telegram",
       enabled: true,
+      runOnce: p.runOnce || !!runAt,
+      ...(runAt ? { runAt } : {}),
     }
     jobs.push(job)
     await saveJobs(jobs, ctx)
-    return { ok: true, id: job.id, name: job.name }
+    return { ok: true, id: job.id, name: job.name, runAt, delayMinutes: p.delayMinutes }
   },
 }
 

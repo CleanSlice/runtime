@@ -18,15 +18,31 @@ export class CronModule {
   start(): void {
     this.interval = setInterval(async () => {
       const now = new Date()
+      const nowMs = Date.now()
       const jobs = await this.service.list()
       for (const job of jobs) {
         if (!job.enabled) continue
-        if (this.service.shouldRun(job, now)) {
-          await this.service.updateLastRun(job.id, Date.now())
+
+        let shouldFire = false
+
+        if (job.runAt) {
+          // One-shot: fire when current time passes runAt
+          shouldFire = nowMs >= job.runAt && (!job.lastRunAt || job.lastRunAt < job.runAt)
+        } else {
+          shouldFire = this.service.shouldRun(job, now)
+        }
+
+        if (shouldFire) {
+          await this.service.updateLastRun(job.id, nowMs)
           await this.handler?.(job)
+
+          // Delete after firing if runOnce or runAt
+          if (job.runOnce || job.runAt) {
+            await this.service.remove(job.id)
+          }
         }
       }
-    }, 60_000)
+    }, 10_000) // Check every 10s for better one-shot accuracy
   }
 
   stop(): void {
