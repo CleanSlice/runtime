@@ -9,6 +9,8 @@ interface TelegramUpdate {
     chat: { id: number }
     text?: string
     date: number
+    photo?: Array<{ file_id: string; file_size: number; width: number; height: number }>
+    caption?: string
   }
 }
 
@@ -65,8 +67,10 @@ export class TelegramRepository {
         for (const update of json.result) {
           this.offset = update.update_id + 1
           const msg = update.message
-          if (msg?.text && this.handler) {
-            const chatId = String(msg.chat.id)
+          const hasText = !!msg?.text
+          const hasPhoto = !!msg?.photo?.length
+          if ((hasText || hasPhoto) && this.handler) {
+            const chatId = String(msg!.chat.id)
             const handler = this.handler
 
             // Process each message in parallel — don't block poll loop
@@ -74,19 +78,31 @@ export class TelegramRepository {
               await this.sendTyping(chatId)
               const typingInterval = setInterval(() => this.sendTyping(chatId), 4000)
               try {
+                let text = msg!.text ?? msg!.caption ?? "[photo]"
+                const metadata: Record<string, unknown> = { chatId: msg!.chat.id, username: msg!.from?.username }
+
+                if (hasPhoto) {
+                  const fileId = msg!.photo![msg!.photo!.length - 1].file_id
+                  const fileRes = await fetch(`${this.baseUrl}/getFile?file_id=${fileId}`)
+                  const fileJson = (await fileRes.json()) as { result: { file_path: string } }
+                  const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileJson.result.file_path}`
+                  metadata.photoUrl = fileUrl
+                  metadata.hasPhoto = true
+                }
+
                 await handler({
                   id: randomUUID(),
-                  text: msg.text!,
+                  text,
                   from: chatId,
                   channel: "telegram",
-                  ts: msg.date * 1000,
+                  ts: msg!.date * 1000,
                   sessionId: "",
-                  metadata: { chatId: msg.chat.id, username: msg.from?.username },
+                  metadata,
                 })
               } finally {
                 clearInterval(typingInterval)
               }
-            })()
+            })().catch(err => console.error("[telegram] message handler error:", err))
           }
         }
       } catch {

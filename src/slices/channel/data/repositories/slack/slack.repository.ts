@@ -60,7 +60,7 @@ export class SlackRepository {
               sessionId: "",
               metadata: { channel: event.channel, ts: event.ts },
             })
-          })()
+          })().catch(err => console.error("[slack] message handler error:", err))
         }
       }
     }
