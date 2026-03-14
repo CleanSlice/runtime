@@ -15,7 +15,7 @@ const toolGateway = new ToolGateway()
 
 const runtime = new AgentRuntime({
   agentDir: ".agent",
-  llm: { provider: "claude-cli" },
+  llm: { provider: "claude" },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },
   ],

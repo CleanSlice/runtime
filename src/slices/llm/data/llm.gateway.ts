@@ -16,6 +16,7 @@ export class LlmGateway implements ILlmGateway {
         return new ClaudeRepository({
           apiKey: config.apiKey,
           model: config.model ?? "claude-sonnet-4-6",
+          ...(config.proxyUrl ? { proxyUrl: config.proxyUrl } : {}),
         })
       case "claude-cli":
         return new ClaudeCliRepository({
