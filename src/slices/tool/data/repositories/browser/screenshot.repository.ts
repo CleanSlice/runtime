@@ -1,53 +1,37 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
-import { mkdirSync } from "fs"
 
 const schema = z.object({
   url: z.string().describe("URL to take a screenshot of"),
-  fullPage: z.boolean().optional().default(true).describe("Capture full page (default: true)"),
+  fullPage: z.boolean().optional().default(true).describe("Capture full page height (default: true)"),
   width: z.number().optional().default(1280).describe("Viewport width in pixels"),
 })
 
 export const BrowserScreenshotTool: Tool = {
   name: "browser_screenshot",
-  description: "Take a screenshot of a website and send it to the user via Telegram. Returns the file path.",
+  description: "Take a screenshot of a website and send it to the user via Telegram. Supports full page screenshots.",
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, fullPage, width } = schema.parse(params)
 
-    // Snap chromium can only write to $HOME — use home dir
     const home = process.env.HOME ?? "/home/dmitriyzhuk"
     const filename = `screenshot-${randomUUID()}.png`
     const outPath = `${home}/${filename}`
 
-    // Use chromium to take screenshot
-    const args = [
-      "chromium-browser",
-      "--headless",
-      "--no-sandbox",
-      "--disable-gpu",
-      "--disable-dev-shm-usage",
-      `--screenshot=${outPath}`,
-      `--window-size=${width ?? 1280},900`,
-    ]
-    if (fullPage !== false) args.push("--full-page-screenshot")
-    args.push(url)
+    // Use Playwright for proper full-page screenshots
+    const { chromium } = await import("playwright")
+    const browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage({ viewport: { width: width ?? 1280, height: 900 } })
 
-    const proc = Bun.spawn(args, {
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-
-    await proc.exited
-    await new Promise(r => setTimeout(r, 500)) // wait for file flush
+    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 })
+    await page.screenshot({ path: outPath, fullPage: fullPage !== false })
+    await browser.close()
 
     // Check file exists
     const file = Bun.file(outPath)
     const exists = await file.exists()
-    if (!exists) {
-      return { error: "Screenshot failed — file not created" }
-    }
+    if (!exists) return { error: "Screenshot failed — file not created" }
 
     // Send via Telegram
     const telegramToken = process.env.TELEGRAM_TOKEN
@@ -64,7 +48,6 @@ export const BrowserScreenshotTool: Tool = {
       })
       const data = await res.json() as { ok: boolean; description?: string }
 
-      // Cleanup
       await Bun.spawn(["rm", "-f", outPath]).exited
 
       if (data.ok) return { ok: true, sent: true, url }
