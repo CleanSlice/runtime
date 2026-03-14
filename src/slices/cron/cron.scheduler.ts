@@ -1,5 +1,5 @@
 import type { Job } from "./domain/cron.types"
-import { CronStore } from "./data/cron.store"
+import { FileCronGateway } from "./data/cron.gateway"
 
 function parseCron(expr: string): { minute: number | null; hour: number | null; dom: number | null; month: number | null; dow: number | null } {
   const parts = expr.trim().split(/\s+/)
@@ -25,12 +25,12 @@ function shouldRun(job: Job, now: Date): boolean {
 }
 
 export class CronScheduler {
-  private store: CronStore
+  private store: FileCronGateway
   private interval?: ReturnType<typeof setInterval>
   private handler?: (job: Job) => Promise<void>
 
   constructor(agentDir: string) {
-    this.store = new CronStore(agentDir)
+    this.store = new FileCronGateway(agentDir)
   }
 
   onJob(handler: (job: Job) => Promise<void>): void {

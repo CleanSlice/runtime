@@ -1,6 +1,6 @@
 import type { MemoryEntry } from "./memory.types"
 
-export interface MemoryGateway {
+export interface IMemoryGateway {
   insert(entry: MemoryEntry): void
   search(query: string): MemoryEntry[]
 }

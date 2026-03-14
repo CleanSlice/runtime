@@ -1,6 +1,6 @@
 import type { Message } from "./channel.types"
 
-export interface ChannelGateway {
+export interface IChannelGateway {
   readonly name: string
   start(): Promise<void>
   stop(): Promise<void>

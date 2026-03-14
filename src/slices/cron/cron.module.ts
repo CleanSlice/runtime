@@ -1,5 +1,5 @@
 export * from "./domain/cron.types"
 export * from "./domain/cron.gateway"
 export * from "./domain/cron.service"
-export * from "./data/cron.store"
+export * from "./data/cron.gateway"
 export * from "./cron.scheduler"

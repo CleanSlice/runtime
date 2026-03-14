@@ -1,8 +1,8 @@
-import type { CronGateway } from "../domain/cron.gateway"
+import type { ICronGateway } from "../domain/cron.gateway"
 import type { Job } from "../domain/cron.types"
 import { mkdirSync } from "fs"
 
-export class CronStore implements CronGateway {
+export class FileCronGateway implements ICronGateway {
   private path: string
 
   constructor(agentDir: string) {

@@ -1,8 +1,8 @@
-import type { AgentGateway } from "./agent.gateway"
+import type { IAgentGateway } from "./agent.gateway"
 import type { AgentConfig } from "./agent.types"
 
 export class AgentService {
-  constructor(private gateway: AgentGateway) {}
+  constructor(private gateway: IAgentGateway) {}
 
   async load(agentDir: string): Promise<AgentConfig> {
     return this.gateway.load(agentDir)

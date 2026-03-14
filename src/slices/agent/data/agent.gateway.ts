@@ -1,4 +1,4 @@
-import type { AgentGateway } from "../domain/agent.gateway"
+import type { IAgentGateway } from "../domain/agent.gateway"
 import type { AgentConfig } from "../domain/agent.types"
 import { existsSync } from "fs"
 
@@ -11,7 +11,7 @@ async function readIfExists(path: string): Promise<string | undefined> {
   }
 }
 
-export class AgentLoader implements AgentGateway {
+export class FileAgentGateway implements IAgentGateway {
   async load(agentDir: string): Promise<AgentConfig> {
     const [soul, user, memory, heartbeat] = await Promise.all([
       readIfExists(`${agentDir}/SOUL.md`),
@@ -34,9 +34,4 @@ export class AgentLoader implements AgentGateway {
 
     return { soul, user, memory, heartbeat, skills }
   }
-}
-
-// Legacy functional export for backward compatibility
-export async function loadAgentConfig(agentDir: string): Promise<AgentConfig> {
-  return new AgentLoader().load(agentDir)
 }

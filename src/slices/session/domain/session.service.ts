@@ -1,11 +1,11 @@
-import type { SessionGateway } from "./session.gateway"
+import type { ISessionGateway } from "./session.gateway"
 import type { Session } from "./session.types"
 import type { Event } from "../../event/event.module"
 
 export class SessionService {
   private sessions: Map<string, Session> = new Map()
 
-  constructor(private gateway: SessionGateway) {}
+  constructor(private gateway: ISessionGateway) {}
 
   getOrCreate(channelId: string, userId: string): Session {
     const id = `${channelId}:${userId}`

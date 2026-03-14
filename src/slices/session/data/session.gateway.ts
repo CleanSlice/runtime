@@ -1,9 +1,9 @@
-import type { SessionGateway } from "../domain/session.gateway"
+import type { ISessionGateway } from "../domain/session.gateway"
 import type { Event } from "../../event/event.module"
 import { mkdirSync } from "fs"
 import { appendFile } from "fs/promises"
 
-export class SessionStore implements SessionGateway {
+export class JsonlSessionGateway implements ISessionGateway {
   private dir: string
 
   constructor(agentDir: string) {
@@ -30,6 +30,3 @@ export class SessionStore implements SessionGateway {
     }
   }
 }
-
-// Legacy class alias
-export { SessionStore as JsonlStore }

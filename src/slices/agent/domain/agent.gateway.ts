@@ -1,5 +1,5 @@
 import type { AgentConfig } from "./agent.types"
 
-export interface AgentGateway {
+export interface IAgentGateway {
   load(agentDir: string): Promise<AgentConfig>
 }

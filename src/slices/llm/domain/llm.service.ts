@@ -1,10 +1,10 @@
-import type { LlmGateway } from "./llm.gateway"
+import type { ILlmGateway } from "./llm.gateway"
 import type { Tool } from "../../tool/tool.module"
 import type { Event } from "../../event/event.module"
 import type { ModelResponse } from "./llm.types"
 
 export class LlmService {
-  constructor(private gateway: LlmGateway) {}
+  constructor(private gateway: ILlmGateway) {}
 
   async complete(
     systemPrompt: string,

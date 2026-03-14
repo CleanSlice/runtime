@@ -1,8 +1,8 @@
-import type { MemoryGateway } from "./memory.gateway"
+import type { IMemoryGateway } from "./memory.gateway"
 import type { MemoryEntry } from "./memory.types"
 
 export class MemoryService {
-  constructor(private gateway: MemoryGateway) {}
+  constructor(private gateway: IMemoryGateway) {}
 
   insert(entry: MemoryEntry): void {
     this.gateway.insert(entry)

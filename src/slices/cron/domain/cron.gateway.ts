@@ -1,6 +1,6 @@
 import type { Job } from "./cron.types"
 
-export interface CronGateway {
+export interface ICronGateway {
   load(): Promise<Job[]>
   save(jobs: Job[]): Promise<void>
 }

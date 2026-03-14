@@ -1,8 +1,8 @@
-import type { EventGateway } from "./event.gateway"
+import type { IEventGateway } from "./event.gateway"
 import type { Event } from "./event.types"
 
 export class EventService {
-  constructor(private gateway: EventGateway) {}
+  constructor(private gateway: IEventGateway) {}
 
   async append(sessionId: string, event: Event): Promise<void> {
     return this.gateway.append(sessionId, event)

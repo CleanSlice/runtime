@@ -1,11 +1,11 @@
-import type { ChannelGateway } from "./channel.gateway"
+import type { IChannelGateway } from "./channel.gateway"
 import type { Message } from "./channel.types"
 
 export class ChannelService {
-  private channels: ChannelGateway[] = []
+  private channels: IChannelGateway[] = []
   private handler?: (msg: Message) => Promise<void>
 
-  add(channel: ChannelGateway): void {
+  add(channel: IChannelGateway): void {
     this.channels.push(channel)
     if (this.handler) channel.onMessage(this.handler)
   }

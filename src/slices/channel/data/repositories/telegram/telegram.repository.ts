@@ -1,5 +1,5 @@
-import type { ChannelGateway } from "../domain/channel.gateway"
-import type { Message } from "../domain/channel.types"
+import type { IChannelGateway } from "../../../domain/channel.gateway"
+import type { Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 
 interface TelegramUpdate {
@@ -13,7 +13,7 @@ interface TelegramUpdate {
   }
 }
 
-export class TelegramChannel implements ChannelGateway {
+export class TelegramRepository implements IChannelGateway {
   readonly name = "telegram"
   private token: string
   private offset = 0

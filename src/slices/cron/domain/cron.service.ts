@@ -1,8 +1,8 @@
-import type { CronGateway } from "./cron.gateway"
+import type { ICronGateway } from "./cron.gateway"
 import type { Job } from "./cron.types"
 
 export class CronService {
-  constructor(private gateway: CronGateway) {}
+  constructor(private gateway: ICronGateway) {}
 
   async list(): Promise<Job[]> {
     return this.gateway.load()

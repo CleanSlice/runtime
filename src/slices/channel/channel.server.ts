@@ -1,11 +1,11 @@
-import type { ChannelGateway } from "./domain/channel.gateway"
+import type { IChannelGateway } from "./domain/channel.gateway"
 import type { Message } from "./domain/channel.types"
 
 export class ChannelServer {
-  private channels: ChannelGateway[] = []
+  private channels: IChannelGateway[] = []
   private handler?: (msg: Message) => Promise<void>
 
-  add(channel: ChannelGateway): void {
+  add(channel: IChannelGateway): void {
     this.channels.push(channel)
   }
 

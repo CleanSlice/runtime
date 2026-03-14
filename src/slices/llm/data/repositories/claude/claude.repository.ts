@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk"
-import type { LlmGateway } from "../domain/llm.gateway"
-import type { ModelResponse } from "../domain/llm.types"
-import type { Tool } from "../../tool/tool.module"
-import type { Event } from "../../event/event.module"
+import type { ILlmGateway } from "../../../domain/llm.gateway"
+import type { ModelResponse } from "../../../domain/llm.types"
+import type { Tool } from "../../../../tool/tool.module"
+import type { Event } from "../../../../event/event.module"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
-export class ClaudeLlm implements LlmGateway {
+export class ClaudeRepository implements ILlmGateway {
   private client: Anthropic
   private model: string
 
