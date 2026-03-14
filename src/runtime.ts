@@ -89,7 +89,7 @@ export class AgentRuntime {
       history = await this.session.read(sessionId)
     }
 
-    const systemPrompt = await this.agent.buildPrompt()
+    const systemPrompt = await this.agent.buildPrompt(msg.from)
 
     let continueLoop = true
     while (continueLoop) {

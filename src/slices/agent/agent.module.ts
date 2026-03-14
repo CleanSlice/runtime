@@ -8,7 +8,7 @@ export class AgentModule {
     this.service = new AgentService(new AgentGateway())
   }
 
-  async buildPrompt(): Promise<string> {
-    return this.service.buildPrompt(this.agentDir)
+  async buildPrompt(userId?: string): Promise<string> {
+    return this.service.buildPrompt(this.agentDir, userId)
   }
 }

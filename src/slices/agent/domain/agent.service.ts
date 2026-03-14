@@ -18,8 +18,21 @@ export class AgentService {
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string): Promise<string> {
+  async buildPrompt(agentDir: string, userId?: string): Promise<string> {
     const config = await this.load(agentDir)
+
+    // Override user context with per-user file if it exists
+    // Looks for: .agent/users/{userId}.md
+    if (userId) {
+      const userFile = `${agentDir}/users/${userId}.md`
+      try {
+        const userContext = await Bun.file(userFile).text()
+        if (userContext.trim()) config.user = userContext
+      } catch {
+        // No per-user file — use default USER.md
+      }
+    }
+
     return this.buildSystemPrompt(config)
   }
 }
