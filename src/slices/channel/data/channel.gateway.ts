@@ -1,22 +1,20 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
+import type { ChannelConfig } from "../domain/channel.types"
 import type { Message } from "../domain/channel.types"
-import { ChannelGateway } from "./data/channel.gateway"
+import { ChannelGateway } from "./domain/channel.types"
 
-export interface ChannelGatewayConfig {
-  type: "telegram"
   token: string
-}
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
   private repository: ChannelGateway
 
-  constructor(config: ChannelGatewayConfig) {
+  constructor(config: ChannelConfig) {
     this.name = config.type
     this.repository = this.createRepository(config)
   }
 
-  private createRepository(config: ChannelGatewayConfig): ChannelGateway {
+  private createRepository(config: ChannelConfig): ChannelGateway {
     switch (config.type) {
       case "telegram":
         return new ChannelGateway(config.token)

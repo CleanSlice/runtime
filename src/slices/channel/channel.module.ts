@@ -1,11 +1,11 @@
 import type { Message } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
-import { ChannelGateway, type ChannelGatewayConfig } from "./data/channel.gateway"
+import { ChannelGateway, type ChannelConfig } from "./domain/channel.types"
 
 export class ChannelModule {
   private service: ChannelService
 
-  constructor(configs: ChannelGatewayConfig[]) {
+  constructor(configs: ChannelConfig[]) {
     this.service = new ChannelService()
     for (const cfg of configs) {
       this.service.add(new ChannelGateway(cfg))

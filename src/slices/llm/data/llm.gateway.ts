@@ -1,17 +1,15 @@
 import type { ILlmGateway } from "../domain/llm.gateway"
+import type { LlmConfig } from "../domain/llm.types"
 import { ClaudeRepository } from "./repositories/claude/claude.repository"
-
-export type LlmGatewayConfig =
-  | { provider: "claude"; apiKey?: string; model?: string }
 
 export class LlmGateway implements ILlmGateway {
   private repository: ILlmGateway
 
-  constructor(config: LlmGatewayConfig) {
+  constructor(config: LlmConfig) {
     this.repository = this.createRepository(config)
   }
 
-  private createRepository(config: LlmGatewayConfig): ILlmGateway {
+  private createRepository(config: LlmConfig): ILlmGateway {
     switch (config.provider) {
       case "claude":
         return new ClaudeRepository({

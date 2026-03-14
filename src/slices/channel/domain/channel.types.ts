@@ -15,3 +15,6 @@ export interface Channel {
   send(to: string, text: string): Promise<void>
   onMessage(handler: (msg: Message) => Promise<void>): void
 }
+
+export type ChannelConfig =
+  | { type: "telegram"; token: string }

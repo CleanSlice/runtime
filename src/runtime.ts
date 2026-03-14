@@ -1,6 +1,6 @@
 import type { Tool } from "./slices/tool"
 import type { Event } from "./slices/event"
-import type { ChannelGatewayConfig } from "./slices/channel/data/channel.gateway"
+import type { ChannelGatewayConfig } from "../channel"
 import type { LlmGatewayConfig } from "./slices/llm/llm.module"
 import { ChannelModule } from "./slices/channel/channel.module"
 import { SessionModule } from "./slices/session/session.module"

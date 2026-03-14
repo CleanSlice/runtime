@@ -13,3 +13,6 @@ export interface ModelLlm {
     tools: Tool[]
   ): Promise<ModelResponse>
 }
+
+export type LlmConfig =
+  | { provider: "claude"; apiKey?: string; model?: string }
