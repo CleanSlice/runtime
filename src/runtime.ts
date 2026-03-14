@@ -1,7 +1,7 @@
 import type { ChannelGateway } from "./slices/channel/domain/channel.gateway"
 import type { Tool } from "./shared/types/Tool"
 import type { Message } from "./shared/types/Message"
-import type { ModelAdapter } from "./slices/adapters/domain/adapter.types"
+import type { ModelAdapter } from "./slices/adapter/domain/adapter.types"
 import type { Event } from "./shared/types/Event"
 import { ChannelServer } from "./slices/channel/channel.server"
 import { SessionManager } from "./slices/session/session.manager"

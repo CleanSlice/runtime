@@ -1,5 +1,5 @@
 import { AgentRuntime } from "./runtime"
-import { ClaudeAdapter } from "./slices/adapters"
+import { ClaudeAdapter } from "./slices/adapter"
 import { TelegramChannel } from "./slices/channel/data/telegram.channel"
 
 const runtime = new AgentRuntime({
