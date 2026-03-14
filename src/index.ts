@@ -9,6 +9,9 @@ if (existsSync(".env")) {
 }
 
 import { AgentRuntime } from "./runtime"
+import { ToolGateway } from "./slices/tool/data/tool.gateway"
+
+const toolGateway = new ToolGateway()
 
 const runtime = new AgentRuntime({
   agentDir: ".agent",
@@ -16,6 +19,7 @@ const runtime = new AgentRuntime({
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },
   ],
+  tools: toolGateway.getAll(),
 })
 
 await runtime.start()

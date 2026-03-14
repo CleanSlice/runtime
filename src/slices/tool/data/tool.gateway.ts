@@ -1,18 +1,21 @@
 import type { IToolGateway } from "../domain/tool.gateway"
 import type { Tool, ToolContext } from "../domain/tool.types"
-import { ExecRepository } from "./repositories/exec/exec.repository"
-import { FileRepository } from "./repositories/file/file.repository"
-import { HttpRepository } from "./repositories/http/http.repository"
-import { MessageRepository } from "./repositories/message/message.repository"
+import { ExecTool } from "./repositories/exec/exec.repository"
+import { FileTool } from "./repositories/file/file.repository"
+import { HttpTool } from "./repositories/http/http.repository"
+import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
 
   constructor() {
-    this.register(new ExecRepository())
-    this.register(new FileRepository())
-    this.register(new HttpRepository())
-    this.register(new MessageRepository())
+    this.register(ExecTool)
+    this.register(FileTool)
+    this.register(HttpTool)
+    this.register(CronListRepository as Tool)
+    this.register(CronAddRepository as Tool)
+    this.register(CronRemoveRepository as Tool)
+    this.register(CronDisableRepository as Tool)
   }
 
   private register(tool: Tool): void {
