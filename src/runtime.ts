@@ -49,8 +49,8 @@ export class AgentRuntime {
       await this.handleMessage({
         id: randomUUID(),
         text: job.message,
-        from: "cron",
-        channel: "internal",
+        from: job.to ?? "cron",
+        channel: job.channel ?? "internal",
         ts: Date.now(),
         sessionId: `cron:${job.id}`,
       })
