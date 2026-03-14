@@ -18,3 +18,4 @@ export interface Channel {
 
 export type ChannelConfig =
   | { type: "telegram"; token: string }
+  | { type: "slack"; botToken: string; appToken: string }
