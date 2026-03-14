@@ -1,14 +1,14 @@
 import type { ICronGateway } from "./cron.gateway"
-import type { Job } from "./cron.types"
+import type { CronJob } from "./cron.types"
 
 export class CronService {
   constructor(private gateway: ICronGateway) {}
 
-  async list(): Promise<Job[]> {
+  async list(): Promise<CronJob[]> {
     return this.gateway.load()
   }
 
-  async add(job: Job): Promise<void> {
+  async add(job: CronJob): Promise<void> {
     const jobs = await this.gateway.load()
     jobs.push(job)
     await this.gateway.save(jobs)
@@ -28,7 +28,7 @@ export class CronService {
     }
   }
 
-  shouldRun(job: Job, now: Date): boolean {
+  shouldRun(job: CronJob, now: Date): boolean {
     const cron = this.gateway.parse(job.schedule)
     return (
       (cron.minute === null || cron.minute === now.getMinutes()) &&

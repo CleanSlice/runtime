@@ -1,4 +1,4 @@
-export interface Job {
+export interface CronJob {
   id: string
   name: string
   schedule: string  // cron expression "* * * * *"

@@ -1,17 +1,17 @@
-import type { Job } from "./domain/cron.types"
+import type { CronJob } from "./domain/cron.types"
 import { CronService } from "./domain/cron.service"
 import { CronGateway } from "./data/cron.gateway"
 
 export class CronScheduler {
   private service: CronService
   private interval?: ReturnType<typeof setInterval>
-  private handler?: (job: Job) => Promise<void>
+  private handler?: (job: CronJob) => Promise<void>
 
   constructor(agentDir: string) {
     this.service = new CronService(new CronGateway(agentDir))
   }
 
-  onJob(handler: (job: Job) => Promise<void>): void {
+  onJob(handler: (job: CronJob) => Promise<void>): void {
     this.handler = handler
   }
 
