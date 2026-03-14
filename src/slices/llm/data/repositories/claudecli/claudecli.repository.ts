@@ -4,15 +4,11 @@ import type { Tool } from "../../../../tool/tool.module"
 import type { Event } from "../../../../event"
 import { spawn } from "child_process"
 
-/**
- * ClaudeCliRepository — uses the `claude` CLI (Claude Code) to run completions.
- * This bypasses the need for a direct API key — uses the OAuth token the CLI already has.
- */
 export class ClaudeCliRepository implements ILlmGateway {
   private cliBin: string
   private model: string
 
-  constructor({ cliBin = "claude", model = "claude-sonnet-4-6" }: {
+  constructor({ cliBin = "/home/dmitriyzhuk/.local/bin/claude", model = "claude-sonnet-4-6" }: {
     cliBin?: string
     model?: string
   } = {}) {
@@ -21,12 +17,8 @@ export class ClaudeCliRepository implements ILlmGateway {
   }
 
   async complete(systemPrompt: string, history: Event[], _tools: Tool[]): Promise<ModelResponse> {
-    const lastUser = history.filter(e => e.type === "user").pop()
-    const userText = lastUser ? String((lastUser.data as { text?: unknown })?.text ?? lastUser.data) : ""
-
-    // Build conversation context
     const contextLines: string[] = []
-    for (const event of history.slice(-10)) { // last 10 events for context
+    for (const event of history.slice(-10)) {
       if (event.type === "user") {
         contextLines.push(`User: ${String((event.data as { text?: unknown })?.text ?? "")}`)
       } else if (event.type === "assistant") {
@@ -37,8 +29,8 @@ export class ClaudeCliRepository implements ILlmGateway {
     const prompt = [
       systemPrompt,
       "",
-      ...(contextLines.length > 0 ? ["--- Conversation history ---", ...contextLines, "---", ""] : []),
-      `Now respond to the last user message: ${userText}`,
+      ...(contextLines.length > 1 ? ["--- Conversation ---", ...contextLines.slice(0, -1), "---", ""] : []),
+      contextLines[contextLines.length - 1] ?? "",
     ].join("\n")
 
     const text = await this.runCli(prompt)
@@ -47,41 +39,52 @@ export class ClaudeCliRepository implements ILlmGateway {
 
   private runCli(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const env = {
-        ...process.env,
-        CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
+      if (!oauthToken) {
+        return reject(new Error("CLAUDE_CODE_OAUTH_TOKEN env var not set"))
       }
 
-      console.log(`[claude-cli] spawning with prompt length=${prompt.length}`)
+      const env = {
+        ...process.env,
+        CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
+        HOME: process.env.HOME ?? "/home/dmitriyzhuk",
+      }
 
-      // Pass prompt via stdin to avoid arg length limits
+      console.log(`[claude-cli] spawning prompt_len=${prompt.length}`)
+
+      // Pass prompt via stdin — avoids arg-length issues and TTY hang
       const proc = spawn(this.cliBin, [
         "--print",
         "--permission-mode", "bypassPermissions",
         "--model", this.model,
-      ], { env })
+      ], { env, stdio: ["pipe", "pipe", "pipe"] })
+
+      proc.stdin.write(prompt)
+      proc.stdin.end()
 
       let stdout = ""
       let stderr = ""
 
-      proc.stdout.on("data", d => { stdout += d.toString() })
-      proc.stderr.on("data", d => { stderr += d.toString() })
+      const timer = setTimeout(() => {
+        proc.kill()
+        reject(new Error("claude CLI timeout after 120s"))
+      }, 120_000)
 
-      // Write prompt to stdin
-      proc.stdin.write(prompt)
-      proc.stdin.end()
+      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString() })
+      proc.stderr.on("data", (d: Buffer) => { stderr += d.toString() })
 
-      proc.on("close", code => {
-        console.log(`[claude-cli] exited code=${code} stdout_len=${stdout.length} stderr=${stderr.slice(0,100)}`)
+      proc.on("close", (code: number) => {
+        clearTimeout(timer)
+        console.log(`[claude-cli] done code=${code} stdout_len=${stdout.length} stderr=${stderr.slice(0,100)}`)
         if (code !== 0) {
-          reject(new Error(`claude CLI exited ${code}: ${stderr}`))
+          reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 300)}`))
         } else {
           resolve(stdout.trim())
         }
       })
 
-      proc.on("error", err => {
-        console.error("[claude-cli] spawn error:", err)
+      proc.on("error", (err: Error) => {
+        clearTimeout(timer)
         reject(err)
       })
     })
