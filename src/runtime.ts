@@ -1,12 +1,13 @@
 import type { Tool } from "./slices/tool"
 import type { Event } from "./slices/event"
-import type { ChannelGatewayConfig } from "../channel"
+import type { ChannelGatewayConfig } from "./slices/channel"
 import type { LlmGatewayConfig } from "./slices/llm/llm.module"
 import { ChannelModule } from "./slices/channel/channel.module"
 import { SessionModule } from "./slices/session/session.module"
 import { AgentModule } from "./slices/agent/agent.module"
 import { MemoryModule } from "./slices/memory/memory.module"
 import { CronModule } from "./slices/cron/cron.module"
+import { HeartbeatModule } from "./slices/heartbeat/heartbeat.module"
 import { LlmModule } from "./slices/llm/llm.module"
 import { randomUUID } from "crypto"
 
@@ -26,6 +27,7 @@ export class AgentRuntime {
   private agent: AgentModule
   private memory: MemoryModule
   private cron: CronModule
+  private heartbeat: HeartbeatModule
 
   constructor(config: RuntimeConfig) {
     this.agentDir = config.agentDir ?? ".agent"
@@ -37,6 +39,7 @@ export class AgentRuntime {
     this.agent = new AgentModule(this.agentDir)
     this.memory = new MemoryModule(this.agentDir)
     this.cron = new CronModule(this.agentDir)
+    this.heartbeat = new HeartbeatModule(this.agentDir, 30 * 60 * 1000) // every 30 min
   }
 
   async start(): Promise<void> {
@@ -56,11 +59,25 @@ export class AgentRuntime {
       })
     })
     this.cron.start()
+
+    // Heartbeat — reads .agent/HEARTBEAT.md and acts on it
+    this.heartbeat.onHeartbeat(async (message) => {
+      await this.handleMessage({
+        id: randomUUID(),
+        text: message,
+        from: "heartbeat",
+        channel: "internal",
+        ts: Date.now(),
+        sessionId: "heartbeat",
+      })
+    })
+    this.heartbeat.start()
   }
 
   async stop(): Promise<void> {
     await this.channel.stop()
     this.cron.stop()
+    this.heartbeat.stop()
   }
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
