@@ -1,7 +1,7 @@
 import type { ISessionGateway } from "../domain/session.gateway"
 import type { Event } from "../../event"
 import { mkdirSync } from "fs"
-import { appendFile } from "fs/promises"
+import { appendFile, writeFile } from "fs/promises"
 
 export class SessionGateway implements ISessionGateway {
   private dir: string
@@ -28,5 +28,11 @@ export class SessionGateway implements ISessionGateway {
     } catch {
       return []
     }
+  }
+
+  async rewrite(sessionId: string, events: Event[]): Promise<void> {
+    const path = `${this.dir}/${sessionId}.jsonl`
+    const content = events.map(e => JSON.stringify(e)).join("\n") + "\n"
+    await writeFile(path, content)
   }
 }

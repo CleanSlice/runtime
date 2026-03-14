@@ -6,6 +6,8 @@ import { HttpTool } from "./repositories/http/http.repository"
 import { BrowserTool } from "./repositories/browser/browser.repository"
 import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
+import { WebSearchTool } from "./repositories/websearch/websearch.repository"
+import { ImageAnalyzeTool } from "./repositories/image/image.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -20,6 +22,8 @@ export class ToolGateway implements IToolGateway {
     this.register(CronAddRepository as Tool)
     this.register(CronRemoveRepository as Tool)
     this.register(CronDisableRepository as Tool)
+    this.register(WebSearchTool)
+    this.register(ImageAnalyzeTool)
   }
 
   private register(tool: Tool): void {

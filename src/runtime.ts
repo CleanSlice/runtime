@@ -83,8 +83,13 @@ export class AgentRuntime {
     }
     await this.session.append(sessionId, userEvent)
 
+    let history = await this.session.read(sessionId)
+    if (history.length > 50) {
+      await this.session.compact(sessionId, this.llm)
+      history = await this.session.read(sessionId)
+    }
+
     const systemPrompt = await this.agent.buildPrompt()
-    const history = await this.session.read(sessionId)
 
     let continueLoop = true
     while (continueLoop) {

@@ -34,4 +34,8 @@ export class SessionService {
   async read(sessionId: string): Promise<Event[]> {
     return this.gateway.read(sessionId)
   }
+
+  async rewrite(sessionId: string, events: Event[]): Promise<void> {
+    return this.gateway.rewrite(sessionId, events)
+  }
 }

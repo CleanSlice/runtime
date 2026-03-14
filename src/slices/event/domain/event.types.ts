@@ -1,4 +1,4 @@
-export type EventType = "user" | "assistant" | "tool_call" | "tool_result" | "system"
+export type EventType = "user" | "assistant" | "tool_call" | "tool_result" | "system" | "summary"
 
 export interface Event {
   id: string
