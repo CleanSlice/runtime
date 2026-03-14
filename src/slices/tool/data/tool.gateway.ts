@@ -12,6 +12,9 @@ import { ImageAnalyzeTool } from "./repositories/image/image.repository"
 import { PdfAnalyzeTool } from "./repositories/image/pdf.repository"
 import { TelegramSendTool } from "./repositories/message/telegram_send.repository"
 import { TtsTool } from "./repositories/message/tts.repository"
+import { MemorySearchTool } from "./repositories/memory/memory_search.repository"
+import { ProcessExecTool } from "./repositories/exec/process.repository"
+import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -32,6 +35,9 @@ export class ToolGateway implements IToolGateway {
     this.register(PdfAnalyzeTool)
     this.register(TelegramSendTool)
     this.register(TtsTool)
+    this.register(MemorySearchTool)
+    this.register(ProcessExecTool)
+    this.register(SpawnAgentTool)
   }
 
   private register(tool: Tool): void {
