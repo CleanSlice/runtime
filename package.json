@@ -2,10 +2,14 @@
   "name": "@cleanslice/runtime",
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "cleanslice": "./dist/cli.js"
+  },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun"
+    "cli": "bun run src/cli.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
