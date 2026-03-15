@@ -12,6 +12,7 @@ import { AccessModule } from "./slices/access/access.module"
 import { InviteRepository } from "./slices/access/data/repositories/invite/invite.repository"
 import { LlmModule } from "./slices/llm/llm.module"
 import { SkillModule } from "./slices/skill/skill.module"
+import { VoiceModule } from "./slices/voice/voice.module"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
@@ -33,6 +34,7 @@ export class AgentRuntime {
   private heartbeat: HeartbeatModule
   private access: AccessModule
   private skills: SkillModule
+  private voice: VoiceModule
 
   constructor(config: RuntimeConfig) {
     this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
@@ -49,6 +51,7 @@ export class AgentRuntime {
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
     this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
     this.skills = new SkillModule(this.agentDir)
+    this.voice = new VoiceModule(this.agentDir)
   }
 
   async start(): Promise<void> {
@@ -119,6 +122,15 @@ export class AgentRuntime {
         const newUserLink = this.access.getInviteLink(msg.from, botUsername)
         await this.channel.send(msg.channel, msg.from,
           `👋 Привет!\n\nЧтобы получить доступ — пригласи друга по своей ссылке:\n${newUserLink}\n\nКак только друг примет приглашение, ты получишь доступ автоматически.`
+        )
+        return
+      }
+
+      // Handle /voice toggle
+      if (text === "/voice") {
+        const isNowOn = this.voice.toggle(msg.from)
+        await this.channel.send(msg.channel, msg.from,
+          isNowOn ? "🔊 Voice mode enabled — I'll send voice messages" : "🔇 Voice mode disabled — back to text"
         )
         return
       }
@@ -222,7 +234,26 @@ export class AgentRuntime {
             data: { text: response.text },
           }
           await this.session.append(sessionId, assistantEvent)
-          await send(response.text)
+
+          // Voice mode: send as voice message if enabled for this user
+          if (msg.channel === "telegram" && this.voice.isEnabled(msg.from)) {
+            const tts = this.tools.find(t => t.name === "tts")
+            if (tts) {
+              try {
+                await tts.execute(
+                  { text: response.text, chat_id: msg.from },
+                  { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
+                )
+              } catch (err) {
+                console.error("[voice] TTS failed, falling back to text:", err)
+                await send(response.text)
+              }
+            } else {
+              await send(response.text)
+            }
+          } else {
+            await send(response.text)
+          }
         }
       }
     }
