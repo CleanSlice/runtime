@@ -17,6 +17,7 @@ import { TtsTool } from "./repositories/message/tts.repository"
 import { MemorySearchTool } from "./repositories/memory/memory_search.repository"
 import { ProcessExecTool } from "./repositories/exec/process.repository"
 import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
+import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "./repositories/secret/secret.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -42,6 +43,10 @@ export class ToolGateway implements IToolGateway {
     this.register(MemorySearchTool)
     this.register(ProcessExecTool)
     this.register(SpawnAgentTool)
+    this.register(SecretSetTool)
+    this.register(SecretGetTool)
+    this.register(SecretListTool)
+    this.register(SecretDeleteTool)
   }
 
   private register(tool: Tool): void {
