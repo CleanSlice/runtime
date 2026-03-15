@@ -220,12 +220,13 @@ export class AgentRuntime {
         const taskId = task.id
         console.log(`[task:${taskId.slice(0, 6)}] started`)
 
-        // Append user message as shared context (no taskId = visible to all tasks)
+        // Append user message tagged with taskId — each task sees only its own user message
         const userEvent: Event = {
           id: randomUUID(),
           type: "user",
           ts: Date.now(),
           data: { text: msg.text, from: msg.from },
+          taskId,  // private to this task
         }
         await this.session.append(sessionId, userEvent)
 
@@ -336,7 +337,7 @@ export class AgentRuntime {
                 type: "assistant",
                 ts: Date.now(),
                 data: { text: response.text },
-                taskId,
+                // no taskId — assistant responses are shared context for future tasks
               }
               await this.session.append(sessionId, assistantEvent)
 
