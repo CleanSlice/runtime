@@ -172,7 +172,7 @@ export class AgentRuntime {
       // /start (no code)
       if (text === "/start") {
         if (this.access.isAllowed(msg.from)) {
-          // Already has access — silently ignore /start, don't pass to LLM
+          await this.channel.send(msg.channel, msg.from, "✅ Всё работает. Просто напиши что нужно.")
           return
         }
         this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
