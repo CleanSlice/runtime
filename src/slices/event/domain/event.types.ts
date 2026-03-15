@@ -5,4 +5,5 @@ export interface Event {
   type: EventType
   ts: number
   data: unknown
+  taskId?: string   // undefined = belongs to all tasks (shared context)
 }

@@ -13,6 +13,9 @@ import { InviteRepository } from "./slices/access/data/repositories/invite/invit
 import { LlmModule } from "./slices/llm/llm.module"
 import { SkillModule } from "./slices/skill/skill.module"
 import { VoiceModule } from "./slices/voice/voice.module"
+import { TaskManager } from "./slices/task/task.manager"
+import { Dispatcher } from "./slices/task/dispatcher"
+import type { Task } from "./slices/task/task.manager"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
@@ -35,6 +38,8 @@ export class AgentRuntime {
   private access: AccessModule
   private skills: SkillModule
   private voice: VoiceModule
+  private tasks: TaskManager
+  private dispatcher: Dispatcher
 
   constructor(config: RuntimeConfig) {
     this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
@@ -46,12 +51,13 @@ export class AgentRuntime {
     this.agent = new AgentModule(this.agentDir)
     this.memory = new MemoryModule(this.agentDir)
     this.cron = new CronModule(this.agentDir)
-    this.heartbeat = new HeartbeatModule(this.agentDir, 30 * 60 * 1000) // every 30 min
-    // Admin IDs from env or config — always have access
+    this.heartbeat = new HeartbeatModule(this.agentDir, 30 * 60 * 1000)
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
     this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
+    this.tasks = new TaskManager()
+    this.dispatcher = new Dispatcher(this.tasks)
   }
 
   async start(): Promise<void> {
@@ -73,7 +79,6 @@ export class AgentRuntime {
     })
     this.cron.start()
 
-    // Heartbeat — reads .agent/HEARTBEAT.md and acts on it
     this.heartbeat.onHeartbeat(async (message) => {
       await this.handleMessage({
         id: randomUUID(),
@@ -95,70 +100,80 @@ export class AgentRuntime {
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
     console.log(`[msg] from=${msg.from} channel=${msg.channel} text="${msg.text}"`)
-    try {
 
-    // Internal messages (cron, heartbeat) bypass access control
     const isInternal = msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
 
+    // --- Access control & built-in commands (sync, instant) ---
     if (!isInternal) {
       const text = msg.text.trim()
       const botUsername = process.env.BOT_USERNAME ?? "dv_cleanslice_bot"
 
-      // Handle /start with invite code: /start <code>
+      // /start <invite_code>
       const startMatch = text.match(/^\/start\s+(\S+)/)
       if (startMatch) {
-        const inviteCode = startMatch[1]
-        const result = this.access.processInvite(msg.from, inviteCode)
-
-        // Notify the activated user
+        const result = this.access.processInvite(msg.from, startMatch[1])
         if (result.activated && !result.alreadyActive) {
           const activatedLink = this.access.getInviteLink(result.activated.userId, botUsername)
           await this.channel.send(msg.channel, result.activated.userId,
-            `🎉 Ты активирован!\n\nТеперь можешь общаться с ботом.\n\nПоделись своей ссылкой чтобы пригласить друга:\n${activatedLink}`
+            `🎉 Ты активирован!\n\nТеперь можешь общаться с ботом.\n\nПоделись своей ссылкой:\n${activatedLink}`
           )
         }
-
-        // New user is now pending
         const newUserLink = this.access.getInviteLink(msg.from, botUsername)
         await this.channel.send(msg.channel, msg.from,
-          `👋 Привет!\n\nЧтобы получить доступ — пригласи друга по своей ссылке:\n${newUserLink}\n\nКак только друг примет приглашение, ты получишь доступ автоматически.`
+          `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${newUserLink}`
         )
         return
       }
 
-      // Handle /voice toggle
+      // /voice toggle
       if (text === "/voice") {
         const isNowOn = this.voice.toggle(msg.from)
         await this.channel.send(msg.channel, msg.from,
-          isNowOn ? "🔊 Voice mode enabled — I'll send voice messages" : "🔇 Voice mode disabled — back to text"
+          isNowOn ? "🔊 Voice mode enabled" : "🔇 Voice mode disabled"
         )
         return
       }
 
-      // Handle plain /start (no code)
+      // /tasks — list active tasks
+      if (text === "/tasks") {
+        await this.channel.send(msg.channel, msg.from, this.tasks.formatList(msg.from))
+        return
+      }
+
+      // /cancel <id>
+      const cancelMatch = text.match(/^\/cancel\s+(\S+)/)
+      if (cancelMatch) {
+        const cancelled = this.tasks.cancel(cancelMatch[1])
+        await this.channel.send(msg.channel, msg.from,
+          cancelled ? `🚫 Задача ${cancelMatch[1]} отменена.` : `❓ Задача не найдена или уже завершена.`
+        )
+        return
+      }
+
+      // /start (no code)
       if (text === "/start") {
-        const user = this.access.getUser(msg.from)
-        if (!user) {
-          const record = this.access.registerPending(msg.from)
+        if (!this.access.getUser(msg.from)) {
+          this.access.registerPending(msg.from)
           const link = this.access.getInviteLink(msg.from, botUsername)
           await this.channel.send(msg.channel, msg.from,
-            `👋 Привет!\n\nЧтобы получить доступ — пригласи друга по своей ссылке:\n${link}\n\nКак только друг примет приглашение, ты получишь доступ.`
+            `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${link}`
           )
           return
         }
       }
 
-      // Check access
+      // Access check
       if (!this.access.isAllowed(msg.from)) {
-        const user = this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
+        this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
         const link = this.access.getInviteLink(msg.from, botUsername)
         await this.channel.send(msg.channel, msg.from,
-          `🔒 Доступ закрыт.\n\nПригласи друга по своей ссылке чтобы получить доступ:\n${link}`
+          `🔒 Доступ закрыт.\n\nПригласи друга:\n${link}`
         )
         return
       }
     }
 
+    // --- Dispatcher: decide what to do with this message ---
     const sessionObj = this.session.getOrCreate(msg.channel, msg.from)
     const sessionId = sessionObj.id
 
@@ -168,99 +183,195 @@ export class AgentRuntime {
       }
     }
 
-    const userEvent: Event = {
-      id: randomUUID(),
-      type: "user",
-      ts: Date.now(),
-      data: { text: msg.text, from: msg.from },
-    }
-    await this.session.append(sessionId, userEvent)
+    if (!isInternal) {
+      const decision = this.dispatcher.dispatch(msg.from, msg.text)
 
-    const history = await this.session.read(sessionId)
+      if (decision.kind === "ask") {
+        // Ambiguous — ask user and wait for their clarification
+        await send(decision.question)
+        // Store pending message to attach after user replies
+        // (for now just start a new task — user can /cancel if needed)
+      }
 
-    let systemPrompt = await this.agent.buildPrompt(msg.from)
+      if (decision.kind === "join") {
+        // Inject into existing task's inbox
+        console.log(`[dispatcher] joining task ${decision.task.id.slice(0, 6)}: "${msg.text.slice(0, 40)}"`)
+        this.tasks.inject(decision.task.id, msg.text)
 
-    // Inject matching skill instructions
-    const skill = this.skills.select(msg.text)
-    if (skill) {
-      systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
-      console.log(`[skill] activated: ${skill.name}`)
-    }
-
-    let continueLoop = true
-    while (continueLoop) {
-      const response = await this.llm.complete(systemPrompt, history, this.tools)
-
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        for (const call of response.toolCalls) {
-          const toolUseId = randomUUID()
-          const callEvent: Event = {
-            id: randomUUID(),
-            type: "tool_call",
-            ts: Date.now(),
-            data: { name: call.name, params: call.params, toolUseId },
-          }
-          await this.session.append(sessionId, callEvent)
-          history.push(callEvent)
-
-          const tool = this.tools.find(t => t.name === call.name)
-          let result: unknown
-          if (tool) {
-            try {
-              result = await tool.execute(call.params, { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send })
-            } catch (err) {
-              result = { error: String(err) }
-            }
-          } else {
-            result = { error: `Unknown tool: ${call.name}` }
-          }
-
-          const resultEvent: Event = {
-            id: randomUUID(),
-            type: "tool_result",
-            ts: Date.now(),
-            data: { toolUseId, result },
-          }
-          await this.session.append(sessionId, resultEvent)
-          history.push(resultEvent)
+        // Append to session as shared context (no taskId — visible to all)
+        const userEvent: Event = {
+          id: randomUUID(),
+          type: "user",
+          ts: Date.now(),
+          data: { text: msg.text, from: msg.from },
+          // no taskId — shared context
         }
-      } else {
-        continueLoop = false
-        if (response.text) {
-          const assistantEvent: Event = {
-            id: randomUUID(),
-            type: "assistant",
-            ts: Date.now(),
-            data: { text: response.text },
-          }
-          await this.session.append(sessionId, assistantEvent)
-
-          // Voice mode: send as voice message if enabled for this user
-          if (msg.channel === "telegram" && this.voice.isEnabled(msg.from)) {
-            const tts = this.tools.find(t => t.name === "tts")
-            if (tts) {
-              try {
-                await tts.execute(
-                  { text: response.text, chat_id: msg.from },
-                  { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
-                )
-              } catch (err) {
-                console.error("[voice] TTS failed, falling back to text:", err)
-                await send(response.text)
-              }
-            } else {
-              await send(response.text)
-            }
-          } else {
-            await send(response.text)
-          }
-        }
+        await this.session.append(sessionId, userEvent)
+        return
       }
     }
 
-    this.session.touch(sessionId)
-    } catch (err) {
-      console.error(`[error] handleMessage failed:`, err)
-    }
+    // --- Start new task (fire-and-forget) ---
+    const taskLabel = msg.text.slice(0, 60) + (msg.text.length > 60 ? "…" : "")
+    console.log(`[runtime] starting task for "${taskLabel.slice(0, 40)}"`)
+
+    this.tasks.start(msg.from, taskLabel, async (task: Task) => {
+      try {
+        const taskId = task.id
+        console.log(`[task:${taskId.slice(0, 6)}] started`)
+
+        // Append user message as shared context (no taskId = visible to all tasks)
+        const userEvent: Event = {
+          id: randomUUID(),
+          type: "user",
+          ts: Date.now(),
+          data: { text: msg.text, from: msg.from },
+        }
+        await this.session.append(sessionId, userEvent)
+
+        // Read shared history + this task's own events
+        const history = await this.session.readForTask(sessionId, taskId)
+
+        let systemPrompt = await this.agent.buildPrompt(msg.from)
+        const skill = this.skills.select(msg.text)
+        if (skill) {
+          systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
+          console.log(`[skill] activated: ${skill.name}`)
+        }
+
+        const MAX_ITERATIONS = 10
+        let continueLoop = true
+        let iterations = 0
+
+        while (continueLoop) {
+          if (task.controller.signal.aborted) {
+            console.log(`[task:${taskId.slice(0, 6)}] cancelled`)
+            break
+          }
+
+          // Check inbox — if user sent clarification, append it to history and session
+          while (task.inbox.length > 0) {
+            const inboxText = task.inbox.shift()!
+            console.log(`[task:${taskId.slice(0, 6)}] inbox: "${inboxText.slice(0, 40)}"`)
+            const inboxEvent: Event = {
+              id: randomUUID(),
+              type: "user",
+              ts: Date.now(),
+              data: { text: inboxText, from: msg.from },
+              taskId,
+            }
+            await this.session.append(sessionId, inboxEvent)
+            history.push(inboxEvent)
+          }
+
+          if (++iterations > MAX_ITERATIONS) {
+            console.error(`[task:${taskId.slice(0, 6)}] exceeded ${MAX_ITERATIONS} iterations`)
+            await send("⚠️ Reached max iterations. Please try again.")
+            break
+          }
+
+          let response
+          try {
+            console.log(`[task:${taskId.slice(0, 6)}] calling llm iter=${iterations}`)
+            response = await this.llm.complete(systemPrompt, history, this.tools)
+            console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
+          } catch (err: unknown) {
+            const status = (err as { status?: number })?.status
+            console.error(`[task:${taskId.slice(0, 6)}] LLM error (status=${status}):`, err)
+            if (!isInternal) await send("⚠️ Что-то пошло не так. Попробуй ещё раз.")
+            break
+          }
+
+          if (response.toolCalls && response.toolCalls.length > 0) {
+            for (const call of response.toolCalls) {
+              if (task.controller.signal.aborted) break
+              console.log(`[task:${taskId.slice(0, 6)}] tool_call: ${call.name}`)
+
+              const toolUseId = randomUUID()
+              const callEvent: Event = {
+                id: randomUUID(),
+                type: "tool_call",
+                ts: Date.now(),
+                data: { name: call.name, params: call.params, toolUseId },
+                taskId,
+              }
+              await this.session.append(sessionId, callEvent)
+              history.push(callEvent)
+
+              const tool = this.tools.find(t => t.name === call.name)
+              console.log(`[task:${taskId.slice(0, 6)}] tool found: ${!!tool}`)
+              let result: unknown
+              if (tool) {
+                try {
+                  result = await tool.execute(call.params, {
+                    sessionId,
+                    agentDir: this.agentDir,
+                    from: msg.from,
+                    channel: msg.channel,
+                    send,
+                  })
+                } catch (err) {
+                  result = { error: String(err) }
+                }
+              } else {
+                result = { error: `Unknown tool: ${call.name}` }
+              }
+
+              const resultEvent: Event = {
+                id: randomUUID(),
+                type: "tool_result",
+                ts: Date.now(),
+                data: { toolUseId, result },
+                taskId,
+              }
+              await this.session.append(sessionId, resultEvent)
+              history.push(resultEvent)
+            }
+          } else {
+            continueLoop = false
+            console.log(`[task:${taskId.slice(0, 6)}] final response, text=${response.text?.length ?? 0}, isInternal=${isInternal}`)
+            if (response.text) {
+              const assistantEvent: Event = {
+                id: randomUUID(),
+                type: "assistant",
+                ts: Date.now(),
+                data: { text: response.text },
+                taskId,
+              }
+              await this.session.append(sessionId, assistantEvent)
+
+              if (msg.channel === "telegram" && this.voice.isEnabled(msg.from)) {
+                const tts = this.tools.find(t => t.name === "tts")
+                if (tts) {
+                  try {
+                    await tts.execute(
+                      { text: response.text, chat_id: msg.from },
+                      { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
+                    )
+                  } catch (err) {
+                    console.error("[voice] TTS failed:", err)
+                    await send(response.text)
+                  }
+                } else {
+                  await send(response.text)
+                }
+              } else {
+                console.log(`[task:${taskId.slice(0, 6)}] sending text response`)
+                await send(response.text)
+                console.log(`[task:${taskId.slice(0, 6)}] send done`)
+              }
+            }
+          }
+        }
+
+        this.session.touch(sessionId)
+
+      } catch (err) {
+        console.error(`[task:${task.id.slice(0, 6)}] unhandled:`, err)
+        try {
+          if (!isInternal) await this.channel.send(msg.channel, msg.from, "⚠️ Что-то пошло не так. Попробуй ещё раз.")
+        } catch { /* ignore */ }
+      }
+    })
   }
 }

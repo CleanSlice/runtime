@@ -88,6 +88,9 @@ export class TelegramRepository {
                   const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileJson.result.file_path}`
                   metadata.photoUrl = fileUrl
                   metadata.hasPhoto = true
+                  // Include URL in text so LLM can analyze it
+                  const caption = msg!.caption ? ` Caption: "${msg!.caption}"` : ""
+                  text = `[User sent a photo]${caption}\nPhoto URL: ${fileUrl}\nPlease analyze this image using the image_analyze tool.`
                 }
 
                 await handler({

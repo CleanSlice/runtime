@@ -33,6 +33,40 @@ export const BrowserScreenshotTool: Tool = {
     const exists = await file.exists()
     if (!exists) return { error: "Screenshot failed — file not created" }
 
+    // Analyze screenshot with Claude vision
+    let visionDescription: string | undefined
+    const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
+    if (oauthToken) {
+      try {
+        const imgBuffer = await file.arrayBuffer()
+        const base64 = Buffer.from(imgBuffer).toString("base64")
+        const visionRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${oauthToken}`,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "oauth-2025-04-20",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1024,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image", source: { type: "base64", media_type: "image/png", data: base64 } },
+                { type: "text", text: "Describe exactly what you see on this screenshot: page content, visible text, forms, buttons, errors, dialogs, current state." },
+              ],
+            }],
+          }),
+        })
+        const visionData = await visionRes.json() as { content?: Array<{ type: string; text?: string }> }
+        visionDescription = visionData?.content?.find(c => c.type === "text")?.text
+      } catch (_e) {
+        // vision failed, continue without it
+      }
+    }
+
     // Send via Telegram
     const telegramToken = process.env.TELEGRAM_TOKEN
     const chatId = ctx.from
@@ -50,10 +84,10 @@ export const BrowserScreenshotTool: Tool = {
 
       await Bun.spawn(["rm", "-f", outPath]).exited
 
-      if (data.ok) return { ok: true, sent: true, url }
+      if (data.ok) return { ok: true, sent: true, url, vision: visionDescription }
       return { error: `Telegram send failed: ${data.description}` }
     }
 
-    return { ok: true, sent: false, path: outPath, url }
+    return { ok: true, sent: false, path: outPath, url, vision: visionDescription }
   },
 }

@@ -30,6 +30,16 @@ export class SessionModule {
     return this.service.read(sessionId)
   }
 
+  /**
+   * Read events visible to a specific task:
+   * - shared events (taskId undefined)
+   * - events belonging to this task (taskId === taskId)
+   */
+  async readForTask(sessionId: string, taskId: string): Promise<Event[]> {
+    const all = await this.service.read(sessionId)
+    return all.filter(e => !e.taskId || e.taskId === taskId)
+  }
+
   async compact(sessionId: string, llm: ILlmGateway): Promise<void> {
     const events = await this.service.read(sessionId)
     if (events.length <= COMPACTION_THRESHOLD) return

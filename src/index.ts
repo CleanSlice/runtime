@@ -8,6 +8,11 @@ if (existsSync(".env")) {
   }
 }
 
+// Prevent unhandled promise rejections from crashing the bot
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] caught:", reason)
+})
+
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/tool/data/tool.gateway"
 
