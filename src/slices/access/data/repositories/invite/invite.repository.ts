@@ -51,6 +51,18 @@ export class InviteRepository implements IAccessStrategy {
       return { newUser }
     }
 
+    // Block self-activation
+    if (inviter.userId === newUserId) {
+      gateway.save()
+      return { newUser }
+    }
+
+    // Block activation if new user is already active
+    if (newUser.status === "active" || newUser.status === "admin") {
+      gateway.save()
+      return { newUser, alreadyActive: true }
+    }
+
     if (inviter.status === "pending") {
       inviter.status = "active"
       inviter.activatedAt = Date.now()
