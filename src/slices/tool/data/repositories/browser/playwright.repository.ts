@@ -32,8 +32,18 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
     const { profile, actions } = schema.parse(params)
 
     const home = process.env.HOME ?? "/home/dmitriyzhuk"
-    const profileDir = `${home}/.cleanslice-browser-profiles/${profile}`
+
+    // Isolate browser profile per user — each user gets their own cookies/session
+    // Profile "instagram" for user 55212224 → "55212224-instagram"
+    // This prevents session leaks between users
+    const safeUserId = ctx.from.replace(/[^a-zA-Z0-9_\-.]/g, "_")
+    const isolatedProfile = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat"
+      ? `${safeUserId}-${profile}`
+      : profile
+
+    const profileDir = `${home}/.cleanslice-browser-profiles/${isolatedProfile}`
     mkdirSync(profileDir, { recursive: true })
+    console.log(`[browser_play] profile=${isolatedProfile} user=${ctx.from}`)
 
     const { chromium } = await import("playwright")
 
@@ -159,10 +169,10 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
       const currentUrl = page.url()
       const title = await page.title()
-      return { ok: true, profile, url: currentUrl, title, results }
+      return { ok: true, profile: isolatedProfile, url: currentUrl, title, results }
 
     } catch (err) {
-      return { ok: false, profile, error: String(err), results }
+      return { ok: false, profile: isolatedProfile, error: String(err), results }
     } finally {
       await browser.close()
     }
