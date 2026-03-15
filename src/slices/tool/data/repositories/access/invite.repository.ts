@@ -1,6 +1,7 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { AccessModule } from "../../../../access/access.module"
+import { InviteRepository } from "../../../../access/data/repositories/invite/invite.repository"
 
 const schema = z.object({
   action: z.enum(["get_link", "stats", "list_users"]).describe(
@@ -15,7 +16,7 @@ export const InviteTool: Tool = {
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { action } = schema.parse(params)
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
-    const access = new AccessModule(ctx.agentDir, adminIds)
+    const access = new AccessModule(ctx.agentDir, adminIds, new InviteRepository())
     const botUsername = process.env.BOT_USERNAME ?? "dv_cleanslice_bot"
 
     if (action === "get_link") {
