@@ -27,6 +27,50 @@ export class ClaudeRepository implements ILlmGateway {
     }
   }
 
+  async stream(
+    systemPrompt: string,
+    history: Event[],
+    tools: Tool[],
+    onChunk: (text: string) => void
+  ): Promise<ModelResponse> {
+    // Only stream when no tools — tool calls require complete response
+    if (tools.length > 0) {
+      return this.complete(systemPrompt, history, tools)
+    }
+
+    const messages = this.sanitizeMessages(this.eventsToMessages(history))
+
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        let accumulated = ""
+        const streamResponse = await this.client.messages.stream({
+          model: this.model,
+          max_tokens: 8096,
+          system: systemPrompt,
+          messages,
+        })
+
+        for await (const event of streamResponse) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            accumulated += event.delta.text
+            onChunk(accumulated)
+          }
+        }
+
+        return { text: accumulated, toolCalls: undefined }
+      } catch (err: unknown) {
+        lastError = err
+        const status = (err as { status?: number })?.status
+        if (status === 401 || status === 403 || status === 400) throw err
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, attempt * 2000))
+        }
+      }
+    }
+    throw lastError
+  }
+
   async complete(
     systemPrompt: string,
     history: Event[],

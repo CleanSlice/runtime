@@ -37,4 +37,12 @@ export class ChannelGateway implements IChannelGateway {
   onMessage(handler: (msg: Message) => Promise<void>): void {
     this.repository.onMessage(handler)
   }
+
+  streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+    if (this.repository instanceof TelegramRepository && this.repository.streamSend) {
+      return this.repository.streamSend(to, streamer)
+    }
+    // Fallback for non-streaming channels
+    return streamer(() => {}).then(text => this.repository.send(to, text))
+  }
 }

@@ -28,4 +28,8 @@ export class ChannelModule {
   async send(channel: string, to: string, text: string): Promise<void> {
     await this.service.send(channel, to, text)
   }
+
+  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+    await this.service.streamSend(channel, to, streamer)
+  }
 }

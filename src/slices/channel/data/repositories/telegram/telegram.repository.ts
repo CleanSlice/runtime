@@ -38,12 +38,44 @@ export class TelegramRepository {
   }
 
   async send(chatId: string, text: string): Promise<void> {
-    // No parse_mode by default — avoids Markdown conflicts with URLs/underscores
     await fetch(`${this.baseUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
     })
+  }
+
+  /**
+   * Send an empty placeholder message and return its message_id.
+   * Used to start streaming — we edit this message as tokens arrive.
+   */
+  async sendPlaceholder(chatId: string): Promise<number | null> {
+    try {
+      const res = await fetch(`${this.baseUrl}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: "…", parse_mode: "Markdown" }),
+      })
+      const json = (await res.json()) as { ok: boolean; result?: { message_id: number } }
+      return json.result?.message_id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Edit an existing message — used to stream content progressively.
+   */
+  async editMessage(chatId: string, messageId: number, text: string): Promise<void> {
+    try {
+      await fetch(`${this.baseUrl}/editMessageText`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "Markdown" }),
+      })
+    } catch {
+      // Ignore edit errors — message may already be up to date
+    }
   }
 
   async sendTyping(chatId: string): Promise<void> {
@@ -52,6 +84,52 @@ export class TelegramRepository {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, action: "typing" }),
     })
+  }
+
+  /**
+   * Stream text to Telegram: sends placeholder "…", then edits every ~500ms as chunks arrive.
+   * streamer is a function that calls onChunk(accumulatedText) and returns final text.
+   */
+  async streamSend(chatId: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+    const messageId = await this.sendPlaceholder(chatId)
+    if (!messageId) {
+      // Fallback: just get the full text and send
+      const text = await streamer(() => {})
+      await this.send(chatId, text)
+      return
+    }
+
+    let lastSent = "…"
+    let pendingText = ""
+    let editing = false
+
+    // Throttled edit — at most once per 600ms to avoid Telegram rate limits (30 edits/min)
+    const flushEdit = async () => {
+      if (editing || pendingText === lastSent) return
+      editing = true
+      const toSend = pendingText
+      try {
+        await this.editMessage(chatId, messageId, toSend || "…")
+        lastSent = toSend
+      } finally {
+        editing = false
+      }
+    }
+
+    const interval = setInterval(() => flushEdit(), 600)
+
+    try {
+      const finalText = await streamer((accumulated: string) => {
+        pendingText = accumulated
+      })
+      pendingText = finalText
+    } finally {
+      clearInterval(interval)
+      // Final edit with complete text
+      if (pendingText && pendingText !== lastSent) {
+        await this.editMessage(chatId, messageId, pendingText)
+      }
+    }
   }
 
   private async poll(): Promise<void> {

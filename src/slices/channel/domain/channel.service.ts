@@ -30,4 +30,15 @@ export class ChannelService {
     if (!ch) throw new Error(`Channel not found: ${channel}`)
     await ch.send(to, text)
   }
+
+  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+    const ch = this.channels.find(c => c.name === channel)
+    if (!ch) throw new Error(`Channel not found: ${channel}`)
+    if (ch.streamSend) {
+      await ch.streamSend(to, streamer)
+    } else {
+      const text = await streamer(() => {})
+      await ch.send(to, text)
+    }
+  }
 }

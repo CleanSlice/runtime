@@ -18,6 +18,19 @@ export class LlmModule {
     return this.service.complete(systemPrompt, history, tools)
   }
 
+  canStream(): boolean {
+    const gw = this.getGateway()
+    return typeof gw.stream === "function"
+  }
+
+  stream(systemPrompt: string, history: Event[], tools: Tool[], onChunk: (text: string) => void): Promise<ModelResponse> {
+    const gw = this.getGateway()
+    if (gw.stream) {
+      return gw.stream(systemPrompt, history, tools, onChunk)
+    }
+    return this.service.complete(systemPrompt, history, tools)
+  }
+
   // Expose gateway for compaction (needs ILlmGateway interface)
   getGateway(): import("./domain/llm.gateway").ILlmGateway {
     return (this.service as unknown as { gateway: import("./domain/llm.gateway").ILlmGateway }).gateway
