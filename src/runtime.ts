@@ -171,14 +171,16 @@ export class AgentRuntime {
 
       // /start (no code)
       if (text === "/start") {
-        if (!this.access.getUser(msg.from)) {
-          this.access.registerPending(msg.from)
-          const link = this.access.getInviteLink(msg.from, botUsername)
-          await this.channel.send(msg.channel, msg.from,
-            `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${link}`
-          )
+        if (this.access.isAllowed(msg.from)) {
+          // Already has access — silently ignore /start, don't pass to LLM
           return
         }
+        this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
+        const link = this.access.getInviteLink(msg.from, botUsername)
+        await this.channel.send(msg.channel, msg.from,
+          `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${link}`
+        )
+        return
       }
 
       // Access check
