@@ -162,9 +162,16 @@ export class AgentRuntime {
       // /cancel <id>
       const cancelMatch = text.match(/^\/cancel\s+(\S+)/)
       if (cancelMatch) {
-        const cancelled = this.tasks.cancel(cancelMatch[1])
+        const taskId = cancelMatch[1]
+        const task = this.tasks.get(taskId)
+        // Reject if task exists but belongs to a different user
+        if (task && task.sessionId !== msg.from) {
+          await this.channel.send(msg.channel, msg.from, `❓ Задача не найдена или уже завершена.`)
+          return
+        }
+        const cancelled = this.tasks.cancel(taskId)
         await this.channel.send(msg.channel, msg.from,
-          cancelled ? `🚫 Задача ${cancelMatch[1]} отменена.` : `❓ Задача не найдена или уже завершена.`
+          cancelled ? `🚫 Задача ${taskId} отменена.` : `❓ Задача не найдена или уже завершена.`
         )
         return
       }
