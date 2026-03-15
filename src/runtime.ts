@@ -2,6 +2,7 @@ import type { Tool } from "./slices/tool"
 import type { Event } from "./slices/event"
 import type { ChannelGatewayConfig } from "./slices/channel"
 import type { LlmGatewayConfig } from "./slices/llm/llm.module"
+import { S3SyncService, type S3SyncConfig } from "./slices/sync/s3-sync.service"
 import { ChannelModule } from "./slices/channel/channel.module"
 import { SessionModule } from "./slices/session/session.module"
 import { AgentModule } from "./slices/agent/agent.module"
@@ -23,6 +24,7 @@ export interface RuntimeConfig {
   llm: LlmGatewayConfig
   channels: ChannelGatewayConfig[]
   tools?: Tool[]
+  s3?: S3SyncConfig
 }
 
 export class AgentRuntime {
@@ -40,6 +42,7 @@ export class AgentRuntime {
   private voice: VoiceModule
   private tasks: TaskManager
   private dispatcher: Dispatcher
+  private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
     this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
@@ -58,9 +61,21 @@ export class AgentRuntime {
     this.voice = new VoiceModule(this.agentDir)
     this.tasks = new TaskManager()
     this.dispatcher = new Dispatcher(this.tasks)
+
+    if (config.s3) {
+      this.s3sync = new S3SyncService(config.s3, this.agentDir)
+    } else if (process.env.S3_BUCKET) {
+      this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX }, this.agentDir)
+    }
   }
 
   async start(): Promise<void> {
+    // Pull data from S3 before loading anything
+    if (this.s3sync) {
+      await this.s3sync.pull()
+      this.s3sync.startAutoSync(60)
+    }
+
     await this.memory.load()
     await this.skills.load()
 
@@ -96,6 +111,10 @@ export class AgentRuntime {
     await this.channel.stop()
     this.cron.stop()
     this.heartbeat.stop()
+    if (this.s3sync) {
+      this.s3sync.stopAutoSync()
+      await this.s3sync.push()  // final push on shutdown
+    }
   }
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
