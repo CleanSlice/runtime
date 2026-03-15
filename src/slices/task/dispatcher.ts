@@ -18,8 +18,8 @@ export class Dispatcher {
 
   constructor(private tasks: TaskManager) {}
 
-  dispatch(userId: string, text: string): DispatchDecision {
-    const running = this.tasks.getRunning(userId)
+  dispatch(sessionId: string, text: string): DispatchDecision {
+    const running = this.tasks.getRunning(sessionId)
 
     // No active tasks — always new
     if (running.length === 0) return { kind: "new" }

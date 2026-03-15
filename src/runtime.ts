@@ -122,6 +122,11 @@ export class AgentRuntime {
 
     const isInternal = msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
 
+    // Session scoped by channel+user so that Telegram and Slack tasks for the
+    // same user never bleed into each other's dispatch queue.
+    const sessionObj = this.session.getOrCreate(msg.channel, msg.from)
+    const sessionId = sessionObj.id
+
     // --- Access control & built-in commands (sync, instant) ---
     if (!isInternal) {
       const text = msg.text.trim()
@@ -155,7 +160,7 @@ export class AgentRuntime {
 
       // /tasks — list active tasks
       if (text === "/tasks") {
-        await this.channel.send(msg.channel, msg.from, this.tasks.formatList(msg.from))
+        await this.channel.send(msg.channel, msg.from, this.tasks.formatList(sessionId))
         return
       }
 
@@ -164,8 +169,8 @@ export class AgentRuntime {
       if (cancelMatch) {
         const taskId = cancelMatch[1]
         const task = this.tasks.get(taskId)
-        // Reject if task exists but belongs to a different user
-        if (task && task.sessionId !== msg.from) {
+        // Reject if task exists but belongs to a different session (channel+user)
+        if (task && task.sessionId !== sessionId) {
           await this.channel.send(msg.channel, msg.from, `❓ Задача не найдена или уже завершена.`)
           return
         }
@@ -202,9 +207,6 @@ export class AgentRuntime {
     }
 
     // --- Dispatcher: decide what to do with this message ---
-    const sessionObj = this.session.getOrCreate(msg.channel, msg.from)
-    const sessionId = sessionObj.id
-
     const send = async (text: string) => {
       if (msg.channel !== "internal") {
         await this.channel.send(msg.channel, msg.from, text)
@@ -212,7 +214,7 @@ export class AgentRuntime {
     }
 
     if (!isInternal) {
-      const decision = this.dispatcher.dispatch(msg.from, msg.text)
+      const decision = this.dispatcher.dispatch(sessionId, msg.text)
 
       if (decision.kind === "ask") {
         // Ambiguous — ask user and wait for their clarification
@@ -243,7 +245,7 @@ export class AgentRuntime {
     const taskLabel = msg.text.slice(0, 60) + (msg.text.length > 60 ? "…" : "")
     console.log(`[runtime] starting task for "${taskLabel.slice(0, 40)}"`)
 
-    this.tasks.start(msg.from, taskLabel, async (task: Task) => {
+    this.tasks.start(sessionId, taskLabel, async (task: Task) => {
       try {
         const taskId = task.id
         console.log(`[task:${taskId.slice(0, 6)}] started`)
@@ -302,7 +304,18 @@ export class AgentRuntime {
           let response
           try {
             console.log(`[task:${taskId.slice(0, 6)}] calling llm iter=${iterations}`)
-            response = await this.llm.complete(systemPrompt, history, this.tools)
+            const canStream = msg.channel === "telegram" && !isInternal && this.llm.canStream()
+            if (canStream) {
+              // Stream response — send placeholder and edit as tokens arrive
+              let streamedResponse: import("./slices/llm/domain/llm.types").ModelResponse | undefined
+              await this.channel.streamSend(msg.channel, msg.from, async (onChunk) => {
+                streamedResponse = await this.llm.stream(systemPrompt, history, this.tools, onChunk)
+                return streamedResponse.text ?? ""
+              })
+              response = streamedResponse!
+            } else {
+              response = await this.llm.complete(systemPrompt, history, this.tools)
+            }
             console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
           } catch (err: unknown) {
             const status = (err as { status?: number })?.status
@@ -369,25 +382,30 @@ export class AgentRuntime {
               }
               await this.session.append(sessionId, assistantEvent)
 
-              if (msg.channel === "telegram" && this.voice.isEnabled(msg.from)) {
-                const tts = this.tools.find(t => t.name === "tts")
-                if (tts) {
-                  try {
-                    await tts.execute(
-                      { text: response.text, chat_id: msg.from },
-                      { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
-                    )
-                  } catch (err) {
-                    console.error("[voice] TTS failed:", err)
+              // If we streamed — message already sent via streamSend, skip re-send
+              const wasStreamed = msg.channel === "telegram" && !isInternal && this.llm.canStream()
+
+              if (!wasStreamed) {
+                if (msg.channel === "telegram" && this.voice.isEnabled(msg.from)) {
+                  const tts = this.tools.find(t => t.name === "tts")
+                  if (tts) {
+                    try {
+                      await tts.execute(
+                        { text: response.text, chat_id: msg.from },
+                        { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
+                      )
+                    } catch (err) {
+                      console.error("[voice] TTS failed:", err)
+                      await send(response.text)
+                    }
+                  } else {
                     await send(response.text)
                   }
                 } else {
+                  console.log(`[task:${taskId.slice(0, 6)}] sending text response`)
                   await send(response.text)
+                  console.log(`[task:${taskId.slice(0, 6)}] send done`)
                 }
-              } else {
-                console.log(`[task:${taskId.slice(0, 6)}] sending text response`)
-                await send(response.text)
-                console.log(`[task:${taskId.slice(0, 6)}] send done`)
               }
             }
           }
