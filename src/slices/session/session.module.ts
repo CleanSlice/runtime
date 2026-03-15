@@ -4,8 +4,8 @@ import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
 import { randomUUID } from "crypto"
 
-const COMPACTION_THRESHOLD = 30
-const RECENT_KEEP = 15
+const COMPACTION_THRESHOLD = 60
+const RECENT_KEEP = 20
 
 export class SessionModule {
   private service: SessionService
@@ -50,7 +50,11 @@ export class SessionModule {
     const recent = events.slice(events.length - RECENT_KEEP)
 
     const response = await llm.complete(
-      "You are a memory summarizer. Summarize the following conversation history concisely in 150-200 words. Preserve key facts, decisions, and context that would be useful for future responses. Be specific, not vague.",
+      `You are a conversation archivist. Write a THIRD-PERSON summary of this conversation history.
+Write it as: "The user asked about X. The assistant explained Y. The user then requested Z. The assistant did W."
+Do NOT write in first person. Do NOT say "I did" or "I told". 
+Be factual and specific — include actual values, URLs, decisions made.
+Max 200 words.`,
       toSummarize,
       []
     )
@@ -59,7 +63,7 @@ export class SessionModule {
       id: randomUUID(),
       type: "summary",
       ts: Date.now(),
-      data: { text: response.text },
+      data: { text: `[ARCHIVED CONTEXT]\n${response.text}\n[END ARCHIVED CONTEXT]` },
     }
 
     await this.service.rewrite(sessionId, [summaryEvent, ...recent])

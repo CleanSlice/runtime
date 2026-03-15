@@ -153,15 +153,15 @@ export class ClaudeRepository implements ILlmGateway {
 
     for (const event of events) {
       if (event.type === "summary") {
-        // Summary is injected as a system-style user message to set context
         const text = String((event.data as { text?: unknown })?.text ?? "")
+        // Inject as user note so the assistant treats it as background info, not its own actions
         messages.push({
           role: "user",
-          content: `[Conversation summary from earlier]\n${text}`,
+          content: `[NOTE: This is an archived summary of earlier conversation. Treat it as background context only — do not assume you already performed any actions mentioned here.]\n\n${text}`,
         })
         messages.push({
           role: "assistant",
-          content: "Understood. I have the context from our earlier conversation.",
+          content: "Understood, I have the archived context as background information.",
         })
       } else if (event.type === "user") {
         messages.push({ role: "user", content: String((event.data as { text?: unknown })?.text ?? event.data) })
