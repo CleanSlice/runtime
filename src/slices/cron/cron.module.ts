@@ -30,6 +30,20 @@ export class CronModule {
           shouldFire = nowMs >= job.runAt && (!job.lastRunAt || job.lastRunAt < job.runAt)
         } else {
           shouldFire = this.service.shouldRun(job, now)
+          // Deduplication: don't fire if already ran during this calendar minute.
+          // Without this, the 10s polling interval would fire a job 6× per minute.
+          if (shouldFire && job.lastRunAt) {
+            const last = new Date(job.lastRunAt)
+            if (
+              last.getFullYear() === now.getFullYear() &&
+              last.getMonth()    === now.getMonth()    &&
+              last.getDate()     === now.getDate()     &&
+              last.getHours()    === now.getHours()    &&
+              last.getMinutes()  === now.getMinutes()
+            ) {
+              shouldFire = false
+            }
+          }
         }
 
         if (shouldFire) {
