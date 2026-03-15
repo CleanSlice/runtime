@@ -152,7 +152,18 @@ export class ClaudeRepository implements ILlmGateway {
     const messages: Anthropic.MessageParam[] = []
 
     for (const event of events) {
-      if (event.type === "user") {
+      if (event.type === "summary") {
+        // Summary is injected as a system-style user message to set context
+        const text = String((event.data as { text?: unknown })?.text ?? "")
+        messages.push({
+          role: "user",
+          content: `[Conversation summary from earlier]\n${text}`,
+        })
+        messages.push({
+          role: "assistant",
+          content: "Understood. I have the context from our earlier conversation.",
+        })
+      } else if (event.type === "user") {
         messages.push({ role: "user", content: String((event.data as { text?: unknown })?.text ?? event.data) })
       } else if (event.type === "assistant") {
         messages.push({ role: "assistant", content: String((event.data as { text?: unknown })?.text ?? event.data) })

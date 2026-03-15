@@ -17,4 +17,9 @@ export class LlmModule {
   complete(systemPrompt: string, history: Event[], tools: Tool[]): Promise<ModelResponse> {
     return this.service.complete(systemPrompt, history, tools)
   }
+
+  // Expose gateway for compaction (needs ILlmGateway interface)
+  getGateway(): import("./domain/llm.gateway").ILlmGateway {
+    return (this.service as unknown as { gateway: import("./domain/llm.gateway").ILlmGateway }).gateway
+  }
 }

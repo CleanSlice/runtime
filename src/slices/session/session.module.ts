@@ -4,8 +4,8 @@ import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
 import { randomUUID } from "crypto"
 
-const COMPACTION_THRESHOLD = 50
-const RECENT_KEEP = 10
+const COMPACTION_THRESHOLD = 30
+const RECENT_KEEP = 15
 
 export class SessionModule {
   private service: SessionService
@@ -44,11 +44,13 @@ export class SessionModule {
     const events = await this.service.read(sessionId)
     if (events.length <= COMPACTION_THRESHOLD) return
 
+    console.log(`[session] compacting ${sessionId}: ${events.length} → ${RECENT_KEEP} events`)
+
     const toSummarize = events.slice(0, events.length - RECENT_KEEP)
     const recent = events.slice(events.length - RECENT_KEEP)
 
     const response = await llm.complete(
-      "Summarize this conversation history in 200 words",
+      "You are a memory summarizer. Summarize the following conversation history concisely in 150-200 words. Preserve key facts, decisions, and context that would be useful for future responses. Be specific, not vague.",
       toSummarize,
       []
     )
@@ -61,5 +63,15 @@ export class SessionModule {
     }
 
     await this.service.rewrite(sessionId, [summaryEvent, ...recent])
+    console.log(`[session] compaction done: ${sessionId}`)
+  }
+
+  /**
+   * Fire-and-forget compaction — runs async after response, does not block.
+   */
+  compactAsync(sessionId: string, llm: ILlmGateway): void {
+    this.compact(sessionId, llm).catch(err => {
+      console.error(`[session] compaction failed for ${sessionId}:`, err)
+    })
   }
 }

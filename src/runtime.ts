@@ -366,6 +366,9 @@ export class AgentRuntime {
 
         this.session.touch(sessionId)
 
+        // Fire-and-forget compaction — runs after response, does not block
+        this.session.compactAsync(sessionId, this.llm.getGateway())
+
       } catch (err) {
         console.error(`[task:${task.id.slice(0, 6)}] unhandled:`, err)
         try {
