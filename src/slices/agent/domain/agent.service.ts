@@ -15,6 +15,17 @@ export class AgentService {
     if (config.memory)    parts.push(`# Memory\n\n${config.memory}`)
     if (config.heartbeat) parts.push(`# Heartbeat\n\n${config.heartbeat}`)
     for (const skill of config.skills) parts.push(`# Skill\n\n${skill}`)
+
+    parts.push(`# Context Recall Rules
+
+When the user says "я кидал выше", "я скидав вище", "I sent you earlier", "see above", "ты уже знаешь", "я давал тебе" — DO NOT ask them to repeat.
+Instead:
+1. Search [ARCHIVED CONTEXT] blocks in the conversation history for the relevant value
+2. Check memory/secrets if applicable
+3. Only ask once, specifically, if the value is truly not found anywhere: "Не знайшов <X>, скинь ще раз"
+
+NEVER say "you mentioned earlier but I don't have access to that" if there's an [ARCHIVED CONTEXT] block — search it first.`)
+
     return parts.join("\n\n---\n\n")
   }
 

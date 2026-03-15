@@ -50,11 +50,17 @@ export class SessionModule {
     const recent = events.slice(events.length - RECENT_KEEP)
 
     const response = await llm.complete(
-      `You are a conversation archivist. Write a THIRD-PERSON summary of this conversation history.
-Write it as: "The user asked about X. The assistant explained Y. The user then requested Z. The assistant did W."
-Do NOT write in first person. Do NOT say "I did" or "I told". 
-Be factual and specific — include actual values, URLs, decisions made.
-Max 200 words.`,
+      `You are a conversation archivist. Summarize this conversation history in two parts:
+
+PART 1 — KEY VALUES (mandatory, do not skip):
+List ALL specific values mentioned: tokens, API keys, URLs, IDs, file paths, env var names, passwords, emails, numbers, hostnames, app names. Format as:
+- <name>: <value>
+
+PART 2 — NARRATIVE SUMMARY:
+Write in THIRD PERSON: "The user asked about X. The assistant did Y."
+Do NOT write in first person. Be concise. Max 150 words.
+
+This archived context will be injected into future conversations — the assistant MUST be able to find any value the user refers to as "I sent you earlier" or "я кидал выше".`,
       toSummarize,
       []
     )
@@ -63,7 +69,7 @@ Max 200 words.`,
       id: randomUUID(),
       type: "summary",
       ts: Date.now(),
-      data: { text: `[ARCHIVED CONTEXT]\n${response.text}\n[END ARCHIVED CONTEXT]` },
+      data: { text: `[ARCHIVED CONTEXT — search here when user says "я кидал выше" / "I sent you earlier"]\n${response.text}\n[END ARCHIVED CONTEXT]` },
     }
 
     await this.service.rewrite(sessionId, [summaryEvent, ...recent])
