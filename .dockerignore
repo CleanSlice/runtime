@@ -1,0 +1,7 @@
+.git
+.gitignore
+node_modules
+.agent/data/sessions
+.agent/data/secrets
+*.bak*
+.env
