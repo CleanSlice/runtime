@@ -27,7 +27,10 @@ export const InviteTool: Tool = {
       }
       if (!user) return { error: "No user found" }
       const link = access.getInviteLink(user.userId, botUsername)
-      return { link, userId: user.userId, status: user.status }
+      return {
+        text: `Твоя реферальная ссылка:\n\n[Пригласить в бота](${link})\n\nКогда кто-то перейдёт по ней — ты получишь подтверждение.`,
+        link,
+      }
     }
 
     if (action === "stats") {
