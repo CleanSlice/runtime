@@ -123,20 +123,24 @@ export class S3SyncService {
   async push(): Promise<void> {
     let count = 0
 
+    const tryPush = async (relPath: string) => {
+      if (existsSync(`${this.dataDir}/${relPath}`)) {
+        await this.pushFile(relPath)
+        count++
+      }
+    }
+
     // access.json
-    await this.pushFile("access.json")
-    count++
+    await tryPush("access.json")
 
     // memory.sqlite
-    await this.pushFile("memory.sqlite")
-    count++
+    await tryPush("memory.sqlite")
 
     // secrets/ directory
     const secretsDir = `${this.dataDir}/secrets`
     if (existsSync(secretsDir)) {
       for (const file of readdirSync(secretsDir)) {
-        await this.pushFile(`secrets/${file}`)
-        count++
+        await tryPush(`secrets/${file}`)
       }
     }
 
@@ -144,8 +148,7 @@ export class S3SyncService {
     if (existsSync(this.sessionsDir)) {
       for (const file of readdirSync(this.sessionsDir)) {
         if (file.endsWith(".jsonl")) {
-          await this.pushFile(`sessions/${file}`)
-          count++
+          await tryPush(`sessions/${file}`)
         }
       }
     }
@@ -153,14 +156,23 @@ export class S3SyncService {
     console.log(`[s3-sync] pushed ${count} files`)
   }
 
-  private async pushFile(relPath: string): Promise<void> {
+  private async pushFile(relPath: string, retries = 3): Promise<void> {
     const localPath = `${this.dataDir}/${relPath}`
     if (!existsSync(localPath)) return
-    try {
-      const body = await readFile(localPath)
-      await this.s3Put(this.s3Key(relPath), body)
-    } catch (err) {
-      console.error(`[s3-sync] failed to push ${relPath}:`, err)
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const body = await readFile(localPath)
+        await this.s3Put(this.s3Key(relPath), body)
+        return
+      } catch (err) {
+        if (attempt < retries) {
+          const delay = attempt * 1000
+          console.warn(`[s3-sync] push ${relPath} attempt ${attempt} failed, retrying in ${delay}ms...`)
+          await new Promise(r => setTimeout(r, delay))
+        } else {
+          console.error(`[s3-sync] failed to push ${relPath} after ${retries} attempts:`, err)
+        }
+      }
     }
   }
 
