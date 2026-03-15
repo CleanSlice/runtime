@@ -11,6 +11,7 @@ import { HeartbeatModule } from "./slices/heartbeat/heartbeat.module"
 import { AccessModule } from "./slices/access/access.module"
 import { InviteRepository } from "./slices/access/data/repositories/invite/invite.repository"
 import { LlmModule } from "./slices/llm/llm.module"
+import { SkillModule } from "./slices/skill/skill.module"
 import { randomUUID } from "crypto"
 
 export interface RuntimeConfig {
@@ -31,6 +32,7 @@ export class AgentRuntime {
   private cron: CronModule
   private heartbeat: HeartbeatModule
   private access: AccessModule
+  private skills: SkillModule
 
   constructor(config: RuntimeConfig) {
     this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
@@ -46,10 +48,12 @@ export class AgentRuntime {
     // Admin IDs from env or config — always have access
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
     this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
+    this.skills = new SkillModule(this.agentDir)
   }
 
   async start(): Promise<void> {
     await this.memory.load()
+    await this.skills.load()
 
     this.channel.onMessage(msg => this.handleMessage(msg))
     await this.channel.start()
@@ -162,7 +166,14 @@ export class AgentRuntime {
 
     const history = await this.session.read(sessionId)
 
-    const systemPrompt = await this.agent.buildPrompt(msg.from)
+    let systemPrompt = await this.agent.buildPrompt(msg.from)
+
+    // Inject matching skill instructions
+    const skill = this.skills.select(msg.text)
+    if (skill) {
+      systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
+      console.log(`[skill] activated: ${skill.name}`)
+    }
 
     let continueLoop = true
     while (continueLoop) {

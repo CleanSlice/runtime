@@ -81,12 +81,14 @@ const COMMANDS: Record<string, {
       mkdirSync(join(dir, "data"), { recursive: true })
       mkdirSync(join(dir, "sessions"), { recursive: true })
       mkdirSync(join(dir, "memory"), { recursive: true })
+      mkdirSync(join(dir, "skills"), { recursive: true })
 
       const files: Record<string, string> = {
         "SOUL.md": `# SOUL.md — Who You Are\n\n_You're not a chatbot. You're becoming someone._\n\n## Core Truths\n\n- Be genuinely helpful, not performatively helpful\n- Have opinions. You're allowed to disagree\n- Be resourceful before asking\n- Earn trust through competence\n`,
         "USER.md": `# USER.md — About Your Human\n\n- **Name:** Unknown\n- **Timezone:** UTC\n\n_Update this file as you learn about the person you're helping._\n`,
         "MEMORY.md": `# MEMORY.md — Long-Term Memory\n\n_Add significant events, decisions, lessons learned here._\n`,
         "HEARTBEAT.md": `# HEARTBEAT.md\n\n_Add periodic tasks here. The agent checks this every 30 minutes._\n\n## Tasks\n\n(empty)\n`,
+        "skills/README.md": `# Skills\n\nAdd subdirectories here, each with a \`SKILL.md\` file.\n\nExample:\n\`\`\`\nskills/\n  weather/\n    SKILL.md    ← frontmatter: name, description + instructions\n\`\`\`\n\nFrontmatter format:\n\`\`\`md\n---\nname: weather\ndescription: Get current weather and forecasts for any location\n---\n\n# Weather Skill\n...\n\`\`\`\n`,
       }
 
       for (const [filename, content] of Object.entries(files)) {
@@ -331,6 +333,58 @@ const COMMANDS: Record<string, {
         }
       }
       console.log()
+    }
+  },
+
+  // ── skills ────────────────────────────────────────────────────────────────
+  skills: {
+    description: "List or inspect skills",
+    usage: "cleanslice skills <list|show <name>>",
+    async run(args) {
+      ensureAgentDir()
+      const [sub, name] = args
+      const skillsDir = join(AGENT_DIR, "skills")
+
+      if (!existsSync(skillsDir)) {
+        info(`No skills directory at ${skillsDir}`)
+        info(`Create it with: mkdir -p ${skillsDir}/<skill-name> && touch ${skillsDir}/<skill-name>/SKILL.md`)
+        return
+      }
+
+      const { readdirSync, statSync } = require("fs") as typeof import("fs")
+      const skillDirs = readdirSync(skillsDir, { withFileTypes: true })
+        .filter((e: any) => e.isDirectory())
+        .map((e: any) => e.name)
+
+      if (!sub || sub === "list") {
+        if (skillDirs.length === 0) { info("No skills found."); return }
+        console.log()
+        for (const dir of skillDirs) {
+          const skillPath = join(skillsDir, dir, "SKILL.md")
+          if (!existsSync(skillPath)) {
+            console.log(`  ${yellow(dir.padEnd(20))} ${dim("(no SKILL.md)")}`)
+            continue
+          }
+          // Parse frontmatter manually (avoid importing gray-matter in CLI)
+          const content = readFileSync(skillPath, "utf-8")
+          const descMatch = content.match(/description:\s*['"]?(.+?)['"]?\n/)
+          const desc = descMatch ? descMatch[1].slice(0, 60) : dim("no description")
+          console.log(`  ${cyan(dir.padEnd(20))} ${desc}`)
+        }
+        console.log()
+        info(`Total: ${skillDirs.length} skill(s) in ${skillsDir}`)
+        return
+      }
+
+      if (sub === "show") {
+        if (!name) fail("Usage: cleanslice skills show <name>")
+        const skillPath = join(skillsDir, name, "SKILL.md")
+        if (!existsSync(skillPath)) fail(`Skill not found: ${name}`)
+        console.log(readFileSync(skillPath, "utf-8"))
+        return
+      }
+
+      fail(`Unknown subcommand: ${sub}. Try: list, show`)
     }
   },
 
