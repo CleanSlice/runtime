@@ -5,6 +5,17 @@ import type { Tool } from "../../../../tool/tool.module"
 import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
+// Detect Anthropic overloaded_error — arrives via SSE body with status=undefined
+function isOverloadedError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as Record<string, unknown>
+  // Direct status 529
+  if (e.status === 529) return true
+  // SSE error: message or error body contains overloaded_error
+  const msg = String(e.message ?? e.error ?? "")
+  return msg.includes("overloaded_error") || msg.includes("Overloaded")
+}
+
 export class ClaudeRepository implements ILlmGateway {
   private client: Anthropic
   private model: string
@@ -42,7 +53,8 @@ export class ClaudeRepository implements ILlmGateway {
     }))
 
     let lastError: unknown
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const maxAttempts = 7
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         let accumulated = ""
         const toolCalls: Array<{ name: string; params: unknown }> = []
@@ -93,8 +105,15 @@ export class ClaudeRepository implements ILlmGateway {
         lastError = err
         const status = (err as { status?: number })?.status
         if (status === 401 || status === 403 || status === 400) throw err
-        if (attempt < 3) {
-          await new Promise(r => setTimeout(r, attempt * 2000))
+        if (attempt < maxAttempts) {
+          const isOverloaded = isOverloadedError(err)
+          // Overloaded: longer backoff (5s, 10s, 20s, 30s, 45s, 60s)
+          // Other transient: shorter backoff (2s, 4s, ...)
+          const delay = isOverloaded
+            ? Math.min(5000 * attempt, 60000)
+            : attempt * 2000
+          console.warn(`[llm] stream attempt ${attempt}/${maxAttempts} failed (${isOverloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
+          await new Promise(r => setTimeout(r, delay))
         }
       }
     }
@@ -114,9 +133,10 @@ export class ClaudeRepository implements ILlmGateway {
       input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
     }))
 
-    // Retry up to 3 times on transient errors (5xx, network, 429)
+    // Retry up to 7 times on transient errors (5xx, network, 429, overloaded)
     let lastError: unknown
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const maxAttempts = 7
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await this.client.messages.create({
           model: this.model,
@@ -144,9 +164,12 @@ export class ClaudeRepository implements ILlmGateway {
         const status = (err as { status?: number })?.status
         // Don't retry on auth errors (401, 403) or bad request (400)
         if (status === 401 || status === 403 || status === 400) throw err
-        if (attempt < 3) {
-          const delay = attempt * 2000 // 2s, 4s
-          console.warn(`[llm] attempt ${attempt} failed (${status ?? "network"}), retrying in ${delay}ms...`)
+        if (attempt < maxAttempts) {
+          const isOverloaded = isOverloadedError(err)
+          const delay = isOverloaded
+            ? Math.min(5000 * attempt, 60000)
+            : attempt * 2000
+          console.warn(`[llm] complete attempt ${attempt}/${maxAttempts} failed (${isOverloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
           await new Promise(r => setTimeout(r, delay))
         }
       }
