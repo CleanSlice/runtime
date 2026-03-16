@@ -133,6 +133,12 @@ export class S3SyncService {
     // access.json
     await tryPush("access.json")
 
+    // cron.json — scheduled jobs (must survive restart)
+    await tryPush("cron.json")
+
+    // voice.json — per-user voice mode preferences (must survive restart)
+    await tryPush("voice.json")
+
     // memory.sqlite
     await tryPush("memory.sqlite")
 
