@@ -48,10 +48,15 @@ async function withRetry<T>(
   return { ok: false, lastError, wasOverloaded }
 }
 
+// How long to stay on fallback before retrying primary (ms)
+const PRIMARY_RETRY_AFTER_MS = 2 * 60 * 1000 // 2 minutes
+
 export class ClaudeRepository implements ILlmGateway {
   private client: Anthropic
   private model: string
   private fallbackModel: string | undefined
+  // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
+  private primaryOverloadedAt = 0
 
   constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
     this.model = model
@@ -72,6 +77,25 @@ export class ClaudeRepository implements ILlmGateway {
     }
   }
 
+  /** Returns [primary, fallback?] respecting circuit breaker state */
+  private getModelsToTry(): string[] {
+    if (!this.fallbackModel || this.fallbackModel === this.model) return [this.model]
+    const now = Date.now()
+    if (this.primaryOverloadedAt > 0) {
+      const elapsed = now - this.primaryOverloadedAt
+      if (elapsed < PRIMARY_RETRY_AFTER_MS) {
+        // Primary still in cooldown — skip straight to fallback
+        console.warn(`[llm] primary overloaded ${Math.round(elapsed / 1000)}s ago, using fallback directly (retry in ${Math.round((PRIMARY_RETRY_AFTER_MS - elapsed) / 1000)}s)`)
+        return [this.fallbackModel]
+      } else {
+        // Cooldown expired — try primary again
+        console.log(`[llm] primary cooldown expired, retrying primary model`)
+        this.primaryOverloadedAt = 0
+      }
+    }
+    return [this.model, this.fallbackModel]
+  }
+
   async stream(
     systemPrompt: string,
     history: Event[],
@@ -86,10 +110,7 @@ export class ClaudeRepository implements ILlmGateway {
       input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
     }))
 
-    const modelsToTry = [this.model]
-    if (this.fallbackModel && this.fallbackModel !== this.model) {
-      modelsToTry.push(this.fallbackModel)
-    }
+    const modelsToTry = this.getModelsToTry()
 
     let lastError: unknown
     for (const model of modelsToTry) {
@@ -149,10 +170,22 @@ export class ClaudeRepository implements ILlmGateway {
         `stream[${model}]`
       )
 
-      if (result.ok) return result.value
+      if (result.ok) {
+        // Primary recovered — reset circuit breaker
+        if (model === this.model && this.primaryOverloadedAt > 0) {
+          console.log(`[llm] primary model recovered, resetting circuit breaker`)
+          this.primaryOverloadedAt = 0
+        }
+        return result.value
+      }
       lastError = result.lastError
-      // Only try fallback if primary failed due to overload
-      if (!result.wasOverloaded) break
+      // If primary failed due to overload — trip circuit breaker, try fallback
+      if (model === this.model && result.wasOverloaded) {
+        this.primaryOverloadedAt = Date.now()
+        console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+      } else if (!result.wasOverloaded) {
+        break
+      }
     }
     throw lastError
   }
@@ -170,10 +203,7 @@ export class ClaudeRepository implements ILlmGateway {
       input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
     }))
 
-    const modelsToTry = [this.model]
-    if (this.fallbackModel && this.fallbackModel !== this.model) {
-      modelsToTry.push(this.fallbackModel)
-    }
+    const modelsToTry = this.getModelsToTry()
 
     let lastError: unknown
     for (const model of modelsToTry) {
@@ -210,10 +240,22 @@ export class ClaudeRepository implements ILlmGateway {
         `complete[${model}]`
       )
 
-      if (result.ok) return result.value
+      if (result.ok) {
+        // Primary recovered — reset circuit breaker
+        if (model === this.model && this.primaryOverloadedAt > 0) {
+          console.log(`[llm] primary model recovered, resetting circuit breaker`)
+          this.primaryOverloadedAt = 0
+        }
+        return result.value
+      }
       lastError = result.lastError
-      // Only try fallback if primary failed due to overload
-      if (!result.wasOverloaded) break
+      // If primary failed due to overload — trip circuit breaker, try fallback
+      if (model === this.model && result.wasOverloaded) {
+        this.primaryOverloadedAt = Date.now()
+        console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+      } else if (!result.wasOverloaded) {
+        break
+      }
     }
     throw lastError
   }
