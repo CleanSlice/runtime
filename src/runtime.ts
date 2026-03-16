@@ -181,10 +181,60 @@ export class AgentRuntime {
         return
       }
 
+      // /help
+      if (text === "/help") {
+        await this.channel.send(msg.channel, msg.from,
+          `🤖 *Available commands:*\n\n` +
+          `/start — Start the agent\n` +
+          `/help — Show this help\n` +
+          `/status — Agent status\n` +
+          `/clear — Reset current session\n` +
+          `/memory — What the agent remembers about you\n` +
+          `/tasks — List active tasks\n` +
+          `/voice — Toggle voice mode\n` +
+          `/cancel <id> — Cancel a task`
+        )
+        return
+      }
+
+      // /status
+      if (text === "/status") {
+        const activeTasks = this.tasks.formatList(sessionId)
+        const hasActive = !activeTasks.includes("нет активных") && !activeTasks.includes("No active")
+        await this.channel.send(msg.channel, msg.from,
+          `🟢 *Agent is running*\n\n` +
+          `Model: Claude\n` +
+          `Voice: ${this.voice.isEnabled(msg.from) ? "🔊 on" : "🔇 off"}\n` +
+          `Tasks: ${hasActive ? "active" : "idle"}\n\n` +
+          `Use /clear to reset session or /help for all commands.`
+        )
+        return
+      }
+
+      // /clear — reset session
+      if (text === "/clear") {
+        this.session.clear(msg.channel, msg.from)
+        await this.channel.send(msg.channel, msg.from,
+          `✅ Session cleared. Starting fresh!`
+        )
+        return
+      }
+
+      // /memory — ask LLM to summarize what it knows about the user
+      if (text === "/memory") {
+        // Fall through to LLM with injected text
+        return await this.handleMessage({
+          ...msg,
+          text: "Please summarize what you know and remember about me from memory. Be concise.",
+        })
+      }
+
       // /start (no code)
       if (text === "/start") {
         if (this.access.isAllowed(msg.from)) {
-          await this.channel.send(msg.channel, msg.from, "✅ Всё работает. Просто напиши что нужно.")
+          await this.channel.send(msg.channel, msg.from,
+            `👋 Hi! I'm your AI agent.\n\nSend me any message to get started.\nUse /help to see available commands.`
+          )
           return
         }
         this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)

@@ -35,4 +35,13 @@ export class SessionGateway implements ISessionGateway {
     const content = events.map(e => JSON.stringify(e)).join("\n") + "\n"
     await writeFile(path, content)
   }
+
+  clear(sessionId: string): void {
+    const path = `${this.dir}/${sessionId}.jsonl`
+    try {
+      require("fs").unlinkSync(path)
+    } catch {
+      // file may not exist — that's fine
+    }
+  }
 }

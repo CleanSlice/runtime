@@ -33,6 +33,10 @@ export class SessionModule {
     return this.service.read(sessionId)
   }
 
+  clear(channelId: string, userId: string): void {
+    this.service.clear(channelId, userId)
+  }
+
   /**
    * Read events visible to a specific task:
    * - shared events (taskId undefined)

@@ -33,32 +33,62 @@ export class ClaudeRepository implements ILlmGateway {
     tools: Tool[],
     onChunk: (text: string) => void
   ): Promise<ModelResponse> {
-    // Only stream when no tools — tool calls require complete response
-    if (tools.length > 0) {
-      return this.complete(systemPrompt, history, tools)
-    }
-
     const messages = this.sanitizeMessages(this.eventsToMessages(history))
+
+    const anthropicTools = tools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
+    }))
 
     let lastError: unknown
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         let accumulated = ""
+        const toolCalls: Array<{ name: string; params: unknown }> = []
+        // Map from content block index → pending tool call accumulator
+        const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
+
         const streamResponse = await this.client.messages.stream({
           model: this.model,
           max_tokens: 8096,
           system: systemPrompt,
           messages,
+          ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
         })
 
         for await (const event of streamResponse) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            accumulated += event.delta.text
-            onChunk(accumulated)
+          if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+            pendingTools.set(event.index, {
+              id: event.content_block.id,
+              name: event.content_block.name,
+              jsonStr: "",
+            })
+          } else if (event.type === "content_block_delta") {
+            if (event.delta.type === "text_delta") {
+              accumulated += event.delta.text
+              onChunk(accumulated)
+            } else if (event.delta.type === "input_json_delta") {
+              const pending = pendingTools.get(event.index)
+              if (pending) pending.jsonStr += event.delta.partial_json
+            }
+          } else if (event.type === "content_block_stop") {
+            const pending = pendingTools.get(event.index)
+            if (pending) {
+              try {
+                toolCalls.push({ name: pending.name, params: JSON.parse(pending.jsonStr || "{}") })
+              } catch {
+                toolCalls.push({ name: pending.name, params: {} })
+              }
+              pendingTools.delete(event.index)
+            }
           }
         }
 
-        return { text: accumulated, toolCalls: undefined }
+        return {
+          text: accumulated,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        }
       } catch (err: unknown) {
         lastError = err
         const status = (err as { status?: number })?.status

@@ -8,6 +8,10 @@ export class LlmGateway implements ILlmGateway {
 
   constructor(config: LlmConfig) {
     this.repository = this.createRepository(config)
+    // Expose stream() if the underlying repository supports it
+    if (typeof (this.repository as ILlmGateway).stream === "function") {
+      this.stream = (...args) => (this.repository as Required<ILlmGateway>).stream!(...args)
+    }
   }
 
   private createRepository(config: LlmConfig): ILlmGateway {
@@ -29,4 +33,6 @@ export class LlmGateway implements ILlmGateway {
   complete(...args: Parameters<ILlmGateway["complete"]>) {
     return this.repository.complete(...args)
   }
+
+  stream?: ILlmGateway["stream"]
 }

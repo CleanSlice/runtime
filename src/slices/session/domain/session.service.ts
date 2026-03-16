@@ -27,6 +27,14 @@ export class SessionService {
     if (session) session.updatedAt = Date.now()
   }
 
+  clear(channelId: string, userId: string): void {
+    const id = `${channelId}:${userId}`
+    // Remove in-memory session so next getOrCreate gives a fresh one
+    this.sessions.delete(id)
+    // Also clear persisted events for this session
+    this.gateway.clear?.(id)
+  }
+
   async append(sessionId: string, event: Event): Promise<void> {
     return this.gateway.append(sessionId, event)
   }

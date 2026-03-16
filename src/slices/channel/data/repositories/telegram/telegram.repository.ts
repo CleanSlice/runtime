@@ -30,7 +30,31 @@ export class TelegramRepository {
 
   async start(): Promise<void> {
     this.running = true
+    await this.registerCommands()
     this.poll()
+  }
+
+  private async registerCommands(): Promise<void> {
+    try {
+      await fetch(`${this.baseUrl}/setMyCommands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          commands: [
+            { command: "start",  description: "Start the agent" },
+            { command: "help",   description: "Show available commands" },
+            { command: "status", description: "Agent status" },
+            { command: "clear",  description: "Reset current session" },
+            { command: "memory", description: "What the agent remembers about you" },
+            { command: "tasks",  description: "List active tasks" },
+            { command: "voice",  description: "Toggle voice mode" },
+          ],
+        }),
+      })
+      console.log("[telegram] commands registered")
+    } catch (err) {
+      console.error("[telegram] failed to register commands:", err)
+    }
   }
 
   async stop(): Promise<void> {
@@ -78,6 +102,21 @@ export class TelegramRepository {
     }
   }
 
+  /**
+   * Delete a message — used to remove "…" placeholders when LLM returns only tool calls (no text).
+   */
+  async deleteMessage(chatId: string, messageId: number): Promise<void> {
+    try {
+      await fetch(`${this.baseUrl}/deleteMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+      })
+    } catch {
+      // Ignore
+    }
+  }
+
   async sendTyping(chatId: string): Promise<void> {
     await fetch(`${this.baseUrl}/sendChatAction`, {
       method: "POST",
@@ -118,16 +157,20 @@ export class TelegramRepository {
 
     const interval = setInterval(() => flushEdit(), 600)
 
+    let finalText = ""
     try {
-      const finalText = await streamer((accumulated: string) => {
+      finalText = await streamer((accumulated: string) => {
         pendingText = accumulated
       })
       pendingText = finalText
     } finally {
       clearInterval(interval)
-      // Final edit with complete text
-      if (pendingText && pendingText !== lastSent) {
-        await this.editMessage(chatId, messageId, pendingText)
+      if (finalText && finalText !== lastSent) {
+        // Final edit with complete text
+        await this.editMessage(chatId, messageId, finalText)
+      } else if (!finalText) {
+        // No text came through (tool-call-only response) — delete the "…" placeholder
+        await this.deleteMessage(chatId, messageId)
       }
     }
   }
