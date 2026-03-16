@@ -129,6 +129,10 @@ export class ClaudeRepository implements ILlmGateway {
   // 2. Orphan tool_results (no matching tool_use) are removed
   // 3. Consecutive same-role messages are merged
   private sanitizeMessages(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    // Anthropic requires the last message to be from "user" — remove trailing assistant messages
+    while (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+      messages.pop()
+    }
     // Index tool_results by tool_use_id for lookup
     const resultIndex = new Map<string, Anthropic.ToolResultBlockParam>()
     for (const msg of messages) {
@@ -198,14 +202,11 @@ export class ClaudeRepository implements ILlmGateway {
     for (const event of events) {
       if (event.type === "summary") {
         const text = String((event.data as { text?: unknown })?.text ?? "")
-        // Inject as user note so the assistant treats it as background info, not its own actions
+        // Inject as system-style user note — no fake assistant reply to avoid
+        // "conversation must end with user message" errors during compaction
         messages.push({
           role: "user",
-          content: `[NOTE: This is an archived summary of earlier conversation. Treat it as background context only — do not assume you already performed any actions mentioned here.]\n\n${text}`,
-        })
-        messages.push({
-          role: "assistant",
-          content: "Understood, I have the archived context as background information.",
+          content: `[ARCHIVED CONTEXT — background info only, do not assume actions were already performed]\n\n${text}\n\n[END ARCHIVED CONTEXT]`,
         })
       } else if (event.type === "user") {
         messages.push({ role: "user", content: String((event.data as { text?: unknown })?.text ?? event.data) })
