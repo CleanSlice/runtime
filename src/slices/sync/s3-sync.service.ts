@@ -26,6 +26,8 @@ export class S3SyncService {
   private dataDir: string
   private sessionsDir: string
   private timer?: ReturnType<typeof setInterval>
+  /** Prevent overlapping push() calls (e.g. auto-sync fires while shutdown push is in flight) */
+  private pushing = false
 
   constructor(config: S3SyncConfig, agentDir: string) {
     this.bucket = config.bucket
@@ -121,6 +123,11 @@ export class S3SyncService {
    * Called periodically + on shutdown.
    */
   async push(): Promise<void> {
+    if (this.pushing) {
+      console.log("[s3-sync] push already in progress, skipping")
+      return
+    }
+    this.pushing = true
     let count = 0
 
     const tryPush = async (relPath: string) => {
@@ -130,36 +137,40 @@ export class S3SyncService {
       }
     }
 
-    // access.json
-    await tryPush("access.json")
+    try {
+      // access.json
+      await tryPush("access.json")
 
-    // cron.json — scheduled jobs (must survive restart)
-    await tryPush("cron.json")
+      // cron.json — scheduled jobs (must survive restart)
+      await tryPush("cron.json")
 
-    // voice.json — per-user voice mode preferences (must survive restart)
-    await tryPush("voice.json")
+      // voice.json — per-user voice mode preferences (must survive restart)
+      await tryPush("voice.json")
 
-    // memory.sqlite
-    await tryPush("memory.sqlite")
+      // memory.sqlite
+      await tryPush("memory.sqlite")
 
-    // secrets/ directory
-    const secretsDir = `${this.dataDir}/secrets`
-    if (existsSync(secretsDir)) {
-      for (const file of readdirSync(secretsDir)) {
-        await tryPush(`secrets/${file}`)
-      }
-    }
-
-    // sessions/*.jsonl
-    if (existsSync(this.sessionsDir)) {
-      for (const file of readdirSync(this.sessionsDir)) {
-        if (file.endsWith(".jsonl")) {
-          await tryPush(`sessions/${file}`)
+      // secrets/ directory
+      const secretsDir = `${this.dataDir}/secrets`
+      if (existsSync(secretsDir)) {
+        for (const file of readdirSync(secretsDir)) {
+          await tryPush(`secrets/${file}`)
         }
       }
-    }
 
-    console.log(`[s3-sync] pushed ${count} files`)
+      // sessions/*.jsonl
+      if (existsSync(this.sessionsDir)) {
+        for (const file of readdirSync(this.sessionsDir)) {
+          if (file.endsWith(".jsonl")) {
+            await tryPush(`sessions/${file}`)
+          }
+        }
+      }
+
+      console.log(`[s3-sync] pushed ${count} files`)
+    } finally {
+      this.pushing = false
+    }
   }
 
   private async pushFile(relPath: string, retries = 3): Promise<void> {
