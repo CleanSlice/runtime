@@ -11,6 +11,7 @@ interface TelegramUpdate {
     date: number
     photo?: Array<{ file_id: string; file_size: number; width: number; height: number }>
     caption?: string
+    document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number }
   }
 }
 
@@ -190,7 +191,8 @@ export class TelegramRepository {
           const msg = update.message
           const hasText = !!msg?.text
           const hasPhoto = !!msg?.photo?.length
-          if ((hasText || hasPhoto) && this.handler) {
+          const hasDocument = !!msg?.document
+          if ((hasText || hasPhoto || hasDocument) && this.handler) {
             const chatId = String(msg!.chat.id)
             const handler = this.handler
 
@@ -199,7 +201,7 @@ export class TelegramRepository {
               await this.sendTyping(chatId)
               const typingInterval = setInterval(() => this.sendTyping(chatId), 4000)
               try {
-                let text = msg!.text ?? msg!.caption ?? "[photo]"
+                let text = msg!.text ?? msg!.caption ?? (hasPhoto ? "[photo]" : "[document]")
                 const metadata: Record<string, unknown> = { chatId: msg!.chat.id, username: msg!.from?.username }
 
                 if (hasPhoto) {
@@ -212,6 +214,22 @@ export class TelegramRepository {
                   // Include URL in text so LLM can analyze it
                   const caption = msg!.caption ? ` Caption: "${msg!.caption}"` : ""
                   text = `[User sent a photo]${caption}\nPhoto URL: ${fileUrl}\nPlease analyze this image using the image_analyze tool.`
+                }
+
+                if (hasDocument) {
+                  const doc = msg!.document!
+                  const fileRes = await fetch(`${this.baseUrl}/getFile?file_id=${doc.file_id}`)
+                  const fileJson = (await fileRes.json()) as { result: { file_path: string } }
+                  const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileJson.result.file_path}`
+                  const fileName = doc.file_name ?? fileJson.result.file_path.split("/").pop() ?? "file"
+                  const localPath = `/tmp/${fileName}`
+                  const fileData = await fetch(fileUrl)
+                  await Bun.write(localPath, await fileData.arrayBuffer())
+                  metadata.documentPath = localPath
+                  metadata.documentName = fileName
+                  metadata.hasDocument = true
+                  const caption = msg!.caption ? ` Caption: "${msg!.caption}"` : ""
+                  text = `[User sent a file: ${fileName}]${caption}\nLocal path: ${localPath}\nProcess this file as needed.`
                 }
 
                 await handler({

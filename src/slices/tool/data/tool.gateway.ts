@@ -2,6 +2,7 @@ import type { IToolGateway } from "../domain/tool.gateway"
 import type { Tool, ToolContext } from "../domain/tool.types"
 import { ExecTool } from "./repositories/exec/exec.repository"
 import { FileTool } from "./repositories/file/file.repository"
+import { UnzipTool } from "./repositories/file/unzip.repository"
 import { HttpTool } from "./repositories/http/http.repository"
 import { BrowserTool } from "./repositories/browser/browser.repository"
 import { InviteTool } from "./repositories/access/invite.repository"
@@ -25,6 +26,7 @@ export class ToolGateway implements IToolGateway {
   constructor() {
     this.register(ExecTool)
     this.register(FileTool)
+    this.register(UnzipTool)
     this.register(HttpTool)
     this.register(BrowserTool)
     this.register(InviteTool)
