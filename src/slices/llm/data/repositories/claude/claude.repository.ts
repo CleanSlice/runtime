@@ -16,12 +16,46 @@ function isOverloadedError(err: unknown): boolean {
   return msg.includes("overloaded_error") || msg.includes("Overloaded")
 }
 
+/**
+ * Retry a LLM call up to maxAttempts times with exponential backoff.
+ * Returns true if succeeded (result via out param), false if all attempts failed with overload.
+ * Throws immediately on non-retryable errors (401, 403, 400).
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number,
+  label: string
+): Promise<{ ok: true; value: T } | { ok: false; lastError: unknown; wasOverloaded: boolean }> {
+  let lastError: unknown
+  let wasOverloaded = false
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const value = await fn()
+      return { ok: true, value }
+    } catch (err: unknown) {
+      lastError = err
+      const status = (err as { status?: number })?.status
+      if (status === 401 || status === 403 || status === 400) throw err
+      const overloaded = isOverloadedError(err)
+      if (overloaded) wasOverloaded = true
+      if (attempt < maxAttempts) {
+        const delay = overloaded ? Math.min(5000 * attempt, 60000) : attempt * 2000
+        console.warn(`[llm] ${label} attempt ${attempt}/${maxAttempts} failed (${overloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
+  }
+  return { ok: false, lastError, wasOverloaded }
+}
+
 export class ClaudeRepository implements ILlmGateway {
   private client: Anthropic
   private model: string
+  private fallbackModel: string | undefined
 
-  constructor({ model, apiKey }: { model: string; apiKey?: string }) {
+  constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
     this.model = model
+    this.fallbackModel = fallbackModel
 
     const key = apiKey ?? process.env.ANTHROPIC_API_KEY
     const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
@@ -52,70 +86,73 @@ export class ClaudeRepository implements ILlmGateway {
       input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
     }))
 
+    const modelsToTry = [this.model]
+    if (this.fallbackModel && this.fallbackModel !== this.model) {
+      modelsToTry.push(this.fallbackModel)
+    }
+
     let lastError: unknown
-    const maxAttempts = 7
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        let accumulated = ""
-        const toolCalls: Array<{ name: string; params: unknown }> = []
-        // Map from content block index → pending tool call accumulator
-        const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
+    for (const model of modelsToTry) {
+      const isFallback = model !== this.model
+      if (isFallback) {
+        console.warn(`[llm] stream switching to fallback model: ${model}`)
+      }
 
-        const streamResponse = await this.client.messages.stream({
-          model: this.model,
-          max_tokens: 8096,
-          system: systemPrompt,
-          messages,
-          ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-        })
+      const result = await withRetry(
+        async () => {
+          let accumulated = ""
+          const toolCalls: Array<{ name: string; params: unknown }> = []
+          const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
 
-        for await (const event of streamResponse) {
-          if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-            pendingTools.set(event.index, {
-              id: event.content_block.id,
-              name: event.content_block.name,
-              jsonStr: "",
-            })
-          } else if (event.type === "content_block_delta") {
-            if (event.delta.type === "text_delta") {
-              accumulated += event.delta.text
-              onChunk(accumulated)
-            } else if (event.delta.type === "input_json_delta") {
-              const pending = pendingTools.get(event.index)
-              if (pending) pending.jsonStr += event.delta.partial_json
-            }
-          } else if (event.type === "content_block_stop") {
-            const pending = pendingTools.get(event.index)
-            if (pending) {
-              try {
-                toolCalls.push({ name: pending.name, params: JSON.parse(pending.jsonStr || "{}") })
-              } catch {
-                toolCalls.push({ name: pending.name, params: {} })
+          const streamResponse = await this.client.messages.stream({
+            model,
+            max_tokens: 8096,
+            system: systemPrompt,
+            messages,
+            ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
+          })
+
+          for await (const event of streamResponse) {
+            if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+              pendingTools.set(event.index, {
+                id: event.content_block.id,
+                name: event.content_block.name,
+                jsonStr: "",
+              })
+            } else if (event.type === "content_block_delta") {
+              if (event.delta.type === "text_delta") {
+                accumulated += event.delta.text
+                onChunk(accumulated)
+              } else if (event.delta.type === "input_json_delta") {
+                const pending = pendingTools.get(event.index)
+                if (pending) pending.jsonStr += event.delta.partial_json
               }
-              pendingTools.delete(event.index)
+            } else if (event.type === "content_block_stop") {
+              const pending = pendingTools.get(event.index)
+              if (pending) {
+                try {
+                  toolCalls.push({ name: pending.name, params: JSON.parse(pending.jsonStr || "{}") })
+                } catch {
+                  toolCalls.push({ name: pending.name, params: {} })
+                }
+                pendingTools.delete(event.index)
+              }
             }
           }
-        }
 
-        return {
-          text: accumulated,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        }
-      } catch (err: unknown) {
-        lastError = err
-        const status = (err as { status?: number })?.status
-        if (status === 401 || status === 403 || status === 400) throw err
-        if (attempt < maxAttempts) {
-          const isOverloaded = isOverloadedError(err)
-          // Overloaded: longer backoff (5s, 10s, 20s, 30s, 45s, 60s)
-          // Other transient: shorter backoff (2s, 4s, ...)
-          const delay = isOverloaded
-            ? Math.min(5000 * attempt, 60000)
-            : attempt * 2000
-          console.warn(`[llm] stream attempt ${attempt}/${maxAttempts} failed (${isOverloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
-          await new Promise(r => setTimeout(r, delay))
-        }
-      }
+          return {
+            text: accumulated,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          } as ModelResponse
+        },
+        7,
+        `stream[${model}]`
+      )
+
+      if (result.ok) return result.value
+      lastError = result.lastError
+      // Only try fallback if primary failed due to overload
+      if (!result.wasOverloaded) break
     }
     throw lastError
   }
@@ -133,46 +170,50 @@ export class ClaudeRepository implements ILlmGateway {
       input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
     }))
 
-    // Retry up to 7 times on transient errors (5xx, network, 429, overloaded)
+    const modelsToTry = [this.model]
+    if (this.fallbackModel && this.fallbackModel !== this.model) {
+      modelsToTry.push(this.fallbackModel)
+    }
+
     let lastError: unknown
-    const maxAttempts = 7
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await this.client.messages.create({
-          model: this.model,
-          max_tokens: 8096,
-          system: systemPrompt,
-          messages,
-          ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-        })
+    for (const model of modelsToTry) {
+      const isFallback = model !== this.model
+      if (isFallback) {
+        console.warn(`[llm] complete switching to fallback model: ${model}`)
+      }
 
-        const text = response.content
-          .filter(b => b.type === "text")
-          .map(b => (b as Anthropic.TextBlock).text)
-          .join("")
-
-        const toolCalls = response.content
-          .filter(b => b.type === "tool_use")
-          .map(b => {
-            const block = b as Anthropic.ToolUseBlock
-            return { name: block.name, params: block.input }
+      const result = await withRetry(
+        async () => {
+          const response = await this.client.messages.create({
+            model,
+            max_tokens: 8096,
+            system: systemPrompt,
+            messages,
+            ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
           })
 
-        return { text, toolCalls: toolCalls.length > 0 ? toolCalls : undefined }
-      } catch (err: unknown) {
-        lastError = err
-        const status = (err as { status?: number })?.status
-        // Don't retry on auth errors (401, 403) or bad request (400)
-        if (status === 401 || status === 403 || status === 400) throw err
-        if (attempt < maxAttempts) {
-          const isOverloaded = isOverloadedError(err)
-          const delay = isOverloaded
-            ? Math.min(5000 * attempt, 60000)
-            : attempt * 2000
-          console.warn(`[llm] complete attempt ${attempt}/${maxAttempts} failed (${isOverloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
-          await new Promise(r => setTimeout(r, delay))
-        }
-      }
+          const text = response.content
+            .filter(b => b.type === "text")
+            .map(b => (b as Anthropic.TextBlock).text)
+            .join("")
+
+          const toolCalls = response.content
+            .filter(b => b.type === "tool_use")
+            .map(b => {
+              const block = b as Anthropic.ToolUseBlock
+              return { name: block.name, params: block.input }
+            })
+
+          return { text, toolCalls: toolCalls.length > 0 ? toolCalls : undefined } as ModelResponse
+        },
+        7,
+        `complete[${model}]`
+      )
+
+      if (result.ok) return result.value
+      lastError = result.lastError
+      // Only try fallback if primary failed due to overload
+      if (!result.wasOverloaded) break
     }
     throw lastError
   }
@@ -239,9 +280,6 @@ export class ClaudeRepository implements ILlmGateway {
           }
         })
 
-        // Check if next message already has these results
-        const nextIdx = result.length // result already has current msg pushed
-        // We always insert — duplicates filtered above via placed set
         result.push({ role: "user", content: resultBlocks })
       }
     }
