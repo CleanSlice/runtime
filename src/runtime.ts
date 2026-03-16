@@ -371,8 +371,16 @@ export class AgentRuntime {
             console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
           } catch (err: unknown) {
             const status = (err as { status?: number })?.status
+            const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
+            const isOverloaded = errMsg.includes("overloaded_error") || errMsg.includes("Overloaded") || status === 529
             console.error(`[task:${taskId.slice(0, 6)}] LLM error (status=${status}):`, err)
-            if (!isInternal) await send("⚠️ Что-то пошло не так. Попробуй ещё раз.")
+            if (!isInternal) {
+              if (isOverloaded) {
+                await send("⚠️ Сервер AI перегружен. Подожди минуту и попробуй снова.")
+              } else {
+                await send("⚠️ Что-то пошло не так. Попробуй ещё раз.")
+              }
+            }
             break
           }
 
