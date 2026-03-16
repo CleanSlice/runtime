@@ -307,11 +307,13 @@ export class AgentRuntime {
             const canStream = msg.channel === "telegram" && !isInternal && this.llm.canStream()
             if (canStream) {
               // Stream response — send placeholder and edit as tokens arrive
+              console.log(`[task:${taskId.slice(0, 6)}] streaming response...`)
               let streamedResponse: import("./slices/llm/domain/llm.types").ModelResponse | undefined
               await this.channel.streamSend(msg.channel, msg.from, async (onChunk) => {
                 streamedResponse = await this.llm.stream(systemPrompt, history, this.tools, onChunk)
                 return streamedResponse.text ?? ""
               })
+              console.log(`[task:${taskId.slice(0, 6)}] stream complete, text=${streamedResponse?.text?.length ?? 0}`)
               response = streamedResponse!
             } else {
               response = await this.llm.complete(systemPrompt, history, this.tools)
