@@ -10,7 +10,7 @@ export const WebFetchTool: Tool = {
   name: "web_fetch",
   description: "Fetch a URL and return its content as clean readable text (markdown-style). Better than browser for reading articles.",
   schema,
-  async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
+  async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, maxChars } = schema.parse(params)
 
     const res = await fetch(url, {
@@ -28,7 +28,7 @@ export const WebFetchTool: Tool = {
     const html = await res.text()
 
     if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
-      return { url, content: html.slice(0, maxChars ?? 8000), contentType }
+      return { url, content: html.slice(0, maxChars ?? ctx.agentConfig?.tools.webFetch.maxChars ?? 8000), contentType }
     }
 
     // Strip scripts and styles
@@ -57,7 +57,7 @@ export const WebFetchTool: Tool = {
       .replace(/\n{3,}/g, "\n\n")
       .trim()
 
-    const limit = maxChars ?? 8000
+    const limit = maxChars ?? ctx.agentConfig?.tools.webFetch.maxChars ?? 8000
     const content = text.slice(0, limit)
 
     return {

@@ -15,11 +15,17 @@ process.on("unhandledRejection", (reason) => {
 
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/tool/data/tool.gateway"
+import { InitModule } from "./slices/init"
+
+const init = new InitModule(
+  process.env.CLEANSLICE_AGENT_DIR ?? ".agent",
+  ".agent.example",
+)
 
 const toolGateway = new ToolGateway()
 
 const runtime = new AgentRuntime({
-  agentDir: ".agent",
+  init,
   llm: { provider: "claude" },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },

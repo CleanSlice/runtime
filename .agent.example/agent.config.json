@@ -1,0 +1,30 @@
+{
+  "maxIterations": 25,
+  "taskLabelLength": 60,
+
+  "heartbeat": {
+    "intervalMin": 30
+  },
+
+  "session": {
+    "compactionThreshold": 60,
+    "recentKeep": 20
+  },
+
+  "s3": {
+    "syncIntervalSec": 60
+  },
+
+  "tools": {
+    "spawnAgent": {
+      "timeoutMin": 5,
+      "outputLimit": 4000
+    },
+    "browser": {
+      "outputLimit": 5000
+    },
+    "webFetch": {
+      "maxChars": 8000
+    }
+  }
+}

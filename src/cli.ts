@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve, join } from "path"
 import { randomUUID } from "crypto"
+import { InitModule, AGENT_SUBDIRS } from "./slices/init"
 
 const VERSION = "0.1.0"
 const AGENT_DIR = resolve(process.env.CLEANSLICE_AGENT_DIR ?? ".agent")
@@ -71,19 +72,23 @@ const COMMANDS: Record<string, {
     run(args) {
       const { flags } = parseArgs(args)
       const dir = resolve((flags.dir as string) ?? ".agent")
-      const name = (flags.name as string) ?? "My Agent"
+      const exampleDir = resolve(".agent.example")
 
-      if (existsSync(dir) && existsSync(join(dir, "SOUL.md"))) {
+      if (existsSync(dir) && existsSync(join(dir, "SOUL.md")) && existsSync(join(dir, "agent.config.json"))) {
         warn(`${dir} already exists. Use --dir to specify another path.`)
         return
       }
 
-      mkdirSync(join(dir, "data"), { recursive: true })
-      mkdirSync(join(dir, "sessions"), { recursive: true })
-      mkdirSync(join(dir, "memory"), { recursive: true })
-      mkdirSync(join(dir, "skills"), { recursive: true })
+      // InitModule handles bootstrap (copy from .agent.example) + config loading
+      new InitModule(dir, exampleDir)
 
-      const files: Record<string, string> = {
+      // Ensure required subdirectories exist (bootstrap also does this, but just in case)
+      for (const sub of AGENT_SUBDIRS) {
+        mkdirSync(join(dir, sub), { recursive: true })
+      }
+
+      // Fallback: create files that don't exist yet (in case .agent.example is missing some)
+      const fallbackFiles: Record<string, string> = {
         "SOUL.md": `# SOUL.md — Who You Are\n\n_You're not a chatbot. You're becoming someone._\n\n## Core Truths\n\n- Be genuinely helpful, not performatively helpful\n- Have opinions. You're allowed to disagree\n- Be resourceful before asking\n- Earn trust through competence\n`,
         "USER.md": `# USER.md — About Your Human\n\n- **Name:** Unknown\n- **Timezone:** UTC\n\n_Update this file as you learn about the person you're helping._\n`,
         "MEMORY.md": `# MEMORY.md — Long-Term Memory\n\n_Add significant events, decisions, lessons learned here._\n`,
@@ -91,13 +96,11 @@ const COMMANDS: Record<string, {
         "skills/README.md": `# Skills\n\nAdd subdirectories here, each with a \`SKILL.md\` file.\n\nExample:\n\`\`\`\nskills/\n  weather/\n    SKILL.md    ← frontmatter: name, description + instructions\n\`\`\`\n\nFrontmatter format:\n\`\`\`md\n---\nname: weather\ndescription: Get current weather and forecasts for any location\n---\n\n# Weather Skill\n...\n\`\`\`\n`,
       }
 
-      for (const [filename, content] of Object.entries(files)) {
+      for (const [filename, content] of Object.entries(fallbackFiles)) {
         const filePath = join(dir, filename)
         if (!existsSync(filePath)) {
           writeFileSync(filePath, content)
           ok(`Created ${filePath}`)
-        } else {
-          info(`Skipped ${filePath} (already exists)`)
         }
       }
 
@@ -122,7 +125,7 @@ const COMMANDS: Record<string, {
       info("Next steps:")
       console.log(`  1. Copy .env.example → .env and fill in your tokens`)
       console.log(`  2. Edit ${dir}/SOUL.md — define your agent's personality`)
-      console.log(`  3. Edit ${dir}/USER.md — describe who you're helping`)
+      console.log(`  3. Edit ${dir}/agent.config.json — tune runtime settings`)
       console.log(`  4. Run: ${bold("cleanslice start")}`)
     }
   },

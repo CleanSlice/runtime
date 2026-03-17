@@ -10,7 +10,7 @@ export const BrowserTool: Tool = {
   name: "browser",
   description: "Fetch a web page and extract its text content. Use for reading web pages, checking websites, scraping data.",
   schema,
-  async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
+  async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, selector } = schema.parse(params)
 
     const proc = Bun.spawn([
@@ -39,7 +39,7 @@ export const BrowserTool: Tool = {
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 5000)  // limit output
+      .slice(0, ctx.agentConfig?.tools.browser.outputLimit ?? 5000)
 
     return {
       url,

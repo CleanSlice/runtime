@@ -18,9 +18,10 @@ import { TaskManager } from "./slices/task/task.manager"
 import { Dispatcher } from "./slices/task/dispatcher"
 import type { Task } from "./slices/task/task.manager"
 import { randomUUID } from "crypto"
+import { InitModule, type IAgentConfig } from "./slices/init"
 
 export interface RuntimeConfig {
-  agentDir?: string
+  init: InitModule
   llm: LlmGatewayConfig
   channels: ChannelGatewayConfig[]
   tools?: Tool[]
@@ -29,6 +30,7 @@ export interface RuntimeConfig {
 
 export class AgentRuntime {
   private agentDir: string
+  private config: IAgentConfig
   private llm: LlmModule
   private tools: Tool[]
   private channel: ChannelModule
@@ -45,16 +47,20 @@ export class AgentRuntime {
   private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
-    this.agentDir = require("path").resolve(config.agentDir ?? ".agent")
+    this.agentDir = config.init.agentDir
+    this.config = config.init.config
     this.tools = config.tools ?? []
 
     this.llm = new LlmModule(config.llm)
     this.channel = new ChannelModule(config.channels)
-    this.session = new SessionModule(this.agentDir)
+    this.session = new SessionModule(this.agentDir, {
+      compactionThreshold: this.config.session.compactionThreshold,
+      recentKeep: this.config.session.recentKeep,
+    })
     this.agent = new AgentModule(this.agentDir)
     this.memory = new MemoryModule(this.agentDir)
     this.cron = new CronModule(this.agentDir)
-    this.heartbeat = new HeartbeatModule(this.agentDir, 30 * 60 * 1000)
+    this.heartbeat = new HeartbeatModule(this.agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
     const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
     this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
     this.skills = new SkillModule(this.agentDir)
@@ -73,7 +79,7 @@ export class AgentRuntime {
     // Pull data from S3 before loading anything
     if (this.s3sync) {
       await this.s3sync.pull()
-      this.s3sync.startAutoSync(60)
+      this.s3sync.startAutoSync(this.config.s3.syncIntervalSec)
     }
 
     await this.memory.load()
@@ -322,7 +328,8 @@ export class AgentRuntime {
     }
 
     // --- Start new task (fire-and-forget) ---
-    const taskLabel = msg.text.slice(0, 60) + (msg.text.length > 60 ? "…" : "")
+    const labelLen = this.config.taskLabelLength
+    const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
     console.log(`[runtime] starting task for "${taskLabel.slice(0, 40)}"`)
 
     this.tasks.start(sessionId, taskLabel, async (task: Task) => {
@@ -350,7 +357,7 @@ export class AgentRuntime {
           console.log(`[skill] activated: ${skill.name}`)
         }
 
-        const MAX_ITERATIONS = 10
+        const MAX_ITERATIONS = this.config.maxIterations
         let continueLoop = true
         let iterations = 0
 
@@ -441,6 +448,7 @@ export class AgentRuntime {
                     from: msg.from,
                     channel: msg.channel,
                     send,
+                    agentConfig: this.config,
                   })
                 } catch (err) {
                   result = { error: String(err) }

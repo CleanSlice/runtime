@@ -4,17 +4,23 @@ import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
 import { randomUUID } from "crypto"
 
-const COMPACTION_THRESHOLD = 60
-const RECENT_KEEP = 20
+export interface SessionConfig {
+  compactionThreshold?: number
+  recentKeep?: number
+}
 
 export class SessionModule {
   private service: SessionService
+  private compactionThreshold: number
+  private recentKeep: number
   // Sessions currently undergoing compaction. Prevents concurrent compact() calls
   // from racing to rewrite the same file and overwriting each other's output.
   private compacting = new Set<string>()
 
-  constructor(agentDir: string) {
+  constructor(agentDir: string, config?: SessionConfig) {
     this.service = new SessionService(new SessionGateway(agentDir))
+    this.compactionThreshold = config?.compactionThreshold ?? 60
+    this.recentKeep = config?.recentKeep ?? 20
   }
 
   getOrCreate(channelId: string, userId: string) {
@@ -57,14 +63,14 @@ export class SessionModule {
     }
 
     const events = await this.service.read(sessionId)
-    if (events.length <= COMPACTION_THRESHOLD) return
+    if (events.length <= this.compactionThreshold) return
 
-    console.log(`[session] compacting ${sessionId}: ${events.length} → ${RECENT_KEEP} events`)
+    console.log(`[session] compacting ${sessionId}: ${events.length} → ${this.recentKeep} events`)
     this.compacting.add(sessionId)
     try {
       const snapshotLen = events.length
-      const toSummarize = events.slice(0, snapshotLen - RECENT_KEEP)
-      const recent = events.slice(snapshotLen - RECENT_KEEP)
+      const toSummarize = events.slice(0, snapshotLen - this.recentKeep)
+      const recent = events.slice(snapshotLen - this.recentKeep)
 
       // LLM call can take seconds. While it runs, other tasks may append events.
       const response = await llm.complete(
