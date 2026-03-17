@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
 import { mkdirSync } from "fs"
+import { ensurePlaywright } from "./ensure-playwright"
 
 const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), url: z.string() }),
@@ -45,7 +46,7 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
     mkdirSync(profileDir, { recursive: true })
     console.log(`[browser_play] profile=${isolatedProfile} user=${ctx.from}`)
 
-    const { chromium } = await import("playwright")
+    const { chromium } = await ensurePlaywright()
 
     const browser = await chromium.launchPersistentContext(profileDir, {
       headless: true,

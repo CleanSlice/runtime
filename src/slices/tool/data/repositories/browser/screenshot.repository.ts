@@ -1,6 +1,7 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
+import { ensurePlaywright } from "./ensure-playwright"
 
 const schema = z.object({
   url: z.string().describe("URL to take a screenshot of"),
@@ -19,8 +20,7 @@ export const BrowserScreenshotTool: Tool = {
     const filename = `screenshot-${randomUUID()}.png`
     const outPath = `${home}/${filename}`
 
-    // Use Playwright for proper full-page screenshots
-    const { chromium } = await import("playwright")
+    const { chromium } = await ensurePlaywright()
     const browser = await chromium.launch({ headless: true })
     const page = await browser.newPage({ viewport: { width: width ?? 1280, height: 900 } })
 
