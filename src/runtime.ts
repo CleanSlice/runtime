@@ -149,6 +149,34 @@ export class AgentRuntime {
         return
       }
 
+      // /skills — list or reload skills (admin only)
+      if (text === "/skills" || text === "/skills reload") {
+        const isAdmin = this.access.isAdmin(msg.from)
+        if (text === "/skills reload") {
+          if (!isAdmin) {
+            await this.channel.send(msg.channel, msg.from, "🔒 Only admins can reload skills.")
+            return
+          }
+          const skills = await this.skills.reload()
+          await this.channel.send(msg.channel, msg.from,
+            skills.length === 0
+              ? "✅ Skills reloaded. No skills found in .agent/skills/"
+              : `✅ Skills reloaded (${skills.length}):\n\n` +
+                skills.map(s => `• *${s.name}* — ${s.description.slice(0, 80)}`).join("\n")
+          )
+        } else {
+          const skills = this.skills.getAll()
+          await this.channel.send(msg.channel, msg.from,
+            skills.length === 0
+              ? "No skills loaded.\n\nTo add a skill: create `.agent/skills/<name>/SKILL.md` then run `/skills reload`"
+              : `📚 *Loaded skills (${skills.length}):*\n\n` +
+                skills.map(s => `• *${s.name}* — ${s.description.slice(0, 80)}`).join("\n") +
+                (isAdmin ? "\n\nUse `/skills reload` to reload from disk." : "")
+          )
+        }
+        return
+      }
+
       // /voice toggle
       if (text === "/voice") {
         const isNowOn = this.voice.toggle(msg.from)
@@ -192,7 +220,9 @@ export class AgentRuntime {
           `/memory — What the agent remembers about you\n` +
           `/tasks — List active tasks\n` +
           `/voice — Toggle voice mode\n` +
-          `/cancel <id> — Cancel a task`
+          `/cancel <id> — Cancel a task\n` +
+          `/skills — List loaded skills\n` +
+          `/skills reload — Reload skills from disk (admin only)`
         )
         return
       }

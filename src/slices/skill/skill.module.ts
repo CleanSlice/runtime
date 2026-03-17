@@ -13,6 +13,12 @@ export class SkillModule {
     await this.service.load()
   }
 
+  /** Hot-reload all skills from disk without restarting the bot */
+  async reload(): Promise<Skill[]> {
+    await this.service.load()
+    return this.service.getAll()
+  }
+
   getAll(): Skill[] {
     return this.service.getAll()
   }
