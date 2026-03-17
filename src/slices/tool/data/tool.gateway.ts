@@ -19,7 +19,6 @@ import { MemorySearchTool } from "./repositories/memory/memory_search.repository
 import { ProcessExecTool } from "./repositories/exec/process.repository"
 import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
 import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "./repositories/secret/secret.repository"
-import { BotProvisionTool, BotDeprovisionTool, BotListTool, BotLogsTool } from "./repositories/provision/bot_provision.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -50,10 +49,6 @@ export class ToolGateway implements IToolGateway {
     this.register(SecretGetTool)
     this.register(SecretListTool)
     this.register(SecretDeleteTool)
-    this.register(BotProvisionTool)
-    this.register(BotDeprovisionTool)
-    this.register(BotListTool)
-    this.register(BotLogsTool)
   }
 
   private register(tool: Tool): void {
