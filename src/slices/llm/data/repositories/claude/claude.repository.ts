@@ -86,13 +86,17 @@ export class ClaudeRepository implements ILlmGateway {
     this.model = model
     this.fallbackModel = fallbackModel
 
-    // Build OAuth client pool from CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN_2, _3...
+    // Build OAuth client pool from CLAUDE_CODE_OAUTH_TOKEN (comma-separated or single)
+    // Also supports legacy CLAUDE_CODE_OAUTH_TOKEN_2, _3... for backwards compat
     const oauthTokens: string[] = []
     const t0 = process.env.CLAUDE_CODE_OAUTH_TOKEN
-    if (t0) oauthTokens.push(t0)
+    if (t0) {
+      // Support comma-separated list: token1,token2,token3
+      oauthTokens.push(...t0.split(",").map(t => t.trim()).filter(Boolean))
+    }
     for (let i = 2; i <= 10; i++) {
       const t = process.env[`CLAUDE_CODE_OAUTH_TOKEN_${i}`]
-      if (t) oauthTokens.push(t)
+      if (t) oauthTokens.push(t.trim())
     }
 
     this.clients = oauthTokens.map(token => new Anthropic({
