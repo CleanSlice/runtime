@@ -5,6 +5,28 @@ import type { Tool } from "../../../../tool/tool.module"
 import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
+// --- Alert: notify admin via Telegram when token fails ---
+let lastAlertAt = 0
+async function sendAdminAlert(message: string): Promise<void> {
+  const adminId = process.env.ADMIN_IDS?.split(",")[0]
+  const botToken = process.env.TELEGRAM_TOKEN
+  if (!adminId || !botToken) return
+  // Rate limit: max 1 alert per 10 minutes
+  const now = Date.now()
+  if (now - lastAlertAt < 10 * 60 * 1000) return
+  lastAlertAt = now
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: adminId, text: `🚨 Bot LLM Alert\n\n${message}`, parse_mode: "Markdown" }),
+    })
+    console.warn(`[llm] admin alert sent: ${message}`)
+  } catch (e) {
+    console.error("[llm] failed to send admin alert:", e)
+  }
+}
+
 // Detect Anthropic overloaded_error — arrives via SSE body with status=undefined
 function isOverloadedError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false
@@ -53,10 +75,13 @@ const PRIMARY_RETRY_AFTER_MS = 2 * 60 * 1000 // 2 minutes
 
 export class ClaudeRepository implements ILlmGateway {
   private client: Anthropic
+  private fallbackApiClient: Anthropic | undefined  // API key fallback when OAuth fails
   private model: string
   private fallbackModel: string | undefined
   // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
   private primaryOverloadedAt = 0
+  // Auth failure tracking: switch to API key fallback after auth errors
+  private oauthFailedAt = 0
 
   constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
     this.model = model
@@ -71,10 +96,26 @@ export class ClaudeRepository implements ILlmGateway {
         authToken: oauthToken,
         defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
       })
+    } else if (oauthToken && key) {
+      // Both available: OAuth as primary, API key as fallback
+      this.client = new Anthropic({
+        authToken: oauthToken,
+        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
+      })
+      this.fallbackApiClient = new Anthropic({ apiKey: key })
+      console.log("[llm] OAuth primary + API key fallback configured")
     } else {
-      // Standard API key (sk-ant-api03-...)
+      // Standard API key only
       this.client = new Anthropic({ apiKey: key })
     }
+  }
+
+  /** Get active client — switches to API key fallback if OAuth failed */
+  private getClient(): Anthropic {
+    if (this.fallbackApiClient && this.oauthFailedAt > 0) {
+      return this.fallbackApiClient
+    }
+    return this.client
   }
 
   /** Returns [primary, fallback?] respecting circuit breaker state */
@@ -125,7 +166,7 @@ export class ClaudeRepository implements ILlmGateway {
           const toolCalls: Array<{ name: string; params: unknown }> = []
           const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
 
-          const streamResponse = await this.client.messages.stream({
+          const streamResponse = await this.getClient().messages.stream({
             model,
             max_tokens: 8096,
             system: systemPrompt,
@@ -171,7 +212,6 @@ export class ClaudeRepository implements ILlmGateway {
       )
 
       if (result.ok) {
-        // Primary recovered — reset circuit breaker
         if (model === this.model && this.primaryOverloadedAt > 0) {
           console.log(`[llm] primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
@@ -179,11 +219,22 @@ export class ClaudeRepository implements ILlmGateway {
         return result.value
       }
       lastError = result.lastError
-      // If primary failed due to overload — trip circuit breaker, try fallback
+      const status = (lastError as { status?: number })?.status
+      // Auth error on OAuth client → switch to API key fallback
+      if ((status === 401 || status === 403) && this.fallbackApiClient && this.oauthFailedAt === 0) {
+        this.oauthFailedAt = Date.now()
+        console.error(`[llm] OAuth auth failed (${status}), switching to API key fallback`)
+        void sendAdminAlert(`⚠️ OAuth token failed (${status})\n\nSwitched to API key fallback automatically.\nPlease refresh the OAuth token.`)
+        // Retry this model with the fallback client
+        continue
+      }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (!result.wasOverloaded) {
+        if (status === 401 || status === 403) {
+          void sendAdminAlert(`🚨 Auth error ${status} — no fallback client available. Bot is down.`)
+        }
         break
       }
     }
@@ -214,7 +265,7 @@ export class ClaudeRepository implements ILlmGateway {
 
       const result = await withRetry(
         async () => {
-          const response = await this.client.messages.create({
+          const response = await this.getClient().messages.create({
             model,
             max_tokens: 8096,
             system: systemPrompt,
@@ -241,7 +292,6 @@ export class ClaudeRepository implements ILlmGateway {
       )
 
       if (result.ok) {
-        // Primary recovered — reset circuit breaker
         if (model === this.model && this.primaryOverloadedAt > 0) {
           console.log(`[llm] primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
@@ -249,11 +299,21 @@ export class ClaudeRepository implements ILlmGateway {
         return result.value
       }
       lastError = result.lastError
-      // If primary failed due to overload — trip circuit breaker, try fallback
+      const status = (lastError as { status?: number })?.status
+      // Auth error on OAuth client → switch to API key fallback
+      if ((status === 401 || status === 403) && this.fallbackApiClient && this.oauthFailedAt === 0) {
+        this.oauthFailedAt = Date.now()
+        console.error(`[llm] OAuth auth failed (${status}), switching to API key fallback`)
+        void sendAdminAlert(`⚠️ OAuth token failed (${status})\n\nСвитчнулся на API key fallback.\nОбнови OAuth токен.`)
+        continue
+      }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (!result.wasOverloaded) {
+        if (status === 401 || status === 403) {
+          void sendAdminAlert(`🚨 Auth error ${status} — fallback недоступен. Бот не работает.`)
+        }
         break
       }
     }
