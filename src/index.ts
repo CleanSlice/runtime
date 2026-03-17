@@ -26,8 +26,7 @@ const toolGateway = new ToolGateway()
 
 const runtime = new AgentRuntime({
   init,
-  agentDir: ".agent",
-  llm: { provider: "claude", model: process.env.CLAUDE_MODEL },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
+  llm: { provider: "claude" },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },
     ...(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN ? [{

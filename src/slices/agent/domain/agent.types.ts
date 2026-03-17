@@ -8,6 +8,5 @@ export interface AgentConfig {
   user?: string
   memory?: string
   heartbeat?: string
-  agents?: string   // AGENTS.md — runtime instructions
   skills: string[]
 }
