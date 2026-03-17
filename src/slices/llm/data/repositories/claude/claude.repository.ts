@@ -74,48 +74,70 @@ async function withRetry<T>(
 const PRIMARY_RETRY_AFTER_MS = 2 * 60 * 1000 // 2 minutes
 
 export class ClaudeRepository implements ILlmGateway {
-  private client: Anthropic
-  private fallbackApiClient: Anthropic | undefined  // API key fallback when OAuth fails
+  private clients: Anthropic[]   // OAuth pool (index 0 = primary, 1,2... = fallbacks)
+  private apiKeyClient: Anthropic | undefined  // API key client (last resort)
+  private currentClientIndex = 0
   private model: string
   private fallbackModel: string | undefined
   // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
   private primaryOverloadedAt = 0
-  // Auth failure tracking: switch to API key fallback after auth errors
-  private oauthFailedAt = 0
 
   constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
     this.model = model
     this.fallbackModel = fallbackModel
 
-    const key = apiKey ?? process.env.ANTHROPIC_API_KEY
-    const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
-
-    if (oauthToken && !key) {
-      // OAuth token with beta header — works with Claude.ai subscription
-      this.client = new Anthropic({
-        authToken: oauthToken,
-        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
-      })
-    } else if (oauthToken && key) {
-      // Both available: OAuth as primary, API key as fallback
-      this.client = new Anthropic({
-        authToken: oauthToken,
-        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
-      })
-      this.fallbackApiClient = new Anthropic({ apiKey: key })
-      console.log("[llm] OAuth primary + API key fallback configured")
-    } else {
-      // Standard API key only
-      this.client = new Anthropic({ apiKey: key })
+    // Build OAuth client pool from CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN_2, _3...
+    const oauthTokens: string[] = []
+    const t0 = process.env.CLAUDE_CODE_OAUTH_TOKEN
+    if (t0) oauthTokens.push(t0)
+    for (let i = 2; i <= 10; i++) {
+      const t = process.env[`CLAUDE_CODE_OAUTH_TOKEN_${i}`]
+      if (t) oauthTokens.push(t)
     }
+
+    this.clients = oauthTokens.map(token => new Anthropic({
+      authToken: token,
+      defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
+    }))
+
+    // API key as final fallback
+    const key = apiKey ?? process.env.ANTHROPIC_API_KEY
+    if (key) {
+      this.apiKeyClient = new Anthropic({ apiKey: key })
+    }
+
+    if (this.clients.length === 0 && this.apiKeyClient) {
+      // Only API key — use it as primary
+      this.clients = [this.apiKeyClient]
+      this.apiKeyClient = undefined
+    }
+
+    console.log(`[llm] ${this.clients.length} OAuth token(s) + ${this.apiKeyClient ? "API key fallback" : "no API key fallback"}`)
   }
 
-  /** Get active client — switches to API key fallback if OAuth failed */
+  /** Get current active client */
   private getClient(): Anthropic {
-    if (this.fallbackApiClient && this.oauthFailedAt > 0) {
-      return this.fallbackApiClient
+    return this.clients[this.currentClientIndex] ?? this.clients[0]
+  }
+
+  /** Switch to next OAuth token or API key fallback. Returns true if switched. */
+  private switchToNextClient(failedStatus: number): boolean {
+    const nextIndex = this.currentClientIndex + 1
+    if (nextIndex < this.clients.length) {
+      console.warn(`[llm] OAuth token[${this.currentClientIndex}] failed (${failedStatus}), switching to token[${nextIndex}]`)
+      void sendAdminAlert(`⚠️ OAuth token #${this.currentClientIndex + 1} failed (${failedStatus})\n\nСвитчнулся на токен #${nextIndex + 1}. Осталось токенов: ${this.clients.length - nextIndex}`)
+      this.currentClientIndex = nextIndex
+      return true
     }
-    return this.client
+    if (this.apiKeyClient) {
+      console.warn(`[llm] all OAuth tokens exhausted, switching to API key fallback`)
+      void sendAdminAlert(`🚨 Все OAuth токены исчерпаны!\n\nИспользую API key fallback. Обнови токены в .env`)
+      // Replace current with apiKeyClient
+      this.clients[this.currentClientIndex] = this.apiKeyClient
+      this.apiKeyClient = undefined
+      return true
+    }
+    return false
   }
 
   /** Returns [primary, fallback?] respecting circuit breaker state */
@@ -220,21 +242,16 @@ export class ClaudeRepository implements ILlmGateway {
       }
       lastError = result.lastError
       const status = (lastError as { status?: number })?.status
-      // Auth error on OAuth client → switch to API key fallback
-      if ((status === 401 || status === 403) && this.fallbackApiClient && this.oauthFailedAt === 0) {
-        this.oauthFailedAt = Date.now()
-        console.error(`[llm] OAuth auth failed (${status}), switching to API key fallback`)
-        void sendAdminAlert(`⚠️ OAuth token failed (${status})\n\nSwitched to API key fallback automatically.\nPlease refresh the OAuth token.`)
-        // Retry this model with the fallback client
-        continue
+      // Auth error → try next OAuth token or API key
+      if (status === 401 || status === 403) {
+        if (this.switchToNextClient(status)) continue
+        void sendAdminAlert(`🚨 Auth error ${status} — все fallback-ы исчерпаны. Бот не работает!`)
+        break
       }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (!result.wasOverloaded) {
-        if (status === 401 || status === 403) {
-          void sendAdminAlert(`🚨 Auth error ${status} — no fallback client available. Bot is down.`)
-        }
         break
       }
     }
@@ -300,20 +317,16 @@ export class ClaudeRepository implements ILlmGateway {
       }
       lastError = result.lastError
       const status = (lastError as { status?: number })?.status
-      // Auth error on OAuth client → switch to API key fallback
-      if ((status === 401 || status === 403) && this.fallbackApiClient && this.oauthFailedAt === 0) {
-        this.oauthFailedAt = Date.now()
-        console.error(`[llm] OAuth auth failed (${status}), switching to API key fallback`)
-        void sendAdminAlert(`⚠️ OAuth token failed (${status})\n\nСвитчнулся на API key fallback.\nОбнови OAuth токен.`)
-        continue
+      // Auth error → try next OAuth token or API key
+      if (status === 401 || status === 403) {
+        if (this.switchToNextClient(status)) continue
+        void sendAdminAlert(`🚨 Auth error ${status} — все fallback-ы исчерпаны. Бот не работает!`)
+        break
       }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (!result.wasOverloaded) {
-        if (status === 401 || status === 403) {
-          void sendAdminAlert(`🚨 Auth error ${status} — fallback недоступен. Бот не работает.`)
-        }
         break
       }
     }
