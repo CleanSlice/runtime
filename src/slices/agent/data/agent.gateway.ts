@@ -13,11 +13,12 @@ export class AgentGateway implements IAgentGateway {
   }
 
   async load(agentDir: string): Promise<AgentConfig> {
-    const [soul, user, memory, heartbeat] = await Promise.all([
+    const [soul, user, memory, heartbeat, agents] = await Promise.all([
       this.readIfExists(`${agentDir}/SOUL.md`),
       this.readIfExists(`${agentDir}/USER.md`),
       this.readIfExists(`${agentDir}/MEMORY.md`),
       this.readIfExists(`${agentDir}/HEARTBEAT.md`),
+      this.readIfExists(`${agentDir}/AGENTS.md`),
     ])
 
     const skills: string[] = []
@@ -32,6 +33,6 @@ export class AgentGateway implements IAgentGateway {
       // no skills dir
     }
 
-    return { soul, user, memory, heartbeat, skills }
+    return { soul, user, memory, heartbeat, agents, skills }
   }
 }
