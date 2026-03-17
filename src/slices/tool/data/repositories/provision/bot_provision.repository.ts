@@ -1,15 +1,36 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
-import { execSync } from "child_process"
+import { execSync, execFileSync } from "child_process"
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from "fs"
+import { join } from "path"
 
 const BOT_SERVER = process.env.BOT_SERVER_HOST ?? "161.35.200.87"
 const BOT_SERVER_USER = process.env.BOT_SERVER_USER ?? "root"
 const RUNTIME_IMAGE = process.env.RUNTIME_IMAGE ?? "ghcr.io/cleanslice/runtime:latest"
 
+function getKeyPath(): string {
+  const keyContent = process.env.BOT_SERVER_SSH_KEY
+  if (!keyContent) throw new Error("BOT_SERVER_SSH_KEY env var not set")
+
+  const keyDir = "/tmp/.ssh-provision"
+  mkdirSync(keyDir, { recursive: true })
+  const keyPath = join(keyDir, "id_provision")
+
+  writeFileSync(keyPath, keyContent, { mode: 0o600 })
+  return keyPath
+}
+
 function ssh(command: string): string {
-  const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${BOT_SERVER_USER}@${BOT_SERVER} ${JSON.stringify(command)}`
+  const keyPath = getKeyPath()
+  const args = [
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "ConnectTimeout=10",
+    "-i", keyPath,
+    `${BOT_SERVER_USER}@${BOT_SERVER}`,
+    command,
+  ]
   try {
-    return execSync(sshCmd, { encoding: "utf-8", timeout: 30_000 }).trim()
+    return execFileSync("ssh", args, { encoding: "utf-8", timeout: 60_000 }).trim()
   } catch (err: any) {
     throw new Error(err.stderr?.toString() || err.message)
   }
