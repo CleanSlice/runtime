@@ -9,8 +9,7 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    font-noto-emoji \
-    openssh-client
+    font-noto-emoji
 
 # Tell Playwright to use system Chromium instead of downloading its own
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
