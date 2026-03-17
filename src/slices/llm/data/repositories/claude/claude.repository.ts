@@ -25,7 +25,7 @@ async function withRetry<T>(
   fn: () => Promise<T>,
   maxAttempts: number,
   label: string
-): Promise<{ ok: true; value: T } | { ok: false; lastError: unknown; wasOverloaded: boolean }> {
+): Promise<{ ok: true; value: T } | { ok: false; lastError: unknown; wasOverloaded: boolean; wasBadRequest: boolean }> {
   let lastError: unknown
   let wasOverloaded = false
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -35,7 +35,12 @@ async function withRetry<T>(
     } catch (err: unknown) {
       lastError = err
       const status = (err as { status?: number })?.status
-      if (status === 401 || status === 403 || status === 400) throw err
+      if (status === 401 || status === 403) throw err
+      // 400 = model not available or bad request — stop retrying, let caller try fallback
+      if (status === 400) {
+        console.warn(`[llm] ${label} got 400 (model unavailable?), will try fallback`)
+        return { ok: false, lastError: err, wasOverloaded: false, wasBadRequest: true }
+      }
       const overloaded = isOverloadedError(err)
       if (overloaded) wasOverloaded = true
       if (attempt < maxAttempts) {
@@ -45,7 +50,7 @@ async function withRetry<T>(
       }
     }
   }
-  return { ok: false, lastError, wasOverloaded }
+  return { ok: false, lastError, wasOverloaded, wasBadRequest: false }
 }
 
 // How long to stay on fallback before retrying primary (ms)
@@ -69,7 +74,9 @@ export class ClaudeRepository implements ILlmGateway {
       // OAuth token with beta header — works with Claude.ai subscription
       this.client = new Anthropic({
         authToken: oauthToken,
-        defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" },
+        defaultHeaders: {
+          "anthropic-beta": "oauth-2025-04-20,claude-code-20250219",
+        },
       })
     } else {
       // Standard API key (sk-ant-api03-...)
@@ -183,6 +190,9 @@ export class ClaudeRepository implements ILlmGateway {
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+      } else if (result.wasBadRequest) {
+        // 400 = model unavailable — continue to fallback model
+        console.warn(`[llm] model ${model} unavailable (400), trying next`)
       } else if (!result.wasOverloaded) {
         break
       }
@@ -253,6 +263,9 @@ export class ClaudeRepository implements ILlmGateway {
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
         console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+      } else if (result.wasBadRequest) {
+        // 400 = model unavailable — continue to fallback model
+        console.warn(`[llm] model ${model} unavailable (400), trying next`)
       } else if (!result.wasOverloaded) {
         break
       }

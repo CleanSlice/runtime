@@ -19,8 +19,8 @@ export class LlmGateway implements ILlmGateway {
       case "claude":
         return new ClaudeRepository({
           apiKey: config.apiKey,
-          model: config.model ?? "claude-sonnet-4-6",
-          fallbackModel: config.fallbackModel ?? "claude-haiku-4-5",
+          model: config.model ?? process.env.LLM_MODEL ?? "claude-haiku-4-5",
+          fallbackModel: config.fallbackModel ?? process.env.LLM_FALLBACK_MODEL ?? "claude-haiku-4-5",
           ...(config.proxyUrl ? { proxyUrl: config.proxyUrl } : {}),
         })
       case "claude-cli":

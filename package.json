@@ -12,7 +12,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.36.0",
+    "@anthropic-ai/sdk": "0.79.0",
     "@aws-sdk/client-s3": "3.1009.0",
     "@aws-sdk/client-secrets-manager": "3.1009.0",
     "gray-matter": "^4.0.3",
