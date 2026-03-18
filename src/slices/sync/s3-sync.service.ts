@@ -1,42 +1,45 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3"
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from "fs"
-import { readFile, writeFile } from "fs/promises"
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from "fs"
+import { join, relative } from "path"
 
 export interface S3SyncConfig {
   bucket: string
-  prefix?: string      // e.g. "cleanslice/agent-data"
+  prefix?: string      // e.g. "bots/botId"
   region?: string
   accessKeyId?: string
   secretAccessKey?: string
 }
 
 /**
- * S3SyncService — syncs .agent/data to/from S3.
+ * S3SyncService — syncs the entire .agent/ directory to/from S3.
  *
- * Usage:
- *   const sync = new S3SyncService(config, agentDir)
- *   await sync.pull()         // on startup: download everything from S3
- *   await sync.push()         // on demand: upload everything to S3
- *   sync.startAutoSync(60)    // background sync every N seconds
+ * S3 layout:  {prefix}/SOUL.md
+ *             {prefix}/MEMORY.md
+ *             {prefix}/data/memory.sqlite
+ *             {prefix}/data/sessions/abc.jsonl
+ *             {prefix}/skills/my-skill/SKILL.md
+ *             etc.
  */
 export class S3SyncService {
   private s3: S3Client
   private bucket: string
   private prefix: string
-  private dataDir: string
-  private sessionsDir: string
+  private agentDir: string
   private timer?: ReturnType<typeof setInterval>
-  /** Prevent overlapping push() calls (e.g. auto-sync fires while shutdown push is in flight) */
   private pushing = false
 
-  private agentDir: string
+  // Files/dirs to skip — binary blobs that change too often or shouldn't be synced
+  private static readonly SKIP_PATTERNS = [
+    /\.sqlite-shm$/,
+    /\.sqlite-wal$/,
+    /node_modules/,
+    /\.DS_Store/,
+  ]
 
   constructor(config: S3SyncConfig, agentDir: string) {
     this.bucket = config.bucket
     this.prefix = config.prefix?.replace(/\/$/, "") ?? "agent-data"
     this.agentDir = agentDir
-    this.dataDir = `${agentDir}/data`
-    this.sessionsDir = `${agentDir}/data/sessions`
 
     this.s3 = new S3Client({
       region: config.region ?? process.env.AWS_REGION ?? "us-east-1",
@@ -46,21 +49,20 @@ export class S3SyncService {
       },
     })
 
-    mkdirSync(this.sessionsDir, { recursive: true })
+    mkdirSync(agentDir, { recursive: true })
   }
 
-  private s3Key(localPath: string): string {
-    // localPath relative to dataDir → s3 key
-    return `${this.prefix}/${localPath}`
+  // ── S3 helpers ────────────────────────────────────────────────────────────────
+
+  private s3Key(relPath: string): string {
+    return `${this.prefix}/${relPath}`
   }
 
   private async s3Get(key: string): Promise<Buffer | null> {
     try {
       const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))
       const chunks: Uint8Array[] = []
-      for await (const chunk of res.Body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk)
-      }
+      for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(chunk)
       return Buffer.concat(chunks)
     } catch (err: any) {
       if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) return null
@@ -93,37 +95,40 @@ export class S3SyncService {
     return keys
   }
 
+  // ── Local file walker ─────────────────────────────────────────────────────────
+
+  private walkDir(dir: string, result: string[] = []): string[] {
+    if (!existsSync(dir)) return result
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      const rel = relative(this.agentDir, full)
+      if (S3SyncService.SKIP_PATTERNS.some(p => p.test(rel))) continue
+      if (statSync(full).isDirectory()) {
+        this.walkDir(full, result)
+      } else {
+        result.push(rel)
+      }
+    }
+    return result
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────────
+
   /**
-   * Pull all data from S3 → local on startup.
+   * Pull entire .agent/ from S3 on startup.
+   * Only downloads files that don't exist locally (init) or exist in S3.
    */
   async pull(): Promise<void> {
     console.log("[s3-sync] pulling from S3...")
     let count = 0
-
-    // List all files under our prefix
     const keys = await this.s3List(`${this.prefix}/`)
 
     for (const key of keys) {
-      const localRelPath = key.slice(`${this.prefix}/`.length)   // e.g. "access.json" or "sessions/abc.jsonl"
-
-      // .md files are stored under md/ prefix, restore to agentDir root
-      if (localRelPath.startsWith("md/") && localRelPath.endsWith(".md")) {
-        const filename = localRelPath.slice("md/".length)
-        const localPath = `${this.agentDir}/${filename}`
-        const body = await this.s3Get(key)
-        if (body) {
-          writeFileSync(localPath, body)
-          count++
-        }
-        continue
-      }
-
-      const localPath = `${this.dataDir}/${localRelPath}`
-
-      // Ensure parent dir exists
+      const relPath = key.slice(`${this.prefix}/`.length)
+      if (!relPath) continue
+      const localPath = join(this.agentDir, relPath)
       const dir = localPath.substring(0, localPath.lastIndexOf("/"))
       mkdirSync(dir, { recursive: true })
-
       const body = await this.s3Get(key)
       if (body) {
         writeFileSync(localPath, body)
@@ -135,7 +140,7 @@ export class S3SyncService {
   }
 
   /**
-   * Push all local data → S3.
+   * Push entire .agent/ to S3.
    * Called periodically + on shutdown.
    */
   async push(): Promise<void> {
@@ -146,100 +151,53 @@ export class S3SyncService {
     this.pushing = true
     let count = 0
 
-    const tryPush = async (relPath: string) => {
-      if (existsSync(`${this.dataDir}/${relPath}`)) {
-        await this.pushFile(relPath)
-        count++
-      }
-    }
-
-    const tryPushMd = async (filename: string) => {
-      const fullPath = `${this.agentDir}/${filename}`
-      if (existsSync(fullPath)) {
-        await this.s3Put(`${this.prefix}/md/${filename}`, readFileSync(fullPath))
-        count++
-      }
-    }
-
     try {
-      // .md files from root .agent/ (SOUL.md, MEMORY.md, USER.md, HEARTBEAT.md)
-      for (const md of ["SOUL.md", "MEMORY.md", "USER.md", "HEARTBEAT.md", "AGENTS.md"]) {
-        await tryPushMd(md)
-      }
-
-      // access.json
-      await tryPush("access.json")
-
-      // cron.json — scheduled jobs (must survive restart)
-      await tryPush("cron.json")
-
-      // voice.json — per-user voice mode preferences (must survive restart)
-      await tryPush("voice.json")
-
-      // memory.sqlite
-      await tryPush("memory.sqlite")
-
-      // secrets/ directory
-      const secretsDir = `${this.dataDir}/secrets`
-      if (existsSync(secretsDir)) {
-        for (const file of readdirSync(secretsDir)) {
-          await tryPush(`secrets/${file}`)
+      const files = this.walkDir(this.agentDir)
+      for (const relPath of files) {
+        try {
+          const body = readFileSync(join(this.agentDir, relPath))
+          await this.s3Put(this.s3Key(relPath), body)
+          count++
+        } catch (err) {
+          console.error(`[s3-sync] failed to push ${relPath}:`, err)
         }
       }
-
-      // sessions/*.jsonl
-      if (existsSync(this.sessionsDir)) {
-        for (const file of readdirSync(this.sessionsDir)) {
-          if (file.endsWith(".jsonl")) {
-            await tryPush(`sessions/${file}`)
-          }
-        }
-      }
-
       console.log(`[s3-sync] pushed ${count} files`)
     } finally {
       this.pushing = false
     }
   }
 
-  private async pushFile(relPath: string, retries = 3): Promise<void> {
-    const localPath = `${this.dataDir}/${relPath}`
-    if (!existsSync(localPath)) return
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        const body = await readFile(localPath)
-        await this.s3Put(this.s3Key(relPath), body)
-        return
-      } catch (err) {
-        if (attempt < retries) {
-          const delay = attempt * 1000
-          console.warn(`[s3-sync] push ${relPath} attempt ${attempt} failed, retrying in ${delay}ms...`)
-          await new Promise(r => setTimeout(r, delay))
-        } else {
-          console.error(`[s3-sync] failed to push ${relPath} after ${retries} attempts:`, err)
-        }
-      }
-    }
-  }
-
   /**
    * Push a single session file immediately after it's written.
-   * Call this from SessionGateway after append/rewrite.
    */
   async pushSession(sessionId: string): Promise<void> {
-    await this.pushFile(`sessions/${sessionId}.jsonl`)
+    const relPath = `data/sessions/${sessionId}.jsonl`
+    const localPath = join(this.agentDir, relPath)
+    if (!existsSync(localPath)) return
+    try {
+      await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
+    } catch (err) {
+      console.error(`[s3-sync] failed to push session ${sessionId}:`, err)
+    }
   }
 
   /**
    * Push access.json immediately after it's written.
    */
   async pushAccess(): Promise<void> {
-    await this.pushFile("access.json")
+    const relPath = `data/access.json`
+    const localPath = join(this.agentDir, relPath)
+    if (!existsSync(localPath)) return
+    try {
+      await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
+    } catch (err) {
+      console.error(`[s3-sync] failed to push access:`, err)
+    }
   }
 
   /**
    * Start background periodic sync (push only).
-   * @param intervalSec — seconds between syncs (default 60)
    */
   startAutoSync(intervalSec = 60): void {
     if (this.timer) return
