@@ -29,9 +29,12 @@ export class S3SyncService {
   /** Prevent overlapping push() calls (e.g. auto-sync fires while shutdown push is in flight) */
   private pushing = false
 
+  private agentDir: string
+
   constructor(config: S3SyncConfig, agentDir: string) {
     this.bucket = config.bucket
     this.prefix = config.prefix?.replace(/\/$/, "") ?? "agent-data"
+    this.agentDir = agentDir
     this.dataDir = `${agentDir}/data`
     this.sessionsDir = `${agentDir}/data/sessions`
 
@@ -102,6 +105,19 @@ export class S3SyncService {
 
     for (const key of keys) {
       const localRelPath = key.slice(`${this.prefix}/`.length)   // e.g. "access.json" or "sessions/abc.jsonl"
+
+      // .md files are stored under md/ prefix, restore to agentDir root
+      if (localRelPath.startsWith("md/") && localRelPath.endsWith(".md")) {
+        const filename = localRelPath.slice("md/".length)
+        const localPath = `${this.agentDir}/${filename}`
+        const body = await this.s3Get(key)
+        if (body) {
+          writeFileSync(localPath, body)
+          count++
+        }
+        continue
+      }
+
       const localPath = `${this.dataDir}/${localRelPath}`
 
       // Ensure parent dir exists
@@ -137,7 +153,20 @@ export class S3SyncService {
       }
     }
 
+    const tryPushMd = async (filename: string) => {
+      const fullPath = `${this.agentDir}/${filename}`
+      if (existsSync(fullPath)) {
+        await this.s3Put(`${this.prefix}/md/${filename}`, readFileSync(fullPath))
+        count++
+      }
+    }
+
     try {
+      // .md files from root .agent/ (SOUL.md, MEMORY.md, USER.md, HEARTBEAT.md)
+      for (const md of ["SOUL.md", "MEMORY.md", "USER.md", "HEARTBEAT.md", "AGENTS.md"]) {
+        await tryPushMd(md)
+      }
+
       // access.json
       await tryPush("access.json")
 
