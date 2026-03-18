@@ -109,8 +109,8 @@ const COMMANDS: Record<string, {
       if (!existsSync(envPath)) {
         writeFileSync(envPath, [
           "# CleanSlice Runtime — environment variables",
-          "TELEGRAM_TOKEN=your-telegram-bot-token",
-          "ADMIN_IDS=your-telegram-user-id",
+          "TELEGRAM_BOT_TOKEN=your-telegram-bot-token",
+          "TELEGRAM_BOT_ADMIN_IDS=your-telegram-user-id",
           "# SLACK_BOT_TOKEN=xoxb-...",
           "# SLACK_APP_TOKEN=xapp-...",
           "# CLAUDE_CODE_OAUTH_TOKEN=...",
@@ -323,8 +323,8 @@ const COMMANDS: Record<string, {
           const count = readdirSync(join(AGENT_DIR, "sessions")).filter((f: string) => f.endsWith(".json")).length
           return count > 0 ? cyan(String(count)) : dim("0")
         }],
-        ["TELEGRAM_TOKEN", () => process.env.TELEGRAM_TOKEN ? green("✓ set") : red("not set")],
-        ["ADMIN_IDS", () => process.env.ADMIN_IDS ? green(process.env.ADMIN_IDS) : yellow("not set")],
+        ["TELEGRAM_BOT_TOKEN", () => process.env.TELEGRAM_BOT_TOKEN ? green("✓ set") : red("not set")],
+        ["TELEGRAM_BOT_ADMIN_IDS", () => process.env.TELEGRAM_BOT_ADMIN_IDS ? green(process.env.TELEGRAM_BOT_ADMIN_IDS) : yellow("not set")],
       ]
 
       for (const [label, check] of checks) {

@@ -29,7 +29,7 @@ const runtime = new AgentRuntime({
   agentDir: ".agent",
   llm: { provider: "claude", model: process.env.CLAUDE_MODEL },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
   channels: [
-    { type: "telegram", token: process.env.TELEGRAM_TOKEN ?? "" },
+    { type: "telegram", token: process.env.TELEGRAM_BOT_TOKEN ?? "" },
     ...(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN ? [{
       type: "slack" as const,
       botToken: process.env.SLACK_BOT_TOKEN,

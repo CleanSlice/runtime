@@ -62,9 +62,9 @@ export const TtsTool: Tool = {
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { text, chat_id } = schema.parse(params)
 
-    const token = process.env.TELEGRAM_TOKEN
+    const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
-      return { error: "TELEGRAM_TOKEN environment variable is not set" }
+      return { error: "TELEGRAM_BOT_TOKEN environment variable is not set" }
     }
 
     const targetChatId = chat_id ?? ctx.from

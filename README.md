@@ -30,9 +30,9 @@ Fill in the required values:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `TELEGRAM_TOKEN` | yes | Bot token from @BotFather |
-| `BOT_USERNAME` | yes | Bot username (without @) |
-| `ADMIN_IDS` | yes | Comma-separated Telegram user IDs |
+| `TELEGRAM_BOT_TOKEN` | yes | Bot token from @BotFather |
+| `TELEGRAM_BOT_NAME` | yes | Bot username (without @) |
+| `TELEGRAM_BOT_ADMIN_IDS` | yes | Comma-separated Telegram user IDs |
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes | Anthropic OAuth token (supports comma-separated list for rotation) |
 | `LLM_MODEL` | no | Model to use (default: `claude-sonnet-4-6`) |
 | `LLM_FALLBACK_MODEL` | no | Fallback model (default: `claude-haiku-4-5`) |

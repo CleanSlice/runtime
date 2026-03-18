@@ -68,7 +68,7 @@ export const BrowserScreenshotTool: Tool = {
     }
 
     // Send via Telegram
-    const telegramToken = process.env.TELEGRAM_TOKEN
+    const telegramToken = process.env.TELEGRAM_BOT_TOKEN
     const chatId = ctx.from
     if (telegramToken && chatId && chatId !== "cron") {
       const form = new FormData()

@@ -144,7 +144,7 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
               }
             }
 
-            const telegramToken = process.env.TELEGRAM_TOKEN
+            const telegramToken = process.env.TELEGRAM_BOT_TOKEN
             const chatId = ctx.from
             if (telegramToken && chatId && chatId !== "cron") {
               const file = Bun.file(outPath)

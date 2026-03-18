@@ -61,7 +61,7 @@ export class AgentRuntime {
     this.memory = new MemoryModule(this.agentDir)
     this.cron = new CronModule(this.agentDir)
     this.heartbeat = new HeartbeatModule(this.agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
-    const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
+    const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
     this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
@@ -136,7 +136,7 @@ export class AgentRuntime {
     // --- Access control & built-in commands (sync, instant) ---
     if (!isInternal) {
       const text = msg.text.trim()
-      const botUsername = process.env.BOT_USERNAME ?? "dv_cleanslice_bot"
+      const botUsername = process.env.TELEGRAM_BOT_NAME ?? "dv_cleanslice_bot"
 
       // /start <invite_code>
       const startMatch = text.match(/^\/start\s+(\S+)/)

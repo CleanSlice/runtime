@@ -8,8 +8,8 @@ import { zodToJsonSchema } from "zod-to-json-schema"
 // --- Alert: notify admin via Telegram when token fails ---
 let lastAlertAt = 0
 async function sendAdminAlert(message: string): Promise<void> {
-  const adminId = process.env.ADMIN_IDS?.split(",")[0]
-  const botToken = process.env.TELEGRAM_TOKEN
+  const adminId = process.env.TELEGRAM_BOT_ADMIN_IDS?.split(",")[0]
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!adminId || !botToken) return
   // Rate limit: max 1 alert per 10 minutes
   const now = Date.now()

@@ -56,7 +56,7 @@ export const SpawnAgentTool: Tool = {
     }
 
     if (notify_chat_id) {
-      const telegramToken = process.env.TELEGRAM_TOKEN
+      const telegramToken = process.env.TELEGRAM_BOT_TOKEN
       if (telegramToken) {
         const outputLimit = ctx.agentConfig?.tools.spawnAgent.outputLimit ?? 4000
         const summary = output.slice(0, outputLimit) || "(no output)"

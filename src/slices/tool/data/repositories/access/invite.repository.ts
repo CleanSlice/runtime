@@ -15,9 +15,9 @@ export const InviteTool: Tool = {
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { action } = schema.parse(params)
-    const adminIds = (process.env.ADMIN_IDS ?? "").split(",").filter(Boolean)
+    const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
     const access = new AccessModule(ctx.agentDir, adminIds, new InviteRepository())
-    const botUsername = process.env.BOT_USERNAME ?? "dv_cleanslice_bot"
+    const botUsername = process.env.TELEGRAM_BOT_NAME ?? "dv_cleanslice_bot"
 
     if (action === "get_link") {
       // Ensure user record exists

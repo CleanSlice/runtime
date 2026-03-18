@@ -14,9 +14,9 @@ export const TelegramSendTool: Tool = {
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { chat_id, text, parse_mode } = schema.parse(params)
 
-    const token = process.env.TELEGRAM_TOKEN
+    const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
-      return { error: "TELEGRAM_TOKEN environment variable is not set" }
+      return { error: "TELEGRAM_BOT_TOKEN environment variable is not set" }
     }
 
     const body: Record<string, unknown> = { chat_id, text }
