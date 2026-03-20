@@ -18,7 +18,12 @@ export class ChannelService {
   }
 
   async start(): Promise<void> {
-    await Promise.all(this.channels.map(ch => ch.start()))
+    const results = await Promise.allSettled(this.channels.map(ch => ch.start()))
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
+        console.error(`[channel] ${this.channels[i].name} failed to start:`, (results[i] as PromiseRejectedResult).reason)
+      }
+    }
   }
 
   async stop(): Promise<void> {
