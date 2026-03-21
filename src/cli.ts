@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve, join } from "path"
 import { randomUUID } from "crypto"
-import { InitModule, AGENT_SUBDIRS } from "./slices/init"
+import { InitModule, AGENT_SUBDIRS } from "./slices/agent/init"
 
 const VERSION = "0.1.0"
 const AGENT_DIR = resolve(process.env.CLEANSLICE_AGENT_DIR ?? ".agent")

@@ -1,24 +1,25 @@
-import type { Tool } from "./slices/tool"
-import type { Event } from "./slices/event"
-import type { ChannelGatewayConfig } from "./slices/channel"
-import type { LlmGatewayConfig } from "./slices/llm/llm.module"
-import { S3SyncService, type S3SyncConfig } from "./slices/sync/s3-sync.service"
-import { ChannelModule } from "./slices/channel/channel.module"
-import { SessionModule } from "./slices/session/session.module"
-import { AgentModule } from "./slices/agent/agent.module"
-import { MemoryModule } from "./slices/memory/memory.module"
-import { CronModule } from "./slices/cron/cron.module"
-import { HeartbeatModule } from "./slices/heartbeat/heartbeat.module"
-import { AccessModule } from "./slices/access/access.module"
-import { InviteRepository } from "./slices/access/data/repositories/invite/invite.repository"
-import { LlmModule } from "./slices/llm/llm.module"
-import { SkillModule } from "./slices/skill/skill.module"
-import { VoiceModule } from "./slices/voice/voice.module"
-import { TaskManager } from "./slices/task/task.manager"
-import { Dispatcher } from "./slices/task/dispatcher"
-import type { Task } from "./slices/task/task.manager"
+import type { Tool } from "./slices/agent/tool"
+import type { Event } from "./slices/agent/event"
+import type { ChannelGatewayConfig } from "./slices/setup/channel"
+import type { LlmGatewayConfig } from "./slices/setup/llm/llm.module"
+import { S3SyncService, type S3SyncConfig } from "./slices/agent/sync/s3-sync.service"
+import { ChannelModule } from "./slices/setup/channel/channel.module"
+import { SessionModule } from "./slices/agent/session/session.module"
+import { AgentModule } from "./slices/agent/core/agent.module"
+import { MemoryModule } from "./slices/agent/memory/memory.module"
+import { CronModule } from "./slices/agent/cron/cron.module"
+import { HeartbeatModule } from "./slices/agent/heartbeat/heartbeat.module"
+import { AccessModule } from "./slices/bot/access/access.module"
+import { ApprovalRepository } from "./slices/bot/access/data/repositories/approval/approval.repository"
+import { LlmModule } from "./slices/setup/llm/llm.module"
+import { SkillModule } from "./slices/agent/skill/skill.module"
+import { VoiceModule } from "./slices/agent/voice/voice.module"
+import { TaskManager } from "./slices/agent/task/task.manager"
+import { Dispatcher } from "./slices/agent/task/dispatcher"
+import type { Task } from "./slices/agent/task/task.manager"
 import { randomUUID } from "crypto"
-import { InitModule, type IAgentConfig } from "./slices/init"
+import { readFileSync, writeFileSync } from "fs"
+import { InitModule, type IAgentConfig } from "./slices/agent/init"
 
 export interface RuntimeConfig {
   init: InitModule
@@ -62,7 +63,7 @@ export class AgentRuntime {
     this.cron = new CronModule(this.agentDir)
     this.heartbeat = new HeartbeatModule(this.agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
     const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
-    this.access = new AccessModule(this.agentDir, adminIds, new InviteRepository())
+    this.access = new AccessModule(this.agentDir, adminIds, new ApprovalRepository())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
     this.tasks = new TaskManager()
@@ -81,6 +82,9 @@ export class AgentRuntime {
       await this.s3sync.pull()
       this.s3sync.startAutoSync(this.config.s3.syncIntervalSec)
     }
+
+    // Write admin IDs to MEMORY.md so the agent knows who the owner is
+    this.ensureAdminInMemory()
 
     await this.memory.load()
     await this.skills.load()
@@ -113,6 +117,51 @@ export class AgentRuntime {
     this.heartbeat.start()
   }
 
+  private ensureAdminInMemory(): void {
+    const memoryPath = `${this.agentDir}/MEMORY.md`
+    const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
+    if (adminIds.length === 0) return
+
+    const marker = "## Bot Owner"
+    const ownerBlock = `${marker}\n
+Admin IDs: ${adminIds.join(", ")}
+
+### Access Control — How User Approval Works
+- New users who message the bot receive a 6-character access code (e.g. A3F2B1).
+- They must send this code to the bot owner (you, the admin) — via any messenger, in person, etc.
+- The admin then sends the code to this bot to approve the user.
+
+### How to Recognize an Approval Request
+When the admin sends you a message, look for a 6-character alphanumeric code. It may come in many forms:
+- Just the code: "A3F2B1"
+- With a command: "/approve A3F2B1"
+- Copy-pasted instructions: "Owner types /approve A3F2B1 in the bot → user gets approved"
+- With context: "вот код от пользователя: A3F2B1"
+- As part of a forwarded message or screenshot text
+
+In ALL these cases — extract the code and call the \`approve_user\` tool. Do NOT treat the surrounding text literally. The admin is not asking you to explain what "/approve" does — they are giving you a code to approve.
+
+RULE: If the message from an admin contains anything that looks like a 6-char uppercase alphanumeric code, call \`approve_user\` with it first. If it fails (no pending user), then treat the message normally.
+`
+
+    try {
+      const content = readFileSync(memoryPath, "utf-8")
+      if (content.includes(marker)) {
+        // Update existing block
+        const updated = content.replace(
+          new RegExp(`${marker}[\\s\\S]*?(?=\\n## |$)`),
+          ownerBlock,
+        )
+        writeFileSync(memoryPath, updated)
+      } else {
+        writeFileSync(memoryPath, content + "\n" + ownerBlock)
+      }
+    } catch {
+      writeFileSync(memoryPath, ownerBlock)
+    }
+    console.log(`[init] admin IDs written to MEMORY.md: ${adminIds.join(", ")}`)
+  }
+
   async stop(): Promise<void> {
     await this.channel.stop()
     this.cron.stop()
@@ -136,23 +185,19 @@ export class AgentRuntime {
     // --- Access control & built-in commands (sync, instant) ---
     if (!isInternal) {
       const text = msg.text.trim()
-      const botUsername = process.env.TELEGRAM_BOT_NAME ?? "dv_cleanslice_bot"
 
-      // /start <invite_code>
-      const startMatch = text.match(/^\/start\s+(\S+)/)
-      if (startMatch) {
-        const result = this.access.processInvite(msg.from, startMatch[1])
-        if (result.activated && !result.alreadyActive) {
-          const activatedLink = this.access.getInviteLink(result.activated.userId, botUsername)
-          await this.channel.send(msg.channel, result.activated.userId,
-            `🎉 Ты активирован!\n\nТеперь можешь общаться с ботом.\n\nПоделись своей ссылкой:\n${activatedLink}`
-          )
+      // Auto-approve: if admin sends a message containing a 6-char access code
+      if (this.access.isAdmin(msg.from)) {
+        const codeMatch = text.match(/\b([A-Z0-9]{6})\b/)
+        if (codeMatch) {
+          const user = this.access.approve(codeMatch[1])
+          if (user) {
+            console.log(`[access] admin approved user ${user.userId} with code ${codeMatch[1]}`)
+            await this.channel.send(msg.channel, user.userId, `🎉 Доступ открыт! Напиши мне что-нибудь.`)
+            await this.channel.send(msg.channel, msg.from, `✅ Пользователь ${user.userId} одобрен.`)
+            return
+          }
         }
-        const newUserLink = this.access.getInviteLink(msg.from, botUsername)
-        await this.channel.send(msg.channel, msg.from,
-          `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${newUserLink}`
-        )
-        return
       }
 
       // /skills — list or reload skills (admin only)
@@ -265,28 +310,26 @@ export class AgentRuntime {
         })
       }
 
-      // /start (no code)
+      // /start
       if (text === "/start") {
         if (this.access.isAllowed(msg.from)) {
           await this.channel.send(msg.channel, msg.from,
             `👋 Hi! I'm your AI agent.\n\nSend me any message to get started.\nUse /help to see available commands.`
           )
-          return
+        } else {
+          const user = this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
+          await this.channel.send(msg.channel, msg.from,
+            `👋 Hi! To get access, send this code to the bot owner:\n\n🔑 *${user.accessCode}*`
+          )
         }
-        this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
-        const link = this.access.getInviteLink(msg.from, botUsername)
-        await this.channel.send(msg.channel, msg.from,
-          `👋 Привет!\n\nЧтобы получить доступ — пригласи друга:\n${link}`
-        )
         return
       }
 
       // Access check
       if (!this.access.isAllowed(msg.from)) {
-        this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
-        const link = this.access.getInviteLink(msg.from, botUsername)
+        const user = this.access.getUser(msg.from) ?? this.access.registerPending(msg.from)
         await this.channel.send(msg.channel, msg.from,
-          `🔒 Доступ закрыт.\n\nПригласи друга:\n${link}`
+          `🔒 Access denied.\n\nSend this code to the bot owner to get access:\n\n🔑 *${user.accessCode}*`
         )
         return
       }
