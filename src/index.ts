@@ -13,6 +13,8 @@ process.on("unhandledRejection", (reason) => {
   console.error("[unhandledRejection] caught:", reason)
 })
 
+
+
 // Validate env vars
 const requiredEnv = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_NAME", "TELEGRAM_BOT_ADMIN_IDS", "CLAUDE_CODE_OAUTH_TOKEN"]
 const optionalEnv = ["LLM_MODEL", "LLM_FALLBACK_MODEL", "SECRET_PROVIDER", "ELEVENLABS_API_KEY", "S3_BUCKET", "S3_PREFIX", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "ANTHROPIC_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT"]
@@ -51,6 +53,21 @@ const runtime = new AgentRuntime({
 
 await runtime.start()
 console.log("🤖 Agent runtime started")
+
+// Graceful shutdown on SIGTERM (docker stop) and SIGINT (ctrl+c)
+// Gives runtime time to push final S3 sync before exit
+async function shutdown(signal: string) {
+  console.log(`[shutdown] received ${signal}, stopping runtime...`)
+  try {
+    await runtime.stop()
+    console.log("[shutdown] clean exit")
+  } catch (err) {
+    console.error("[shutdown] error during stop:", err)
+  }
+  process.exit(0)
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"))
+process.on("SIGINT",  () => shutdown("SIGINT"))
 
 Bun.serve({
   port: Number(process.env.PORT ?? 3000),
