@@ -25,12 +25,14 @@ jobs:
       - name: Log in to DO Container Registry
         run: doctl registry login --expiry-seconds 600
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
         run: |
-          docker build -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} .
-          docker tag $REGISTRY/$IMAGE_NAME:${{ github.sha }} $REGISTRY/$IMAGE_NAME:latest
-
-      - name: Push to registry
-        run: |
-          docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
-          docker push $REGISTRY/$IMAGE_NAME:latest
+          docker buildx build \
+            --platform linux/amd64 \
+            -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} \
+            -t $REGISTRY/$IMAGE_NAME:latest \
+            --push \
+            .
