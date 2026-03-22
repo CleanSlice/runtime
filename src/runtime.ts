@@ -492,6 +492,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                     channel: msg.channel,
                     send,
                     agentConfig: this.config,
+                    reloadSkills: () => this.skills.reload().then(() => undefined),
                   })
                 } catch (err) {
                   result = { error: String(err) }

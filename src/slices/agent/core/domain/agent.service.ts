@@ -8,7 +8,7 @@ export class AgentService {
     return this.gateway.load(agentDir)
   }
 
-  buildSystemPrompt(config: AgentConfig): string {
+  buildSystemPrompt(config: AgentConfig, agentDir?: string): string {
     const parts: string[] = []
     if (config.soul)      parts.push(`# Soul\n\n${config.soul}`)
     if (config.agents)    parts.push(`# Agent Instructions\n\n${config.agents}`)
@@ -16,6 +16,10 @@ export class AgentService {
     if (config.memory)    parts.push(`# Memory\n\n${config.memory}`)
     if (config.heartbeat) parts.push(`# Heartbeat\n\n${config.heartbeat}`)
     for (const skill of config.skills) parts.push(`# Skill\n\n${skill}`)
+
+    if (agentDir) {
+      parts.push(`# Runtime\n\nAgent dir: ${agentDir}\nSkills dir: ${agentDir}/skills/\n\nTo create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`)
+    }
 
     parts.push(`# Context Recall Rules
 
@@ -45,6 +49,6 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
       }
     }
 
-    return this.buildSystemPrompt(config)
+    return this.buildSystemPrompt(config, agentDir)
   }
 }
