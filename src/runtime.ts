@@ -11,6 +11,10 @@ import { CronModule } from "./slices/agent/cron/cron.module"
 import { HeartbeatModule } from "./slices/agent/heartbeat/heartbeat.module"
 import { AccessModule } from "./slices/bot/access/access.module"
 import { ApprovalRepository } from "./slices/bot/access/data/repositories/approval/approval.repository"
+import { OpenRepository } from "./slices/bot/access/data/repositories/open/open.repository"
+import { AllowlistRepository } from "./slices/bot/access/data/repositories/allowlist/allowlist.repository"
+import { CodeRepository } from "./slices/bot/access/data/repositories/code/code.repository"
+import type { IAccessStrategy } from "./slices/bot/access/domain/access.types"
 import { LlmModule } from "./slices/setup/llm/llm.module"
 import { SkillModule } from "./slices/agent/skill/skill.module"
 import { VoiceModule } from "./slices/agent/voice/voice.module"
@@ -63,7 +67,7 @@ export class AgentRuntime {
     this.cron = new CronModule(this.agentDir)
     this.heartbeat = new HeartbeatModule(this.agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
     const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
-    this.access = new AccessModule(this.agentDir, adminIds, new ApprovalRepository())
+    this.access = new AccessModule(this.agentDir, adminIds, this.buildAccessStrategy())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
     this.tasks = new TaskManager()
@@ -73,6 +77,21 @@ export class AgentRuntime {
       this.s3sync = new S3SyncService(config.s3, this.agentDir)
     } else if (process.env.S3_BUCKET) {
       this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX }, this.agentDir)
+    }
+  }
+
+  private buildAccessStrategy(): IAccessStrategy {
+    const strategy = this.config.accessStrategy ?? "approval"
+    switch (strategy) {
+      case "open":
+        return new OpenRepository()
+      case "allowlist":
+        return new AllowlistRepository(this.config.allowlist ?? [])
+      case "code":
+        return new CodeRepository(this.config.accessCode ?? "")
+      case "approval":
+      default:
+        return new ApprovalRepository()
     }
   }
 
