@@ -12,7 +12,7 @@
   },
 
   "s3": {
-    "syncIntervalSec": 60
+    "syncIntervalSec": 600
   },
 
   "tools": {

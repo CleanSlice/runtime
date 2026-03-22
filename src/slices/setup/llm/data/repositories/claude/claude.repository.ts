@@ -357,33 +357,51 @@ export class ClaudeRepository implements ILlmGateway {
     while (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
       messages.pop()
     }
-    // Index tool_results by tool_use_id for lookup
+
+    // Pre-scan: collect all tool_use IDs that exist in assistant messages
+    const knownToolUseIds = new Set<string>()
+    for (const msg of messages) {
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        for (const block of msg.content as Array<{ type: string }>) {
+          if (block.type === "tool_use") {
+            knownToolUseIds.add((block as Anthropic.ToolUseBlock).id)
+          }
+        }
+      }
+    }
+
+    // Index tool_results by tool_use_id for lookup (only those with a matching tool_use)
     const resultIndex = new Map<string, Anthropic.ToolResultBlockParam>()
     for (const msg of messages) {
       if (msg.role === "user" && Array.isArray(msg.content)) {
         for (const block of msg.content as Array<{ type: string }>) {
           if (block.type === "tool_result") {
             const b = block as Anthropic.ToolResultBlockParam
-            resultIndex.set(b.tool_use_id, b)
+            if (knownToolUseIds.has(b.tool_use_id)) {
+              resultIndex.set(b.tool_use_id, b)
+            }
           }
         }
       }
     }
 
-    // Track which tool_use_ids have been placed
+    // Track which tool_use_ids have been placed as results
     const placed = new Set<string>()
     const result: Anthropic.MessageParam[] = []
 
     for (const msg of messages) {
-      // Skip user messages that are purely orphan tool_results
+      // Filter user messages: remove tool_results that are orphans or already placed
       if (msg.role === "user" && Array.isArray(msg.content)) {
-        const nonOrphan = (msg.content as Array<{ type: string }>).filter(b => {
+        const filtered = (msg.content as Array<{ type: string }>).filter(b => {
           if (b.type !== "tool_result") return true
           const id = (b as Anthropic.ToolResultBlockParam).tool_use_id
-          return !placed.has(id) // keep only if not already placed
+          // Drop if no matching tool_use exists, or if already placed inline
+          if (!knownToolUseIds.has(id)) return false
+          if (placed.has(id)) return false
+          return true
         })
-        if (nonOrphan.length === 0) continue
-        result.push({ role: "user", content: nonOrphan as Anthropic.ContentBlockParam[] })
+        if (filtered.length === 0) continue
+        result.push({ role: "user", content: filtered as Anthropic.ContentBlockParam[] })
         continue
       }
 
