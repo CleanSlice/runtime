@@ -18,23 +18,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-      - name: Build, login and push
-        env:
-          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          SHA_TAG: ${{ github.sha }}
+      - name: Build Docker image (amd64)
         run: |
           docker build \
             --platform linux/amd64 \
-            -t $REGISTRY/$IMAGE_NAME:$SHA_TAG \
+            -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} \
             -t $REGISTRY/$IMAGE_NAME:latest \
             .
 
-          doctl registry login --expiry-seconds 3600
+      - name: Login and push to DO Registry
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          # Get a short-lived registry token from DO API
+          REGISTRY_TOKEN=$(curl -s -u "$DO_TOKEN:" \
+            "https://api.digitalocean.com/v2/registry/docker-credentials?read_write=true&expiry_seconds=600" \
+            | python3 -c "import json,sys,base64; d=json.load(sys.stdin); auth=d['auths']['registry.digitalocean.com']['auth']; print(base64.b64decode(auth).decode())")
 
-          docker push $REGISTRY/$IMAGE_NAME:$SHA_TAG
+          REG_USER=$(echo "$REGISTRY_TOKEN" | cut -d: -f1)
+          REG_PASS=$(echo "$REGISTRY_TOKEN" | cut -d: -f2-)
+
+          echo "$REG_PASS" | docker login registry.digitalocean.com -u "$REG_USER" --password-stdin
+
+          docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
           docker push $REGISTRY/$IMAGE_NAME:latest
