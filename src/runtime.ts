@@ -18,6 +18,7 @@ import type { IAccessStrategy } from "./slices/bot/access/domain/access.types"
 import { LlmModule } from "./slices/setup/llm/llm.module"
 import { SkillModule } from "./slices/agent/skill/skill.module"
 import { VoiceModule } from "./slices/agent/voice/voice.module"
+import { UsageModule } from "./slices/agent/usage/usage.module"
 import { TaskManager } from "./slices/agent/task/task.manager"
 import { Dispatcher } from "./slices/agent/task/dispatcher"
 import type { Task } from "./slices/agent/task/task.manager"
@@ -47,6 +48,7 @@ export class AgentRuntime {
   private access: AccessModule
   private skills: SkillModule
   private voice: VoiceModule
+  private usage: UsageModule
   private tasks: TaskManager
   private dispatcher: Dispatcher
   private s3sync?: S3SyncService
@@ -70,6 +72,7 @@ export class AgentRuntime {
     this.access = new AccessModule(this.agentDir, adminIds, this.buildAccessStrategy())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
+    this.usage = new UsageModule(this.agentDir)
     this.tasks = new TaskManager()
     this.dispatcher = new Dispatcher(this.tasks)
 
@@ -107,6 +110,7 @@ export class AgentRuntime {
 
     await this.memory.load()
     await this.skills.load()
+    this.usage.start()
 
     this.channel.onMessage(msg => this.handleMessage(msg))
     await this.channel.start()
@@ -185,9 +189,10 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
     await this.channel.stop()
     this.cron.stop()
     this.heartbeat.stop()
+    await this.usage.flush()   // final usage report before shutdown
     if (this.s3sync) {
       this.s3sync.stopAutoSync()
-      await this.s3sync.push()  // final push on shutdown
+      await this.s3sync.push()  // final push on shutdown (includes usage.json)
     }
   }
 
@@ -468,6 +473,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               response = await this.llm.complete(systemPrompt, history, this.tools)
             }
             console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
+            this.usage.add(response.usage)
           } catch (err: unknown) {
             const status = (err as { status?: number })?.status
             const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
