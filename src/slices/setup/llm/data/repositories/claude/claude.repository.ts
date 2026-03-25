@@ -1,9 +1,20 @@
-import Anthropic from "@anthropic-ai/sdk"
+import type Anthropic from "@anthropic-ai/sdk"
 import type { ILlmGateway } from "../../../domain/llm.gateway"
 import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../../agent/event"
 import { zodToJsonSchema } from "zod-to-json-schema"
+
+let _AnthropicClass: (new (opts: Record<string, unknown>) => Anthropic) | undefined
+
+async function getAnthropic(): Promise<(new (opts: Record<string, unknown>) => Anthropic)> {
+  if (!_AnthropicClass) {
+    const mod = await import("@anthropic-ai/sdk")
+    _AnthropicClass = mod.default as unknown as (new (opts: Record<string, unknown>) => Anthropic)
+    console.log("[llm] Anthropic SDK loaded")
+  }
+  return _AnthropicClass
+}
 
 // --- Alert: notify admin via Telegram when token fails ---
 let lastAlertAt = 0
@@ -79,17 +90,27 @@ async function withRetry<T>(
 const PRIMARY_RETRY_AFTER_MS = 2 * 60 * 1000 // 2 minutes
 
 export class ClaudeRepository implements ILlmGateway {
-  private clients: Anthropic[]   // OAuth pool (index 0 = primary, 1,2... = fallbacks)
+  private clients: Anthropic[] = []   // OAuth pool (index 0 = primary, 1,2... = fallbacks)
   private apiKeyClient: Anthropic | undefined  // API key client (last resort)
   private currentClientIndex = 0
   private model: string
   private fallbackModel: string | undefined
+  private apiKey: string | undefined
+  private initialized = false
   // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
   private primaryOverloadedAt = 0
 
   constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
     this.model = model
     this.fallbackModel = fallbackModel
+    this.apiKey = apiKey
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return
+    this.initialized = true
+
+    const AnthropicCtor = await getAnthropic()
 
     // Build OAuth client pool from CLAUDE_CODE_OAUTH_TOKEN (comma-separated or single)
     // Also supports legacy CLAUDE_CODE_OAUTH_TOKEN_2, _3... for backwards compat
@@ -104,15 +125,15 @@ export class ClaudeRepository implements ILlmGateway {
       if (t) oauthTokens.push(t.trim())
     }
 
-    this.clients = oauthTokens.map(token => new Anthropic({
+    this.clients = oauthTokens.map(token => new AnthropicCtor({
       authToken: token,
       defaultHeaders: { "anthropic-beta": "oauth-2025-04-20,claude-code-20250219" },
     }))
 
     // API key as final fallback
-    const key = apiKey ?? process.env.ANTHROPIC_API_KEY
+    const key = this.apiKey ?? process.env.ANTHROPIC_API_KEY
     if (key) {
-      this.apiKeyClient = new Anthropic({ apiKey: key })
+      this.apiKeyClient = new AnthropicCtor({ apiKey: key })
     }
 
     if (this.clients.length === 0 && this.apiKeyClient) {
@@ -174,6 +195,7 @@ export class ClaudeRepository implements ILlmGateway {
     tools: Tool[],
     onChunk: (text: string) => void
   ): Promise<ModelResponse> {
+    await this.ensureInitialized()
     const messages = this.sanitizeMessages(this.eventsToMessages(history))
 
     const anthropicTools = tools.map(tool => ({
@@ -275,6 +297,7 @@ export class ClaudeRepository implements ILlmGateway {
     history: Event[],
     tools: Tool[]
   ): Promise<ModelResponse> {
+    await this.ensureInitialized()
     const messages = this.sanitizeMessages(this.eventsToMessages(history))
 
     const anthropicTools = tools.map(tool => ({

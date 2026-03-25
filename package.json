@@ -7,9 +7,10 @@
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
+    "start": "bun run --smol src/index.ts",
     "cli": "bun run src/cli.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun"
+    "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun",
+    "monitor": "bash scripts/monitor.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.79.0",

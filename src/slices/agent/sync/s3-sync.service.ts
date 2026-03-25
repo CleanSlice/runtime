@@ -1,6 +1,21 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3"
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from "fs"
 import { join, relative } from "path"
+
+// Lazy-loaded AWS SDK types
+type S3Client = import("@aws-sdk/client-s3").S3Client
+type GetObjectCommand = import("@aws-sdk/client-s3").GetObjectCommand
+type PutObjectCommand = import("@aws-sdk/client-s3").PutObjectCommand
+type ListObjectsV2Command = import("@aws-sdk/client-s3").ListObjectsV2Command
+
+let _s3Module: typeof import("@aws-sdk/client-s3") | undefined
+
+async function getS3Module() {
+  if (!_s3Module) {
+    _s3Module = await import("@aws-sdk/client-s3")
+    console.log("[s3-sync] AWS SDK loaded")
+  }
+  return _s3Module
+}
 
 export interface S3SyncConfig {
   bucket: string
@@ -21,7 +36,8 @@ export interface S3SyncConfig {
  *             etc.
  */
 export class S3SyncService {
-  private s3: S3Client
+  private s3: S3Client | undefined
+  private s3Config: S3SyncConfig
   private bucket: string
   private prefix: string
   private agentDir: string
@@ -40,16 +56,22 @@ export class S3SyncService {
     this.bucket = config.bucket
     this.prefix = config.prefix?.replace(/\/$/, "") ?? "agent-data"
     this.agentDir = agentDir
-
-    this.s3 = new S3Client({
-      region: config.region ?? process.env.AWS_REGION ?? "us-east-1",
-      credentials: {
-        accessKeyId: config.accessKeyId ?? process.env.AWS_ACCESS_KEY_ID ?? "",
-        secretAccessKey: config.secretAccessKey ?? process.env.AWS_SECRET_ACCESS_KEY ?? "",
-      },
-    })
+    this.s3Config = config
 
     mkdirSync(agentDir, { recursive: true })
+  }
+
+  private async getClient(): Promise<S3Client> {
+    if (this.s3) return this.s3
+    const { S3Client } = await getS3Module()
+    this.s3 = new S3Client({
+      region: this.s3Config.region ?? process.env.AWS_REGION ?? "us-east-1",
+      credentials: {
+        accessKeyId: this.s3Config.accessKeyId ?? process.env.AWS_ACCESS_KEY_ID ?? "",
+        secretAccessKey: this.s3Config.secretAccessKey ?? process.env.AWS_SECRET_ACCESS_KEY ?? "",
+      },
+    })
+    return this.s3
   }
 
   // ── S3 helpers ────────────────────────────────────────────────────────────────
@@ -60,7 +82,9 @@ export class S3SyncService {
 
   private async s3Get(key: string): Promise<Buffer | null> {
     try {
-      const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))
+      const s3 = await this.getClient()
+      const { GetObjectCommand } = await getS3Module()
+      const res = await s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))
       const chunks: Uint8Array[] = []
       for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(chunk)
       return Buffer.concat(chunks)
@@ -71,7 +95,9 @@ export class S3SyncService {
   }
 
   private async s3Put(key: string, body: Buffer | string): Promise<void> {
-    await this.s3.send(new PutObjectCommand({
+    const s3 = await this.getClient()
+    const { PutObjectCommand } = await getS3Module()
+    await s3.send(new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       Body: typeof body === "string" ? Buffer.from(body) : body,
@@ -79,10 +105,12 @@ export class S3SyncService {
   }
 
   private async s3List(prefix: string): Promise<string[]> {
+    const s3 = await this.getClient()
+    const { ListObjectsV2Command } = await getS3Module()
     const keys: string[] = []
     let token: string | undefined
     do {
-      const res = await this.s3.send(new ListObjectsV2Command({
+      const res = await s3.send(new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,
         ContinuationToken: token,
