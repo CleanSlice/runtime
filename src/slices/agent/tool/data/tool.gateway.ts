@@ -20,6 +20,7 @@ import { ProcessExecTool } from "./repositories/exec/process.repository"
 import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
 import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "./repositories/secret/secret.repository"
 import { ApproveUserTool } from "./repositories/access/approve.repository"
+import { SkillWriteTool } from "./repositories/skill/skill.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -50,6 +51,7 @@ export class ToolGateway implements IToolGateway {
     this.register(SecretListTool)
     this.register(SecretDeleteTool)
     this.register(ApproveUserTool)
+    this.register(SkillWriteTool)
   }
 
   private register(tool: Tool): void {

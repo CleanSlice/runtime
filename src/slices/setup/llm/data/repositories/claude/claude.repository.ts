@@ -218,6 +218,7 @@ export class ClaudeRepository implements ILlmGateway {
           let accumulated = ""
           const toolCalls: Array<{ name: string; params: unknown }> = []
           const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
+          let streamUsage: { input_tokens: number; output_tokens: number } | undefined
 
           const streamResponse = await this.getClient().messages.stream({
             model,
@@ -252,12 +253,22 @@ export class ClaudeRepository implements ILlmGateway {
                 }
                 pendingTools.delete(event.index)
               }
+            } else if (event.type === "message_delta" && (event as any).usage) {
+              streamUsage = (event as any).usage
+            } else if (event.type === "message_start" && (event as any).message?.usage) {
+              streamUsage = (event as any).message.usage
             }
           }
 
           return {
             text: accumulated,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            usage: streamUsage ? {
+              inputTokens: streamUsage.input_tokens,
+              outputTokens: streamUsage.output_tokens,
+              totalTokens: streamUsage.input_tokens + streamUsage.output_tokens,
+              credentialId: `oauth-${this.currentClientIndex}`,
+            } : undefined,
           } as ModelResponse
         },
         7,
@@ -337,7 +348,16 @@ export class ClaudeRepository implements ILlmGateway {
               return { name: block.name, params: block.input }
             })
 
-          return { text, toolCalls: toolCalls.length > 0 ? toolCalls : undefined } as ModelResponse
+          return {
+            text,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            usage: response.usage ? {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+              totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+              credentialId: `oauth-${this.currentClientIndex}`,
+            } : undefined,
+          } as ModelResponse
         },
         7,
         `complete[${model}]`

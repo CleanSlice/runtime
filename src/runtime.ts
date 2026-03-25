@@ -11,9 +11,14 @@ import { CronModule } from "./slices/agent/cron/cron.module"
 import { HeartbeatModule } from "./slices/agent/heartbeat/heartbeat.module"
 import { AccessModule } from "./slices/bot/access/access.module"
 import { ApprovalRepository } from "./slices/bot/access/data/repositories/approval/approval.repository"
+import { OpenRepository } from "./slices/bot/access/data/repositories/open/open.repository"
+import { AllowlistRepository } from "./slices/bot/access/data/repositories/allowlist/allowlist.repository"
+import { CodeRepository } from "./slices/bot/access/data/repositories/code/code.repository"
+import type { IAccessStrategy } from "./slices/bot/access/domain/access.types"
 import { LlmModule } from "./slices/setup/llm/llm.module"
 import { SkillModule } from "./slices/agent/skill/skill.module"
 import { VoiceModule } from "./slices/agent/voice/voice.module"
+import { UsageModule } from "./slices/agent/usage/usage.module"
 import { TaskManager } from "./slices/agent/task/task.manager"
 import { Dispatcher } from "./slices/agent/task/dispatcher"
 import type { Task } from "./slices/agent/task/task.manager"
@@ -43,6 +48,7 @@ export class AgentRuntime {
   private access: AccessModule
   private skills: SkillModule
   private voice: VoiceModule
+  private usage: UsageModule
   private tasks: TaskManager
   private dispatcher: Dispatcher
   private s3sync?: S3SyncService
@@ -63,9 +69,10 @@ export class AgentRuntime {
     this.cron = new CronModule(this.agentDir)
     this.heartbeat = new HeartbeatModule(this.agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
     const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
-    this.access = new AccessModule(this.agentDir, adminIds, new ApprovalRepository())
+    this.access = new AccessModule(this.agentDir, adminIds, this.buildAccessStrategy())
     this.skills = new SkillModule(this.agentDir)
     this.voice = new VoiceModule(this.agentDir)
+    this.usage = new UsageModule(this.agentDir)
     this.tasks = new TaskManager()
     this.dispatcher = new Dispatcher(this.tasks)
 
@@ -73,6 +80,21 @@ export class AgentRuntime {
       this.s3sync = new S3SyncService(config.s3, this.agentDir)
     } else if (process.env.S3_BUCKET) {
       this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX }, this.agentDir)
+    }
+  }
+
+  private buildAccessStrategy(): IAccessStrategy {
+    const strategy = this.config.accessStrategy ?? "approval"
+    switch (strategy) {
+      case "open":
+        return new OpenRepository()
+      case "allowlist":
+        return new AllowlistRepository(this.config.allowlist ?? [])
+      case "code":
+        return new CodeRepository(this.config.accessCode ?? "")
+      case "approval":
+      default:
+        return new ApprovalRepository()
     }
   }
 
@@ -88,6 +110,7 @@ export class AgentRuntime {
 
     await this.memory.load()
     await this.skills.load()
+    this.usage.start()
 
     this.channel.onMessage(msg => this.handleMessage(msg))
     await this.channel.start()
@@ -166,9 +189,10 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
     await this.channel.stop()
     this.cron.stop()
     this.heartbeat.stop()
+    await this.usage.flush()   // final usage report before shutdown
     if (this.s3sync) {
       this.s3sync.stopAutoSync()
-      await this.s3sync.push()  // final push on shutdown
+      await this.s3sync.push()  // final push on shutdown (includes usage.json)
     }
   }
 
@@ -449,6 +473,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               response = await this.llm.complete(systemPrompt, history, this.tools)
             }
             console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
+            this.usage.add(response.usage)
           } catch (err: unknown) {
             const status = (err as { status?: number })?.status
             const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
@@ -492,6 +517,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                     channel: msg.channel,
                     send,
                     agentConfig: this.config,
+                    reloadSkills: () => this.skills.reload().then(() => undefined),
                   })
                 } catch (err) {
                   result = { error: String(err) }

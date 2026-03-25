@@ -8,6 +8,7 @@ export interface ToolContext {
   channel?: string
   send: (text: string) => Promise<void>
   agentConfig?: IAgentConfig
+  reloadSkills?: () => Promise<void>  // hot-reload skills after skill_write
 }
 
 export interface Tool {

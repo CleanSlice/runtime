@@ -2,6 +2,14 @@
   "maxIterations": 25,
   "taskLabelLength": 60,
 
+  "_comment_access": "Access strategy: open | allowlist | code | approval (default)",
+  "accessStrategy": "approval",
+  "_comment_allowlist": "For allowlist strategy: list of allowed Telegram user IDs",
+  "allowlist": [],
+  "_comment_accessCode": "For code strategy: secret code users must send to get access",
+  "accessCode": "",
+
+
   "heartbeat": {
     "intervalMin": 30
   },

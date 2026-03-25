@@ -3,6 +3,15 @@ export interface IAgentConfig {
   maxIterations: number
   taskLabelLength: number
 
+  /** Access control strategy. Defaults to "approval". */
+  accessStrategy?: "open" | "allowlist" | "code" | "approval"
+
+  /** For "allowlist" strategy: list of allowed Telegram user IDs */
+  allowlist?: string[]
+
+  /** For "code" strategy: the secret code users must send */
+  accessCode?: string
+
   heartbeat: {
     intervalMin: number
   }

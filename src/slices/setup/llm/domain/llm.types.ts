@@ -1,9 +1,17 @@
 import type { Tool } from "../../../agent/tool/tool.module"
 import type { Event } from "../../../agent/event"
 
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  credentialId?: string  // e.g. "oauth-0", "oauth-1", "apikey"
+}
+
 export interface ModelResponse {
   text: string
   toolCalls?: Array<{ name: string; params: unknown }>
+  usage?: ModelUsage
 }
 
 export interface ModelLlm {
