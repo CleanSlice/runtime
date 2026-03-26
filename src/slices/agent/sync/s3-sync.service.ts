@@ -229,10 +229,11 @@ export class S3SyncService {
    */
   startAutoSync(intervalSec = 60): void {
     if (this.timer) return
+    const safeInterval = (Number.isFinite(intervalSec) && intervalSec > 0) ? intervalSec : 60
     this.timer = setInterval(() => {
       this.push().catch(err => console.error("[s3-sync] auto-sync error:", err))
-    }, intervalSec * 1000)
-    console.log(`[s3-sync] auto-sync started (every ${intervalSec}s)`)
+    }, safeInterval * 1000)
+    console.log(`[s3-sync] auto-sync started (every ${safeInterval}s)`)
   }
 
   stopAutoSync(): void {
