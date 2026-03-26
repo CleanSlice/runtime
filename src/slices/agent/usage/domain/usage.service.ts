@@ -72,8 +72,9 @@ export class UsageService {
       this.current.reportedAt = new Date().toISOString()
       this.gateway.save(this.current)
       console.log(`[usage] reported: ${this.current.totalCallCount} calls, ${this.current.totalInputTokens} in / ${this.current.totalOutputTokens} out`)
-    } catch (err) {
-      console.error(`[usage] report failed:`, err)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[usage] report failed: ${msg}`)
     }
   }
 
