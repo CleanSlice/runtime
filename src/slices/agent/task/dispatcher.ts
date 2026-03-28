@@ -85,8 +85,8 @@ export class Dispatcher {
   private isContinuation(text: string, task: Task): boolean {
     // Only clearly continuation patterns - be conservative
     const continuationPatterns = [
-      /^(да|нет|окей|ок|хорошо|понял|продолжай|стоп|отмени|подожди)$/i,
-      /^(yes|no|ok|okay|continue|stop|wait|go ahead)$/i,
+      /^(да|нет|окей|ок|хорошо|понял|продолжай|подожди)$/i,
+      /^(yes|no|ok|okay|continue|wait|go ahead)$/i,
       /^(повтори|попробуй ещё раз|retry)$/i,
       // Credentials/input for ongoing task
       /^(логин|пароль|email|username|code|код)[\s:]/i,

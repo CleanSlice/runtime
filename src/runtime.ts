@@ -53,6 +53,7 @@ export class AgentRuntime {
   private tasks: TaskManager
   private dispatcher: Dispatcher
   private toolingPrompt: string
+  private stopPhrases: Set<string>
   private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
@@ -60,6 +61,7 @@ export class AgentRuntime {
     this.config = config.init.config
     this.tools = config.tools ?? []
     this.toolingPrompt = ToolService.buildToolingPromptFrom(this.tools)
+    this.stopPhrases = new Set(this.config.stopPhrases.map(p => p.toLowerCase()))
 
     this.llm = new LlmModule(config.llm)
     this.channel = new ChannelModule(config.channels)
@@ -362,6 +364,15 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
       }
     }
 
+    // --- Stop detection: cancel all running tasks ---
+    if (!isInternal && this.isStopCommand(msg.text)) {
+      const cancelled = this.tasks.cancelAll(sessionId)
+      if (cancelled > 0) {
+        await this.channel.send(msg.channel, msg.from, `Stopped ${cancelled} task${cancelled > 1 ? "s" : ""}.`)
+      }
+      return
+    }
+
     // --- Dispatcher: decide what to do with this message ---
     const send = async (text: string) => {
       if (msg.channel !== "internal") {
@@ -593,5 +604,11 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         } catch { /* ignore */ }
       }
     })
+  }
+
+
+  private isStopCommand(text: string): boolean {
+    const normalized = text.trim().toLowerCase().replace(/[.!?,;:]+$/, "")
+    return this.stopPhrases.has(normalized)
   }
 }

@@ -23,6 +23,13 @@
     "syncIntervalSec": 600
   },
 
+  "stopPhrases": [
+    "/stop",
+    "stop", "abort", "cancel",
+    "стоп", "остановись", "отмена",
+    "стоп", "зупинись", "скасуй"
+  ],
+
   "tools": {
     "spawnAgent": {
       "timeoutMin": 5,

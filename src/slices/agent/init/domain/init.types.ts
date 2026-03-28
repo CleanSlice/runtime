@@ -37,6 +37,9 @@ export interface IAgentConfig {
       maxChars: number
     }
   }
+
+  /** Words/phrases that immediately cancel all running tasks. Case-insensitive. */
+  stopPhrases: string[]
 }
 
 /** Required subdirectories inside the agent directory */
@@ -72,4 +75,11 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
       maxChars: 8000,
     },
   },
+
+  stopPhrases: [
+    "/stop",
+    "stop", "abort", "cancel",
+    "стоп", "остановись", "отмена",
+    "стоп", "зупинись", "скасуй",
+  ],
 }

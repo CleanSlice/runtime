@@ -78,6 +78,16 @@ export class TaskManager {
     return true
   }
 
+  /** Cancel all running tasks for a session. Returns count of cancelled tasks. */
+  cancelAll(sessionId: string): number {
+    const running = this.getRunning(sessionId)
+    for (const task of running) {
+      task.controller.abort()
+      task.status = "cancelled"
+    }
+    return running.length
+  }
+
   getForSession(sessionId: string): Task[] {
     return Array.from(this.tasks.values()).filter(t => t.sessionId === sessionId)
   }
