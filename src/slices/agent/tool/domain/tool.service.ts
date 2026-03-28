@@ -30,7 +30,7 @@ export class ToolService {
   }
 
   /**
-   * Build a "## Tooling" section from any Tool array.
+   * Build tooling + tool call style sections from any Tool array.
    * Usable without a ToolService instance.
    */
   static buildToolingPromptFrom(tools: Tool[]): string {
@@ -39,7 +39,7 @@ export class ToolService {
     const lines = [
       "## Tooling",
       "",
-      "You have the following tools. Use them — never simulate results.",
+      "Tool availability (filtered by policy):",
       "Tool names are case-sensitive. Call tools exactly as listed.",
       "",
     ]
@@ -50,11 +50,16 @@ export class ToolService {
 
     lines.push(
       "",
-      "### Rules",
-      "- Every claim about an action MUST be backed by an actual tool call and its real result.",
-      "- Never narrate actions you haven't performed. No tool call = no claim.",
-      "- If a tool returns an error — report the real error. Don't invent success.",
-      "- If you don't have a tool for something — say so honestly.",
+      "## Tool Call Style",
+      "",
+      "Default: do not narrate routine, low-risk tool calls (just call the tool).",
+      "Narrate only when it helps: multi-step work, sensitive actions (e.g. deletions), or when the user explicitly asks.",
+      "Keep narration brief and value-dense; avoid repeating obvious steps.",
+      "",
+      "- If a tool can answer the question — call it immediately. No preamble.",
+      "- Every claim MUST be backed by an actual tool call result. No tool call = no claim.",
+      "- If a tool returns an error — report the real error. Do not invent success.",
+      "- If no tool exists for the request — say so honestly.",
     )
 
     return lines.join("\n")
