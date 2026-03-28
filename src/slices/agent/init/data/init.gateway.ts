@@ -6,7 +6,11 @@ import { AGENT_CONFIG_DEFAULTS, AGENT_SUBDIRS } from "../domain/init.types"
 
 export class InitGateway implements IInitGateway {
   scaffold(agentDir: string, exampleDir: string): void {
-    if (this.isInitialized(agentDir)) return
+    if (this.isInitialized(agentDir)) {
+      // Already initialized — sync new skills from example
+      this.syncSkills(agentDir, exampleDir)
+      return
+    }
 
     this.ensureDirs(agentDir)
 
@@ -47,6 +51,28 @@ export class InitGateway implements IInitGateway {
   private ensureDirs(agentDir: string): void {
     for (const sub of AGENT_SUBDIRS) {
       mkdirSync(join(agentDir, sub), { recursive: true })
+    }
+  }
+
+  /**
+   * Copy new skills from exampleDir/skills/ into agentDir/skills/.
+   * Only adds skills that don't already exist — never overwrites user modifications.
+   */
+  private syncSkills(agentDir: string, exampleDir: string): void {
+    const srcSkills = join(exampleDir, "skills")
+    const destSkills = join(agentDir, "skills")
+    if (!existsSync(srcSkills)) return
+
+    mkdirSync(destSkills, { recursive: true })
+
+    for (const entry of readdirSync(srcSkills)) {
+      const srcPath = join(srcSkills, entry)
+      const destPath = join(destSkills, entry)
+
+      if (statSync(srcPath).isDirectory() && !existsSync(destPath)) {
+        this.copyDirRecursive(srcPath, destPath)
+        console.log(`[init] synced new skill: ${entry}`)
+      }
     }
   }
 
