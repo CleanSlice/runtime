@@ -1,7 +1,7 @@
 FROM oven/bun:1.3-alpine AS base
 WORKDIR /app
 
-# Install Chromium + deps for Playwright
+# System packages: browser, CLI tools, networking
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -10,7 +10,10 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     font-noto-emoji \
-    openssh-client
+    openssh-client \
+    curl \
+    jq \
+    bash
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
@@ -22,8 +25,17 @@ RUN bun install --frozen-lockfile --production
 # Copy source
 COPY . .
 
-# Create agent directory
-RUN mkdir -p .agent/data/sessions .agent/data/secrets
+# Create agent directory with correct ownership
+RUN adduser -D -u 1001 agent \
+    && mkdir -p .agent/data/sessions .agent/data/secrets .agent/skills \
+    && chown -R agent:agent .agent
+
+# Run as non-root
+USER agent
+
+# Health check — hits the built-in HTTP server
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
+    CMD curl -sf http://localhost:3000/ || exit 1
 
 # MULTI=true → multi-agent mode, default → single agent
 ENV MULTI=false

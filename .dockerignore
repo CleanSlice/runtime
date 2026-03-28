@@ -1,8 +1,19 @@
 .git
 .gitignore
 node_modules
-.agent/data/sessions
-.agent/data/secrets
-*.bak*
+dist
+
+# Agent runtime data (secrets, sessions — must not leak into image)
+.agent/data
+.agent/memory
+.agent/sessions
+
+# Environment and config
 .env
-bots.json
+.env.*
+agents.json
+
+# Build artifacts and caches
+*.bak*
+.cache
+.tmp
