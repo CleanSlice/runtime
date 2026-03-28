@@ -102,7 +102,7 @@ export class AgentRuntime {
     // Pull data from S3 before loading anything
     if (this.s3sync) {
       await this.s3sync.pull()
-      this.s3sync.startAutoSync(this.config.s3.syncIntervalSec)
+      this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 60)
     }
 
     // Write admin IDs to MEMORY.md so the agent knows who the owner is

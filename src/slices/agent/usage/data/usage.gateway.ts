@@ -45,7 +45,7 @@ export class UsageGateway extends IUsageGateway {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-internal-api-key": this.apiKey,
+        "x-api-key": this.apiKey,
       },
       body: JSON.stringify({
         date: usage.date,
