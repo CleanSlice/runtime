@@ -1,4 +1,5 @@
 import type { Tool } from "./slices/agent/tool"
+import { ToolService } from "./slices/agent/tool/domain/tool.service"
 import type { Event } from "./slices/agent/event"
 import type { ChannelGatewayConfig } from "./slices/setup/channel"
 import type { LlmGatewayConfig } from "./slices/setup/llm/llm.module"
@@ -51,12 +52,14 @@ export class AgentRuntime {
   private usage: UsageModule
   private tasks: TaskManager
   private dispatcher: Dispatcher
+  private toolingPrompt: string
   private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
     this.agentDir = config.init.agentDir
     this.config = config.init.config
     this.tools = config.tools ?? []
+    this.toolingPrompt = ToolService.buildToolingPromptFrom(this.tools)
 
     this.llm = new LlmModule(config.llm)
     this.channel = new ChannelModule(config.channels)
@@ -417,7 +420,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         // Read shared history + this task's own events
         const history = await this.session.readForTask(sessionId, taskId)
 
-        let systemPrompt = await this.agent.buildPrompt(msg.from)
+        let systemPrompt = await this.agent.buildPrompt({ userId: msg.from, toolingPrompt: this.toolingPrompt })
         const skill = this.skills.select(msg.text)
         if (skill) {
           systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
