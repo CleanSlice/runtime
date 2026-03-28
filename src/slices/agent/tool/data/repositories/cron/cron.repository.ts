@@ -43,11 +43,11 @@ export const CronListRepository = {
 
 export const CronAddRepository = {
   name: "cron_add",
-  description: "Add a scheduled job. For recurring tasks use schedule (cron expression). For one-time reminders use delayMinutes or runAt (unix timestamp ms).",
+  description: "Add a scheduled job. For recurring tasks use schedule (cron expression). For one-time reminders use delayMinutes or runAt (unix timestamp ms). IMPORTANT: the message field must contain all concrete values (real emails, real text) — never use placeholders like test@example.com.",
   schema: z.object({
     name: z.string(),
     schedule: z.string().optional().default("* * * * *").describe("Cron expression for recurring tasks"),
-    message: z.string().describe("What the agent should do when this job fires"),
+    message: z.string().describe("Full self-contained instruction with ALL real values from the current conversation. Extract concrete data — real email addresses, real names, real text. Example: if user said 'send same email in 1 min' after sending to john@gmail.com with body 'hello' — write 'Send email to john@gmail.com with subject hello and body hello'. NEVER use placeholders like test@example.com or example text."),
     to: z.string().optional().describe("Chat ID to deliver response"),
     channel: z.string().optional().default("telegram"),
     runOnce: z.boolean().optional().describe("If true, delete after first run"),

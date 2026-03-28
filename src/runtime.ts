@@ -121,13 +121,16 @@ export class AgentRuntime {
     await this.channel.start()
 
     this.cron.onJob(async job => {
+      const from = job.to ?? "cron"
+      const channel = job.channel ?? "internal"
       await this.handleMessage({
         id: randomUUID(),
         text: job.message,
-        from: job.to ?? "cron",
-        channel: job.channel ?? "internal",
+        from,
+        channel,
         ts: Date.now(),
-        sessionId: `cron:${job.id}`,
+        // Run in user's session so the agent sees conversation history
+        sessionId: `${channel}:${from}`,
       })
     })
     this.cron.start()
@@ -418,13 +421,13 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         const taskId = task.id
         console.log(`[task:${taskId.slice(0, 6)}] started`)
 
-        // Append user message tagged with taskId — each task sees only its own user message
+        // Append user message as shared context so future tasks can see it
         const userEvent: Event = {
           id: randomUUID(),
           type: "user",
           ts: Date.now(),
           data: { text: msg.text, from: msg.from },
-          taskId,  // private to this task
+          // no taskId — shared, so future tasks see what was requested
         }
         await this.session.append(sessionId, userEvent)
 
@@ -514,7 +517,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                 type: "tool_call",
                 ts: Date.now(),
                 data: { name: call.name, params: call.params, toolUseId },
-                taskId,
+                // no taskId — shared, so future tasks see what tools were called
               }
               await this.session.append(sessionId, callEvent)
               history.push(callEvent)
@@ -545,7 +548,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                 type: "tool_result",
                 ts: Date.now(),
                 data: { toolUseId, result },
-                taskId,
+                // no taskId — shared, so future tasks see tool results
               }
               await this.session.append(sessionId, resultEvent)
               history.push(resultEvent)
