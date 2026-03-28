@@ -1,4 +1,4 @@
-export type { Skill } from "./domain/skill.types"
+export type { Skill, SkillSource, SkillMetadata, SkillRequires, RegistryEntry, SkillRegistry } from "./domain/skill.types"
 export type { ISkillGateway } from "./domain/skill.gateway"
 export { SkillService } from "./domain/skill.service"
 export { SkillGateway } from "./data/skill.gateway"

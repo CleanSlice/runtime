@@ -341,53 +341,156 @@ const COMMANDS: Record<string, {
 
   // ── skills ────────────────────────────────────────────────────────────────
   skills: {
-    description: "List or inspect skills",
-    usage: "cleanslice skills <list|show <name>>",
+    description: "Manage skills: list, show, install, remove, search",
+    usage: "cleanslice skills <list|show|install|remove|search> [args]",
     async run(args) {
       ensureAgentDir()
-      const [sub, name] = args
-      const skillsDir = join(AGENT_DIR, "skills")
+      const [sub, ...rest] = args
 
-      if (!existsSync(skillsDir)) {
-        info(`No skills directory at ${skillsDir}`)
-        info(`Create it with: mkdir -p ${skillsDir}/<skill-name> && touch ${skillsDir}/<skill-name>/SKILL.md`)
+      // Lazy-load SkillModule to avoid pulling in gray-matter for other commands
+      const { SkillModule } = await import("./slices/agent/skill")
+      const mod = new SkillModule(AGENT_DIR)
+      await mod.load()
+
+      // ── list ─────────────────────────────────────────────────────────────
+      if (!sub || sub === "list") {
+        const skills = mod.getAll()
+        if (skills.length === 0) { info("No skills found."); return }
+
+        console.log()
+        console.log(bold("  Name".padEnd(24)) + bold("Source".padEnd(12)) + bold("Description"))
+        console.log("  " + "─".repeat(72))
+
+        for (const s of skills) {
+          const emoji = s.metadata?.emoji ? s.metadata.emoji + " " : "  "
+          const name = (emoji + s.name).padEnd(22)
+          const source = dim(s.source.padEnd(10))
+          const desc = (s.description || dim("no description")).slice(0, 50)
+          console.log(`  ${cyan(name)}  ${source}  ${desc}`)
+        }
+
+        console.log()
+        const bySource = skills.reduce((acc, s) => { acc[s.source] = (acc[s.source] || 0) + 1; return acc }, {} as Record<string, number>)
+        const summary = Object.entries(bySource).map(([k, v]) => `${v} ${k}`).join(", ")
+        info(`Total: ${skills.length} skill(s) (${summary})`)
         return
       }
 
-      const { readdirSync, statSync } = require("fs") as typeof import("fs")
-      const skillDirs = readdirSync(skillsDir, { withFileTypes: true })
-        .filter((e: any) => e.isDirectory())
-        .map((e: any) => e.name)
+      // ── show ─────────────────────────────────────────────────────────────
+      if (sub === "show") {
+        const [name] = rest
+        if (!name) fail("Usage: cleanslice skills show <name>")
+        const skill = mod.get(name)
+        if (!skill) { fail(`Skill not found: ${name}`); return }
 
-      if (!sub || sub === "list") {
-        if (skillDirs.length === 0) { info("No skills found."); return }
         console.log()
-        for (const dir of skillDirs) {
-          const skillPath = join(skillsDir, dir, "SKILL.md")
-          if (!existsSync(skillPath)) {
-            console.log(`  ${yellow(dir.padEnd(20))} ${dim("(no SKILL.md)")}`)
-            continue
-          }
-          // Parse frontmatter manually (avoid importing gray-matter in CLI)
-          const content = readFileSync(skillPath, "utf-8")
-          const descMatch = content.match(/description:\s*['"]?(.+?)['"]?\n/)
-          const desc = descMatch ? descMatch[1].slice(0, 60) : dim("no description")
-          console.log(`  ${cyan(dir.padEnd(20))} ${desc}`)
+        console.log(bold(`  ${skill.metadata?.emoji ?? "📦"} ${skill.name}`))
+        console.log(`  ${dim(skill.description)}`)
+        console.log()
+        console.log(`  ${dim("Source:")}   ${skill.source}`)
+        console.log(`  ${dim("Path:")}     ${skill.path}`)
+        if (skill.metadata?.requires?.bins?.length) {
+          console.log(`  ${dim("Requires:")} ${skill.metadata.requires.bins.join(", ")}`)
+        }
+        if (skill.metadata?.requires?.env?.length) {
+          console.log(`  ${dim("Env vars:")} ${skill.metadata.requires.env.join(", ")}`)
         }
         console.log()
-        info(`Total: ${skillDirs.length} skill(s) in ${skillsDir}`)
+        console.log(dim("  ─── Content ───"))
+        console.log()
+        console.log(skill.content.split("\n").map(l => `  ${l}`).join("\n"))
+        console.log()
         return
       }
 
-      if (sub === "show") {
-        if (!name) fail("Usage: cleanslice skills show <name>")
-        const skillPath = join(skillsDir, name, "SKILL.md")
-        if (!existsSync(skillPath)) fail(`Skill not found: ${name}`)
-        console.log(readFileSync(skillPath, "utf-8"))
+      // ── install ──────────────────────────────────────────────────────────
+      if (sub === "install") {
+        const [nameOrUrl] = rest
+        if (!nameOrUrl) fail("Usage: cleanslice skills install <name|github-url>")
+
+        info(`Installing skill: ${nameOrUrl}…`)
+        try {
+          const skill = await mod.install(nameOrUrl)
+          ok(`Installed ${bold(skill.name)} → ${skill.path}`)
+          if (skill.description) info(skill.description)
+
+          // Check requirements
+          if (skill.metadata?.requires?.bins?.length) {
+            const { execSync } = await import("child_process")
+            for (const bin of skill.metadata.requires.bins) {
+              try {
+                execSync(`which ${bin}`, { stdio: "ignore" })
+              } catch {
+                warn(`Required binary not found: ${bold(bin)}`)
+              }
+            }
+          }
+          if (skill.metadata?.requires?.env?.length) {
+            for (const env of skill.metadata.requires.env) {
+              if (!process.env[env]) {
+                warn(`Required env var not set: ${bold(env)}`)
+              }
+            }
+          }
+        } catch (err) {
+          fail((err as Error).message)
+        }
         return
       }
 
-      fail(`Unknown subcommand: ${sub}. Try: list, show`)
+      // ── remove ───────────────────────────────────────────────────────────
+      if (sub === "remove") {
+        const [name] = rest
+        if (!name) fail("Usage: cleanslice skills remove <name>")
+
+        const skill = mod.get(name)
+        if (skill?.source === "bundled") {
+          fail(`Cannot remove bundled skill "${name}". Bundled skills are part of the runtime.`)
+        }
+
+        try {
+          await mod.remove(name)
+          ok(`Removed skill: ${bold(name)}`)
+        } catch (err) {
+          fail((err as Error).message)
+        }
+        return
+      }
+
+      // ── search ───────────────────────────────────────────────────────────
+      if (sub === "search") {
+        const query = rest.join(" ")
+        if (!query) fail("Usage: cleanslice skills search <query>")
+
+        info(`Searching registry for: ${query}…`)
+        try {
+          const results = await mod.searchRegistry(query)
+          if (results.length === 0) {
+            info("No skills found matching your query.")
+            return
+          }
+
+          console.log()
+          console.log(bold("  Name".padEnd(22)) + bold("Description"))
+          console.log("  " + "─".repeat(64))
+
+          for (const entry of results.slice(0, 20)) {
+            const emoji = entry.emoji ? entry.emoji + " " : "  "
+            const name = (emoji + entry.name).padEnd(20)
+            const desc = entry.description.slice(0, 50)
+            const installed = mod.get(entry.name) ? green(" ✓") : ""
+            console.log(`  ${cyan(name)}  ${desc}${installed}`)
+          }
+
+          console.log()
+          info(`Found ${results.length} skill(s). Install with: cleanslice skills install <name>`)
+        } catch (err) {
+          fail((err as Error).message)
+        }
+        return
+      }
+
+      fail(`Unknown subcommand: ${sub}. Try: list, show, install, remove, search`)
     }
   },
 

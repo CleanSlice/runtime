@@ -1,4 +1,4 @@
-import type { Skill } from "./skill.types"
+import type { Skill, RegistryEntry } from "./skill.types"
 import type { ISkillGateway } from "./skill.gateway"
 
 export class SkillService {
@@ -43,5 +43,29 @@ export class SkillService {
 
     // Require at least 2 matching keywords to activate a skill
     return bestScore >= 2 ? best : null
+  }
+
+  // ─── Install / Remove ────────────────────────────────────────────────────────
+
+  async install(nameOrUrl: string): Promise<Skill> {
+    const skill = await this.gateway.install(nameOrUrl)
+    // Reload to include the new skill
+    await this.load()
+    return skill
+  }
+
+  async remove(name: string): Promise<void> {
+    await this.gateway.remove(name)
+    await this.load()
+  }
+
+  // ─── Registry ────────────────────────────────────────────────────────────────
+
+  async searchRegistry(query: string): Promise<RegistryEntry[]> {
+    return this.gateway.searchRegistry(query)
+  }
+
+  async fetchRegistry(): Promise<RegistryEntry[]> {
+    return this.gateway.fetchRegistry()
   }
 }

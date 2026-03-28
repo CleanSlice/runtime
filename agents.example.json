@@ -1,0 +1,20 @@
+[
+  {
+    "name": "bot-1",
+    "agentDir": ".agent-bot1",
+    "env": {
+      "TELEGRAM_BOT_TOKEN": "111:AAA",
+      "TELEGRAM_BOT_NAME": "bot1_username",
+      "TELEGRAM_BOT_ADMIN_IDS": "55212224"
+    }
+  },
+  {
+    "name": "bot-2",
+    "agentDir": ".agent-bot2",
+    "env": {
+      "TELEGRAM_BOT_TOKEN": "222:BBB",
+      "TELEGRAM_BOT_NAME": "bot2_username",
+      "TELEGRAM_BOT_ADMIN_IDS": "55212224"
+    }
+  }
+]

@@ -5,3 +5,4 @@ node_modules
 .agent/data/secrets
 *.bak*
 .env
+bots.json

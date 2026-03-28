@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run --smol src/index.ts",
+    "multi": "bun run --smol src/multi.ts",
     "cli": "bun run src/cli.ts",
     "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun",
     "monitor": "bash scripts/monitor.sh"
@@ -22,7 +23,7 @@
     "zod-to-json-schema": "^3.23.0"
   },
   "devDependencies": {
-    "bun-types": "latest",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "bun-types": "latest"
   }
 }
