@@ -1,3 +1,5 @@
+import type { IChannelGateway } from "./channel.gateway"
+
 export interface MessageImage {
   base64: string
   mediaType: string  // "image/jpeg" | "image/png" | "image/webp" | "image/gif"
@@ -25,3 +27,4 @@ export interface Channel {
 export type ChannelConfig =
   | { type: "telegram"; token: string }
   | { type: "slack"; botToken: string; appToken: string }
+  | { type: "mock"; instance: IChannelGateway }

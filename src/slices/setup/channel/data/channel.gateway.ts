@@ -6,19 +6,21 @@ import { SlackRepository } from "./repositories/slack/slack.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
-  private repository: TelegramRepository | SlackRepository
+  private repository: TelegramRepository | SlackRepository | IChannelGateway
 
   constructor(config: ChannelConfig) {
     this.name = config.type
     this.repository = this.createRepository(config)
   }
 
-  private createRepository(config: ChannelConfig): TelegramRepository | SlackRepository {
+  private createRepository(config: ChannelConfig): TelegramRepository | SlackRepository | IChannelGateway {
     switch (config.type) {
       case "telegram":
         return new TelegramRepository(config.token)
       case "slack":
         return new SlackRepository(config.botToken, config.appToken)
+      case "mock":
+        return config.instance
     }
   }
 
