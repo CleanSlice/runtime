@@ -77,14 +77,20 @@ export class SessionModule {
         `You are a conversation archivist. Summarize this conversation history in two parts:
 
 PART 1 — KEY VALUES (mandatory, do not skip):
-List ALL specific values mentioned: tokens, API keys, URLs, IDs, file paths, env var names, passwords, emails, numbers, hostnames, app names. Format as:
-- <name>: <value>
+Extract and list EVERY specific value from the conversation. Missing even one value means the archive is broken. Include:
+- Email addresses (both sender and recipient)
+- Passwords, tokens, API keys (write "saved as secret_key" — do not repeat the actual value)
+- URLs, file paths, hostnames
+- IDs, numbers, dates, amounts
+- Tool call parameters: exact arguments passed to exec, secret_set, cron_add, etc.
+- Names of people, services, accounts
+Format: "- <label>: <value>"
 
 PART 2 — NARRATIVE SUMMARY:
 Write in THIRD PERSON: "The user asked about X. The assistant did Y."
-Do NOT write in first person. Be concise. Max 150 words.
+Include what actions were performed and their results. Max 150 words.
 
-This archived context will be injected into future conversations — the assistant MUST be able to find any value the user refers to as "I sent you earlier" or "я кидал выше".`,
+This archive replaces the original messages. If a value is not here, it is lost forever.`,
         toSummarize,
         []
       )

@@ -26,6 +26,7 @@ import type { Task } from "./slices/agent/task/task.manager"
 import { randomUUID } from "crypto"
 import { readFileSync, writeFileSync } from "fs"
 import { InitModule, type IAgentConfig } from "./slices/agent/init"
+import { SecretModule } from "./slices/setup/secret/secret.module"
 
 export interface RuntimeConfig {
   init: InitModule
@@ -54,6 +55,7 @@ export class AgentRuntime {
   private dispatcher: Dispatcher
   private toolingPrompt: string
   private stopPhrases: Set<string>
+  private secrets: SecretModule
   private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
@@ -62,6 +64,7 @@ export class AgentRuntime {
     this.tools = config.tools ?? []
     this.toolingPrompt = ToolService.buildToolingPromptFrom(this.tools)
     this.stopPhrases = new Set(this.config.stopPhrases.map(p => p.toLowerCase()))
+    this.secrets = new SecretModule(this.agentDir)
 
     this.llm = new LlmModule(config.llm)
     this.channel = new ChannelModule(config.channels)
@@ -434,7 +437,8 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         // Read shared history + this task's own events
         const history = await this.session.readForTask(sessionId, taskId)
 
-        let systemPrompt = await this.agent.buildPrompt({ userId: msg.from, toolingPrompt: this.toolingPrompt })
+        const secretKeys = await this.secrets.list(msg.from).catch(() => [] as string[])
+        let systemPrompt = await this.agent.buildPrompt({ userId: msg.from, toolingPrompt: this.toolingPrompt, secretKeys })
         const skill = this.skills.select(msg.text)
         if (skill) {
           systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`

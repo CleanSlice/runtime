@@ -1,6 +1,12 @@
 import type { IAgentGateway } from "./agent.gateway"
 import type { AgentConfig } from "./agent.types"
 
+export interface BuildPromptOpts {
+  agentDir?: string
+  toolingPrompt?: string
+  secretKeys?: string[]
+}
+
 export class AgentService {
   constructor(private gateway: IAgentGateway) {}
 
@@ -8,7 +14,7 @@ export class AgentService {
     return this.gateway.load(agentDir)
   }
 
-  buildSystemPrompt(config: AgentConfig, opts?: { agentDir?: string; toolingPrompt?: string }): string {
+  buildSystemPrompt(config: AgentConfig, opts?: BuildPromptOpts): string {
     const parts: string[] = []
     if (config.soul)      parts.push(`# Soul\n\n${config.soul}`)
     if (opts?.toolingPrompt) parts.push(opts.toolingPrompt)
@@ -17,6 +23,14 @@ export class AgentService {
     if (config.memory)    parts.push(`# Memory\n\n${config.memory}`)
     if (config.heartbeat) parts.push(`# Heartbeat\n\n${config.heartbeat}`)
     for (const skill of config.skills) parts.push(`# Skill\n\n${skill}`)
+
+    if (opts?.secretKeys && opts.secretKeys.length > 0) {
+      parts.push(
+        `## Saved Credentials\n\n` +
+        `This user has the following secrets already stored. Use \`secret_get\` to retrieve values when needed — do NOT ask the user to provide them again.\n\n` +
+        opts.secretKeys.map(k => `- \`${k}\``).join("\n")
+      )
+    }
 
     if (opts?.agentDir) {
       parts.push(`# Runtime\n\nAgent dir: ${opts.agentDir}\nSkills dir: ${opts.agentDir}/skills/\n\nTo create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`)
@@ -35,7 +49,7 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[] }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -49,6 +63,6 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
       }
     }
 
-    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt })
+    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys })
   }
 }
