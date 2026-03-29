@@ -16,6 +16,7 @@ import { PdfAnalyzeTool } from "./repositories/image/pdf.repository"
 import { TelegramSendTool } from "./repositories/message/telegram_send.repository"
 import { TtsTool } from "./repositories/message/tts.repository"
 import { MemorySearchTool } from "./repositories/memory/memory_search.repository"
+import { MemorySaveTool } from "./repositories/memory/memory_save.repository"
 import { ProcessExecTool } from "./repositories/exec/process.repository"
 import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
 import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "./repositories/secret/secret.repository"
@@ -44,6 +45,7 @@ export class ToolGateway implements IToolGateway {
     this.register(TelegramSendTool)
     this.register(TtsTool)
     this.register(MemorySearchTool)
+    this.register(MemorySaveTool)
     this.register(ProcessExecTool)
     this.register(SpawnAgentTool)
     this.register(SecretSetTool)

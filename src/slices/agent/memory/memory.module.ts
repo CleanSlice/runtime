@@ -20,4 +20,14 @@ export class MemoryModule {
   insert(entry: MemoryEntry): void {
     this.service.insert(entry)
   }
+
+  /** Append to today's daily memory file */
+  appendDaily(text: string): void {
+    MemoryService.appendDaily(this.agentDir, text)
+  }
+
+  /** Read today + yesterday daily files for system prompt */
+  readRecentDaily(): string | undefined {
+    return MemoryService.readRecentDaily(this.agentDir)
+  }
 }

@@ -438,7 +438,8 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         const history = await this.session.readForTask(sessionId, taskId)
 
         const secretKeys = await this.secrets.list(msg.from).catch(() => [] as string[])
-        let systemPrompt = await this.agent.buildPrompt({ userId: msg.from, toolingPrompt: this.toolingPrompt, secretKeys })
+        const dailyMemory = this.memory.readRecentDaily()
+        let systemPrompt = await this.agent.buildPrompt({ userId: msg.from, toolingPrompt: this.toolingPrompt, secretKeys, dailyMemory })
         const skill = this.skills.select(msg.text)
         if (skill) {
           systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
@@ -601,8 +602,8 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
 
         this.session.touch(sessionId)
 
-        // Fire-and-forget compaction — runs after response, does not block
-        this.session.compactAsync(sessionId, this.llm.getGateway())
+        // Memory flush + compaction — save durable notes before context is compressed
+        this.flushAndCompact(sessionId, history)
 
       } catch (err) {
         console.error(`[task:${task.id.slice(0, 6)}] unhandled:`, err)
@@ -617,5 +618,50 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
   private isStopCommand(text: string): boolean {
     const normalized = text.trim().toLowerCase().replace(/[.!?,;:]+$/, "")
     return this.stopPhrases.has(normalized)
+  }
+
+  /**
+   * Memory flush before compaction.
+   * Asks LLM to extract durable notes from the session, saves them to daily memory file,
+   * then runs compaction. Silent — user does not see this.
+   */
+  private flushAndCompact(sessionId: string, history: Event[]): void {
+    const doFlush = async () => {
+      // Only flush if session is large enough to warrant compaction
+      const events = await this.session.read(sessionId)
+      if (events.length <= this.config.session.compactionThreshold) return
+
+      console.log(`[memory-flush] flushing session ${sessionId} before compaction`)
+      try {
+        const response = await this.llm.complete(
+          `You are a memory extraction agent. Extract durable facts from this conversation that should be remembered across sessions.
+
+Write ONLY concrete, specific values — not summaries. One fact per line. Examples:
+- User's Gmail: user@gmail.com
+- Sent test email to recipient@gmail.com with subject "hello"
+- GitHub token saved as github:token for user miybotagent
+- User prefers responses in Ukrainian
+- Cron job created: send email to X every Monday at 9am
+
+Skip: greetings, small talk, errors that were resolved, tool call mechanics.
+If nothing worth remembering — respond with exactly: NOTHING`,
+          history,
+          []
+        )
+
+        const text = response.text?.trim()
+        if (text && text !== "NOTHING") {
+          this.memory.appendDaily(text)
+          console.log(`[memory-flush] saved ${text.split("\n").length} notes`)
+        }
+      } catch (err) {
+        console.error("[memory-flush] failed:", err)
+      }
+
+      // Now compact
+      this.session.compactAsync(sessionId, this.llm.getGateway())
+    }
+
+    doFlush().catch(err => console.error("[memory-flush] unhandled:", err))
   }
 }

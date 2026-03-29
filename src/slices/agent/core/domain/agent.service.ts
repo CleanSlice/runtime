@@ -5,6 +5,7 @@ export interface BuildPromptOpts {
   agentDir?: string
   toolingPrompt?: string
   secretKeys?: string[]
+  dailyMemory?: string
 }
 
 export class AgentService {
@@ -21,6 +22,11 @@ export class AgentService {
     if (config.agents)    parts.push(`# Agent Instructions\n\n${config.agents}`)
     if (config.user)      parts.push(`# User Context\n\n${config.user}`)
     if (config.memory)    parts.push(`# Memory\n\n${config.memory}`)
+
+    if (opts?.dailyMemory) {
+      parts.push(`## Recent Notes\n\n${opts.dailyMemory}`)
+    }
+
     if (config.heartbeat) parts.push(`# Heartbeat\n\n${config.heartbeat}`)
     for (const skill of config.skills) parts.push(`# Skill\n\n${skill}`)
 
@@ -56,7 +62,7 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[] }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -70,6 +76,6 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
       }
     }
 
-    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys })
+    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys, dailyMemory: opts?.dailyMemory })
   }
 }
