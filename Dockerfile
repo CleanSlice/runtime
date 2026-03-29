@@ -13,7 +13,8 @@ RUN apk add --no-cache \
     openssh-client \
     curl \
     jq \
-    bash
+    bash \
+    git
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
