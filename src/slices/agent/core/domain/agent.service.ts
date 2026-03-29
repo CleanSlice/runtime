@@ -8,6 +8,20 @@ export interface BuildPromptOpts {
   dailyMemory?: string
 }
 
+/**
+ * Returns true if the message is empty or contains only whitespace.
+ * These messages must be answered with "What can I help you with?"
+ * without calling any tools or doing any processing.
+ */
+export function isEmptyMessage(message: string): boolean {
+  return message.trim() === ""
+}
+
+/**
+ * The exact response to return for empty/whitespace-only messages.
+ */
+export const EMPTY_MESSAGE_RESPONSE = "What can I help you with?"
+
 export class AgentService {
   constructor(private gateway: IAgentGateway) {}
 
