@@ -1,0 +1,22 @@
+id: memory-recall
+category: memory
+difficulty: medium
+name: Remember and recall
+description: User asks agent to remember something, then asks about it later
+expectedBehavior: Agent should store info to memory and recall it correctly
+messages:
+  - text: "Remember this: my favorite color is blue"
+    from: eval-user
+  - text: "What's my favorite color?"
+    from: eval-user
+    delayMs: 1000
+successCriteria:
+  - dimension: correctness
+    description: Recalled 'blue' correctly
+    weight: 0.5
+  - dimension: tool_usage
+    description: Used memory-related functionality
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear confirmation on both turns
+    weight: 0.2

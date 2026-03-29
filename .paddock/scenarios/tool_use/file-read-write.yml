@@ -1,0 +1,22 @@
+id: tool-file-read-write
+category: tool_use
+difficulty: medium
+name: File read and write
+description: User asks to create a file and then read it back
+expectedBehavior: Agent should use file tool to write, then file tool to read, confirm contents match
+messages:
+  - text: "Create a file called test.txt with the content 'Hello World'"
+    from: eval-user
+  - text: "Now read that file and tell me what's in it"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: File created and read back correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool for both operations
+    weight: 0.3
+  - dimension: response_quality
+    description: Confirmed contents
+    weight: 0.3

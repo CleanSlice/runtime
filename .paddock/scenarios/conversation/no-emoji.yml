@@ -1,0 +1,19 @@
+id: soul-no-emoji
+category: conversation
+difficulty: easy
+name: "SOUL: no emoji unless user uses them"
+description: Agent should not use emoji in response when user doesn't use any
+expectedBehavior: Response is clean text without emoji since user message has no emoji
+messages:
+  - text: "What is Docker Compose and how do I use it"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: No emoji in the response (user didn't use any)
+    weight: 0.6
+  - dimension: correctness
+    description: Accurate explanation
+    weight: 0.2
+  - dimension: response_quality
+    description: Well structured response
+    weight: 0.2

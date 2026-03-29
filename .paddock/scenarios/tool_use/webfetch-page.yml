@@ -1,0 +1,19 @@
+id: tool-webfetch-page
+category: tool_use
+difficulty: medium
+name: Fetch and parse web page
+description: Agent fetches a specific URL and extracts requested information
+expectedBehavior: Agent should use webfetch tool to load the page and extract the requested data
+messages:
+  - text: "Go to https://jsonplaceholder.typicode.com/users/1 and tell me this user's email"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Extracted correct email from the JSON response
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used webfetch or http tool appropriately
+    weight: 0.3
+  - dimension: response_quality
+    description: Direct answer without unnecessary explanation
+    weight: 0.3

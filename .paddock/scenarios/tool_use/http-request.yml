@@ -1,0 +1,19 @@
+id: tool-http-request
+category: tool_use
+difficulty: hard
+name: HTTP API request with parsing
+description: User asks to fetch data from an API and extract specific info
+expectedBehavior: Agent should use http tool, parse JSON response, and extract name and city
+messages:
+  - text: "Make a GET request to https://jsonplaceholder.typicode.com/users/1 and tell me the user's name and what city they live in"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Extracted correct name and city from response
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http tool with correct params
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear structured answer
+    weight: 0.3

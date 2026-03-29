@@ -1,0 +1,22 @@
+id: tool-cron-add-list
+category: tool_use
+difficulty: medium
+name: Schedule and list cron jobs
+description: Agent adds a cron job and then lists all jobs
+expectedBehavior: Agent uses cron_add with concrete values (not placeholders), then cron_list to show jobs
+messages:
+  - text: "Schedule a task — every day at 9am send me 'Good morning'"
+    from: eval-user
+  - text: "Show me all my scheduled tasks"
+    from: eval-user
+    delayMs: 1500
+successCriteria:
+  - dimension: correctness
+    description: "Created cron with schedule '0 9 * * *' and message 'Good morning'"
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used cron_add with concrete values, then cron_list
+    weight: 0.4
+  - dimension: response_quality
+    description: Clear confirmation with schedule details
+    weight: 0.2

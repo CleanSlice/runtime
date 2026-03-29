@@ -1,0 +1,22 @@
+id: memory-save-workflow
+category: memory
+difficulty: hard
+name: Save a multi-step workflow
+description: Agent saves a reusable workflow to memory
+expectedBehavior: Agent uses memory_save with [workflow] tag containing the full procedure
+messages:
+  - text: "Remember this deploy workflow: 1) git pull 2) bun install 3) bun run build 4) docker compose up -d"
+    from: eval-user
+  - text: "How do I deploy?"
+    from: eval-user
+    delayMs: 1500
+successCriteria:
+  - dimension: correctness
+    description: Recalled all 4 steps in correct order
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used memory_save with workflow tag, then memory_search
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear numbered steps on recall
+    weight: 0.3

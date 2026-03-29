@@ -1,0 +1,16 @@
+id: edge-very-long-message
+category: edge_case
+difficulty: hard
+name: Very long message
+description: User sends an extremely long message
+expectedBehavior: Agent handles long input without error, responds to the core request
+messages:
+  - text: "Tell me in detail about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works about how the world works"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: No crash or truncation error
+    weight: 0.5
+  - dimension: response_quality
+    description: Meaningful response to the request
+    weight: 0.5

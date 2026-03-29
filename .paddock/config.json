@@ -1,0 +1,17 @@
+{
+  "scenarioCount": 10,
+  "passThreshold": 0.8,
+  "maxIterations": 5,
+  "maxTimeMs": 1800000,
+  "maxLlmCalls": 100,
+  "blockedTools": [
+    "exec",
+    "process",
+    "shutdown",
+    "spawn_agent",
+    "gcloud_exec",
+    "kubectl_exec",
+    "telegram_send",
+    "tts"
+  ]
+}

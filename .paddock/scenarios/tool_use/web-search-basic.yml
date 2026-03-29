@@ -1,0 +1,19 @@
+id: tool-web-search-basic
+category: tool_use
+difficulty: easy
+name: Basic web search
+description: User asks to search the web for a simple fact
+expectedBehavior: Agent should use web_search or web_fetch tool to find weather info and respond with a summary
+messages:
+  - text: "What's the weather like in London right now?"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Used a search tool
+    weight: 0.4
+  - dimension: tool_usage
+    description: Chose appropriate tool (web_search)
+    weight: 0.3
+  - dimension: response_quality
+    description: Summarized results clearly
+    weight: 0.3

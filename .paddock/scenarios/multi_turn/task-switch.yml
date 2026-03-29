@@ -1,0 +1,25 @@
+id: multi-turn-task-switch
+category: multi_turn
+difficulty: hard
+name: Task switching mid-conversation
+description: User starts one task, switches to another, then returns
+expectedBehavior: Agent handles task switch gracefully, completes both tasks, returns to bitcoin topic
+messages:
+  - text: "Find the current Bitcoin price"
+    from: eval-user
+  - text: "Wait, first do something else — create a file notes.txt and write 'important note' in it"
+    from: eval-user
+    delayMs: 3000
+  - text: "Ok, what about Bitcoin?"
+    from: eval-user
+    delayMs: 3000
+successCriteria:
+  - dimension: correctness
+    description: Both tasks completed correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used appropriate tools for each task
+    weight: 0.3
+  - dimension: response_quality
+    description: Smooth transitions between tasks
+    weight: 0.3

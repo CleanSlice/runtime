@@ -1,0 +1,19 @@
+id: conv-explain-concept
+category: conversation
+difficulty: medium
+name: Explain a technical concept
+description: User asks agent to explain something technical
+expectedBehavior: Agent provides clear, accurate explanation without unnecessary jargon
+messages:
+  - text: "Explain in simple terms what Docker is and why it's useful"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Technically accurate explanation
+    weight: 0.4
+  - dimension: response_quality
+    description: Simple language, good structure
+    weight: 0.3
+  - dimension: soul_compliance
+    description: Consistent with agent personality
+    weight: 0.3

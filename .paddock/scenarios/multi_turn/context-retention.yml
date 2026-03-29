@@ -1,0 +1,25 @@
+id: multi-turn-context
+category: multi_turn
+difficulty: medium
+name: Context retention across turns
+description: Multi-turn conversation testing context retention
+expectedBehavior: Agent retains all context from previous messages and answers accurately
+messages:
+  - text: "My name is Alex. I work as a software engineer."
+    from: eval-user
+  - text: "What did I just tell you about myself?"
+    from: eval-user
+    delayMs: 1000
+  - text: "And what do I do for work?"
+    from: eval-user
+    delayMs: 1000
+successCriteria:
+  - dimension: correctness
+    description: Recalled name and profession
+    weight: 0.5
+  - dimension: response_quality
+    description: Natural conversational flow
+    weight: 0.3
+  - dimension: soul_compliance
+    description: Consistent personality
+    weight: 0.2

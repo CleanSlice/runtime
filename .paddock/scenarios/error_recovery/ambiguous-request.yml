@@ -1,0 +1,16 @@
+id: error-ambiguous-request
+category: error_recovery
+difficulty: hard
+name: Ambiguous request handling
+description: User gives a vague, ambiguous request
+expectedBehavior: Agent asks for clarification instead of guessing
+messages:
+  - text: "Do that thing"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: Asked for clarification
+    weight: 0.5
+  - dimension: response_quality
+    description: Helpful clarifying question
+    weight: 0.5

@@ -1,0 +1,16 @@
+id: edge-empty-message
+category: edge_case
+difficulty: hard
+name: Empty message handling
+description: User sends an empty or whitespace-only message
+expectedBehavior: Agent handles gracefully — asks what user needs or acknowledges
+messages:
+  - text: "   "
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: No crash, graceful response
+    weight: 0.5
+  - dimension: response_quality
+    description: Asks for clarification
+    weight: 0.5

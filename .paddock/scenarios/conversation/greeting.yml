@@ -1,0 +1,16 @@
+id: conv-greeting
+category: conversation
+difficulty: easy
+name: Basic greeting
+description: User sends a simple greeting
+expectedBehavior: Agent greets back in a friendly manner consistent with SOUL.md personality
+messages:
+  - text: "Hi!"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: Response matches SOUL.md tone
+    weight: 0.5
+  - dimension: response_quality
+    description: Friendly and concise
+    weight: 0.5

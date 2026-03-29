@@ -1,0 +1,19 @@
+id: soul-no-filler
+category: conversation
+difficulty: medium
+name: "SOUL: no filler phrases"
+description: Agent must respond without filler like 'Sure!', 'Got it!', 'Let me check...'
+expectedBehavior: Agent calls tools immediately or answers directly — no narration before action
+messages:
+  - text: "What time is it in New York right now?"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "No filler: no 'Sure!', 'Let me check', 'Got it!' — straight to tool call or answer"
+    weight: 0.6
+  - dimension: tool_usage
+    description: Used web_search or other tool immediately
+    weight: 0.2
+  - dimension: response_quality
+    description: Concise answer with the time
+    weight: 0.2

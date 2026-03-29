@@ -1,0 +1,19 @@
+id: tool-http-post
+category: tool_use
+difficulty: hard
+name: HTTP POST request
+description: Agent sends a POST request with a JSON body
+expectedBehavior: Agent uses http tool with method POST, correct headers and body, reports the response
+messages:
+  - text: "Send a POST request to https://jsonplaceholder.typicode.com/posts with body {\"title\": \"test\", \"body\": \"hello\", \"userId\": 1} and show me what comes back"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Sent POST with correct JSON body, reported response
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http tool with method POST and Content-Type header
+    weight: 0.4
+  - dimension: response_quality
+    description: Showed response clearly
+    weight: 0.2

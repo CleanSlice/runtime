@@ -1,0 +1,25 @@
+id: multi-turn-tool-chain
+category: multi_turn
+difficulty: hard
+name: Multi-tool chain across turns
+description: User requests a sequence requiring multiple tools across conversation turns
+expectedBehavior: Agent uses web_search, then file tool to save results, maintaining context
+messages:
+  - text: "Find the top 3 programming languages in 2024"
+    from: eval-user
+  - text: "Save that to a file /tmp/languages.txt"
+    from: eval-user
+    delayMs: 3000
+  - text: "Read the file and tell me what's in it"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: All three steps completed correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used web_search, then file write, then file read
+    weight: 0.4
+  - dimension: response_quality
+    description: Context maintained across all turns
+    weight: 0.2

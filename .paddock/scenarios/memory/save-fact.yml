@@ -1,0 +1,22 @@
+id: memory-save-fact
+category: memory
+difficulty: medium
+name: Save and recall a fact
+description: Agent saves a user fact to memory and retrieves it
+expectedBehavior: Agent uses memory_save with [fact] tag, then memory_search to recall
+messages:
+  - text: "Remember: my email is test@example.com"
+    from: eval-user
+  - text: "What's my email?"
+    from: eval-user
+    delayMs: 1500
+successCriteria:
+  - dimension: correctness
+    description: Recalled test@example.com correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used memory_save then memory_search
+    weight: 0.4
+  - dimension: soul_compliance
+    description: Brief confirmation on save, direct answer on recall
+    weight: 0.2

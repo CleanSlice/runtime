@@ -1,0 +1,22 @@
+id: tool-file-operations
+category: tool_use
+difficulty: medium
+name: File write then read
+description: Agent creates a file, then reads it back on request
+expectedBehavior: Agent uses file tool with action write, then file tool with action read
+messages:
+  - text: "Create a file /tmp/paddock-test.txt with the text 'hello from paddock'"
+    from: eval-user
+  - text: "Read that file"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: File created and content read back matches
+    weight: 0.4
+  - dimension: tool_usage
+    description: "Used file tool with correct action: write then read"
+    weight: 0.4
+  - dimension: response_quality
+    description: Brief confirmation, no over-explanation
+    weight: 0.2

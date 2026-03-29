@@ -1,0 +1,19 @@
+id: tool-skill-awareness
+category: tool_use
+difficulty: medium
+name: Agent knows its skills
+description: Agent should be aware of loaded skills and describe them
+expectedBehavior: Agent references its loaded skills (gmail, websearch, skill-creator) from knowledge
+messages:
+  - text: "What skills do you have?"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Listed actual loaded skills
+    weight: 0.5
+  - dimension: response_quality
+    description: Brief description of each skill
+    weight: 0.3
+  - dimension: soul_compliance
+    description: Direct answer, no unnecessary preamble
+    weight: 0.2

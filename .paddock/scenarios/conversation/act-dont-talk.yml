@@ -1,0 +1,19 @@
+id: soul-act-dont-talk
+category: conversation
+difficulty: hard
+name: "SOUL: act don't talk"
+description: Agent should perform actions immediately without announcing them
+expectedBehavior: Agent calls web_search tool WITHOUT saying 'I will search for...' or 'Let me look that up'
+messages:
+  - text: "Find the latest SpaceX news"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "Tool called first, no narration like 'I'll search for that'"
+    weight: 0.5
+  - dimension: tool_usage
+    description: Used web_search with relevant query
+    weight: 0.3
+  - dimension: response_quality
+    description: Summarized news concisely
+    weight: 0.2

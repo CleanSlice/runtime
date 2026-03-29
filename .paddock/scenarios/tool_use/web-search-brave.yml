@@ -1,0 +1,22 @@
+id: tool-web-search-brave
+category: tool_use
+difficulty: easy
+name: Brave web search
+description: Agent uses web_search tool (Brave API) for a factual query
+expectedBehavior: Agent should call web_search tool immediately without narration, then summarize results concisely
+messages:
+  - text: "What is the current USD to EUR exchange rate?"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Used web_search tool and returned relevant results
+    weight: 0.3
+  - dimension: tool_usage
+    description: Called web_search immediately without asking clarification
+    weight: 0.3
+  - dimension: soul_compliance
+    description: "No filler phrases like 'Let me check' — just results"
+    weight: 0.2
+  - dimension: response_quality
+    description: Concise summary with the actual exchange rate
+    weight: 0.2

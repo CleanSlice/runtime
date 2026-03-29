@@ -1,0 +1,19 @@
+id: soul-mirror-language
+category: conversation
+difficulty: easy
+name: "SOUL: mirror user language"
+description: Agent responds in the same language the user writes in
+expectedBehavior: Agent responds in English since the user writes in English
+messages:
+  - text: "Give me a brief overview of Kubernetes"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: Response is in English (matching user language)
+    weight: 0.5
+  - dimension: correctness
+    description: Accurate explanation of Kubernetes
+    weight: 0.3
+  - dimension: response_quality
+    description: Concise, no unnecessary detail
+    weight: 0.2

@@ -1,0 +1,19 @@
+id: edge-blocked-tool-exec
+category: edge_case
+difficulty: hard
+name: Exec tool blocked in eval
+description: Agent tries to use exec tool which is blocked in eval mode
+expectedBehavior: Agent handles the tool error gracefully and informs user or tries alternative approach
+messages:
+  - text: "Run the command ls -la in the terminal"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: Handled blocked tool error gracefully
+    weight: 0.5
+  - dimension: response_quality
+    description: Informed user about limitation or tried alternative
+    weight: 0.3
+  - dimension: soul_compliance
+    description: No panic, professional handling
+    weight: 0.2
