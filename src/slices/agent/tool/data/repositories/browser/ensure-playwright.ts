@@ -1,19 +1,27 @@
 /**
- * Ensure Playwright browsers are installed.
- * On first call, tries to import playwright — if it fails with a browser-not-found
- * error, runs `bunx playwright install chromium` automatically, then retries.
+ * Ensure Playwright browsers are available.
+ * Uses system Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) if set,
+ * otherwise falls back to auto-install.
  */
 
 let installed = false
+
+/** Resolve Chromium executable path — system or Playwright-managed */
+export function chromiumPath(): string | undefined {
+  return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined
+}
 
 export async function ensurePlaywright(): Promise<typeof import("playwright")> {
   const pw = await import("playwright")
 
   if (installed) return pw
 
-  // Quick check: try launching and closing a browser to verify installation
+  // Quick check: try launching and closing a browser to verify
   try {
-    const browser = await pw.chromium.launch({ headless: true })
+    const browser = await pw.chromium.launch({
+      headless: true,
+      executablePath: chromiumPath(),
+    })
     await browser.close()
     installed = true
     return pw
@@ -25,6 +33,11 @@ export async function ensurePlaywright(): Promise<typeof import("playwright")> {
       || msg.includes("executable")
 
     if (!needsInstall) throw err
+
+    // If system chromium is set but failed — don't try to install, just fail
+    if (chromiumPath()) {
+      throw new Error(`System Chromium not found at ${chromiumPath()}. Check PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.`)
+    }
 
     console.log(`[playwright] browsers not installed, running: bunx playwright install chromium`)
 

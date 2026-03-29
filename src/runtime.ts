@@ -27,6 +27,7 @@ import { randomUUID } from "crypto"
 import { readFileSync, writeFileSync } from "fs"
 import { InitModule, type IAgentConfig } from "./slices/agent/init"
 import { SecretModule } from "./slices/setup/secret/secret.module"
+import { ActivityTracker } from "./slices/agent/activity/activity.tracker"
 
 export interface RuntimeConfig {
   init: InitModule
@@ -56,6 +57,7 @@ export class AgentRuntime {
   private toolingPrompt: string
   private stopPhrases: Set<string>
   private secrets: SecretModule
+  private activity: ActivityTracker
   private s3sync?: S3SyncService
 
   constructor(config: RuntimeConfig) {
@@ -83,6 +85,7 @@ export class AgentRuntime {
     this.usage = new UsageModule(this.agentDir)
     this.tasks = new TaskManager()
     this.dispatcher = new Dispatcher(this.tasks)
+    this.activity = new ActivityTracker(this.agentDir)
 
     if (config.s3) {
       this.s3sync = new S3SyncService(config.s3, this.agentDir)
@@ -122,6 +125,9 @@ export class AgentRuntime {
 
     this.channel.onMessage(msg => this.handleMessage(msg))
     await this.channel.start()
+
+    // Crash recovery — notify user about interrupted task
+    this.recoverInterruptedTask()
 
     this.cron.onJob(async job => {
       const from = job.to ?? "cron"
@@ -208,7 +214,10 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
   }
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
-    console.log(`[msg] from=${msg.from} channel=${msg.channel} text="${msg.text}"`)
+    // Internal messages are noisy — skip logging them
+    if (msg.channel !== "internal" && msg.from !== "cron" && msg.from !== "heartbeat") {
+      console.log(`[msg] from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
+    }
 
     const isInternal = msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
 
@@ -398,7 +407,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
 
       if (decision.kind === "join") {
         // Inject into existing task's inbox
-        console.log(`[dispatcher] joining task ${decision.task.id.slice(0, 6)}: "${msg.text.slice(0, 40)}"`)
+        console.log(`[${decision.task.id.slice(0, 6)}] ← join: "${msg.text.slice(0, 40)}"`)
         this.tasks.inject(decision.task.id, msg.text)
 
         // Append to session as shared context (no taskId — visible to all)
@@ -417,12 +426,24 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
     // --- Start new task (fire-and-forget) ---
     const labelLen = this.config.taskLabelLength
     const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
-    console.log(`[runtime] starting task for "${taskLabel.slice(0, 40)}"`)
 
     this.tasks.start(sessionId, taskLabel, async (task: Task) => {
       try {
         const taskId = task.id
-        console.log(`[task:${taskId.slice(0, 6)}] started`)
+        const tid = taskId.slice(0, 6)
+        console.log(`[${tid}] ← "${taskLabel}"`)
+
+
+        // Track activity for crash recovery
+        this.activity.set({
+          taskId,
+          label: taskLabel,
+          userId: msg.from,
+          channel: msg.channel,
+          text: msg.text,
+          startedAt: Date.now(),
+          lastStep: "started",
+        })
 
         // Append user message as shared context so future tasks can see it
         const userEvent: Event = {
@@ -443,7 +464,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         const skill = this.skills.select(msg.text)
         if (skill) {
           systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
-          console.log(`[skill] activated: ${skill.name}`)
+          console.log(`[${tid}] skill: ${skill.name}`)
         }
 
         const MAX_ITERATIONS = this.config.maxIterations
@@ -452,14 +473,14 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
 
         while (continueLoop) {
           if (task.controller.signal.aborted) {
-            console.log(`[task:${taskId.slice(0, 6)}] cancelled`)
+            console.log(`[${tid}] cancelled`)
             break
           }
 
           // Check inbox — if user sent clarification, append it to history and session
           while (task.inbox.length > 0) {
             const inboxText = task.inbox.shift()!
-            console.log(`[task:${taskId.slice(0, 6)}] inbox: "${inboxText.slice(0, 40)}"`)
+            console.log(`[${tid}] ← inbox: "${inboxText.slice(0, 40)}"`)
             const inboxEvent: Event = {
               id: randomUUID(),
               type: "user",
@@ -472,35 +493,30 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
           }
 
           if (++iterations > MAX_ITERATIONS) {
-            console.error(`[task:${taskId.slice(0, 6)}] exceeded ${MAX_ITERATIONS} iterations`)
+            console.error(`[${tid}] ✗ exceeded ${MAX_ITERATIONS} iterations`)
             await send("⚠️ Reached max iterations. Please try again.")
             break
           }
 
           let response
           try {
-            console.log(`[task:${taskId.slice(0, 6)}] calling llm iter=${iterations}`)
             const canStream = msg.channel === "telegram" && !isInternal && this.llm.canStream()
             if (canStream) {
-              // Stream response — send placeholder and edit as tokens arrive
-              console.log(`[task:${taskId.slice(0, 6)}] streaming response...`)
               let streamedResponse: import("./slices/llm/domain/llm.types").ModelResponse | undefined
               await this.channel.streamSend(msg.channel, msg.from, async (onChunk) => {
                 streamedResponse = await this.llm.stream(systemPrompt, history, this.tools, onChunk)
                 return streamedResponse.text ?? ""
               })
-              console.log(`[task:${taskId.slice(0, 6)}] stream complete, text=${streamedResponse?.text?.length ?? 0}`)
               response = streamedResponse!
             } else {
               response = await this.llm.complete(systemPrompt, history, this.tools)
             }
-            console.log(`[task:${taskId.slice(0, 6)}] llm ok, text=${response.text?.length ?? 0} tools=${response.toolCalls?.length ?? 0}`)
             this.usage.add(response.usage)
           } catch (err: unknown) {
             const status = (err as { status?: number })?.status
             const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
             const isOverloaded = errMsg.includes("overloaded_error") || errMsg.includes("Overloaded") || status === 529
-            console.error(`[task:${taskId.slice(0, 6)}] LLM error (status=${status}):`, err)
+            console.error(`[${tid}] ✗ LLM error${status ? ` (${status})` : ""}:`, errMsg.slice(0, 120))
             if (!isInternal) {
               if (isOverloaded) {
                 await send("⚠️ Сервер AI перегружен. Подожди минуту и попробуй снова.")
@@ -514,7 +530,9 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
           if (response.toolCalls && response.toolCalls.length > 0) {
             for (const call of response.toolCalls) {
               if (task.controller.signal.aborted) break
-              console.log(`[task:${taskId.slice(0, 6)}] tool_call: ${call.name}`)
+              const iterTag = iterations > 1 ? ` #${iterations}` : ""
+              console.log(`[${tid}]${iterTag} llm → ${call.name}`)
+              this.activity.updateStep(`tool_call: ${call.name}`)
 
               const toolUseId = randomUUID()
               const callEvent: Event = {
@@ -528,7 +546,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               history.push(callEvent)
 
               const tool = this.tools.find(t => t.name === call.name)
-              console.log(`[task:${taskId.slice(0, 6)}] tool found: ${!!tool}`)
+              if (!tool) console.warn(`[${tid}] ⚠ unknown tool: ${call.name}`)
               let result: unknown
               if (tool) {
                 try {
@@ -560,8 +578,11 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
             }
           } else {
             continueLoop = false
-            console.log(`[task:${taskId.slice(0, 6)}] final response, text=${response.text?.length ?? 0}, isInternal=${isInternal}`)
             if (response.text) {
+              const preview = response.text.slice(0, 50).replace(/\n/g, " ")
+              const iterTag = iterations > 1 ? ` #${iterations}` : ""
+              console.log(`[${tid}]${iterTag} llm → "${preview}…" (${response.text.length})`)
+
               const assistantEvent: Event = {
                 id: randomUUID(),
                 type: "assistant",
@@ -584,16 +605,14 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                         { sessionId, agentDir: this.agentDir, from: msg.from, channel: msg.channel, send }
                       )
                     } catch (err) {
-                      console.error("[voice] TTS failed:", err)
+                      console.error(`[${tid}] ✗ TTS failed:`, err)
                       await send(response.text)
                     }
                   } else {
                     await send(response.text)
                   }
                 } else {
-                  console.log(`[task:${taskId.slice(0, 6)}] sending text response`)
                   await send(response.text)
-                  console.log(`[task:${taskId.slice(0, 6)}] send done`)
                 }
               }
             }
@@ -601,12 +620,14 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         }
 
         this.session.touch(sessionId)
+        this.activity.clear()
 
         // Memory flush + compaction — save durable notes before context is compressed
         this.flushAndCompact(sessionId, history)
 
       } catch (err) {
-        console.error(`[task:${task.id.slice(0, 6)}] unhandled:`, err)
+        console.error(`[${task.id.slice(0, 6)}] ✗ unhandled:`, err)
+        this.activity.clear()
         try {
           if (!isInternal) await this.channel.send(msg.channel, msg.from, "⚠️ Что-то пошло не так. Попробуй ещё раз.")
         } catch { /* ignore */ }
@@ -614,6 +635,35 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
     })
   }
 
+
+  private recoverInterruptedTask(): void {
+    const interrupted = this.activity.get()
+    if (!interrupted) return
+
+    const isInternal = interrupted.channel === "internal"
+    if (isInternal) {
+      this.activity.clear()
+      return
+    }
+
+    const elapsed = Math.round((Date.now() - interrupted.startedAt) / 1000)
+    const elapsedStr = elapsed > 60 ? `${Math.round(elapsed / 60)} мин` : `${elapsed} сек`
+
+    console.log(`[recovery] interrupted task found: "${interrupted.label}" for user=${interrupted.userId} (${elapsedStr} ago, step: ${interrupted.lastStep})`)
+
+    const message =
+      `⚠️ Я перезапустился. До этого работал над:\n\n` +
+      `"${interrupted.text}"\n\n` +
+      `Последний шаг: ${interrupted.lastStep} (${elapsedStr} назад)\n\n` +
+      `Хочешь продолжить?`
+
+    this.channel.send(interrupted.channel, interrupted.userId, message)
+      .then(() => this.activity.clear())
+      .catch(err => {
+        console.error("[recovery] failed to notify user:", err)
+        this.activity.clear()
+      })
+  }
 
   private isStopCommand(text: string): boolean {
     const normalized = text.trim().toLowerCase().replace(/[.!?,;:]+$/, "")

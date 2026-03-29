@@ -2,7 +2,7 @@ import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
 import { mkdirSync } from "fs"
-import { ensurePlaywright } from "./ensure-playwright"
+import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 
 const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), url: z.string() }),
@@ -50,6 +50,7 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
     const browser = await chromium.launchPersistentContext(profileDir, {
       headless: true,
+      executablePath: chromiumPath(),
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
       viewport: { width: 1280, height: 900 },
     })

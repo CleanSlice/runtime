@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
-import { ensurePlaywright } from "./ensure-playwright"
+import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 
 const schema = z.object({
   url: z.string().describe("URL to take a screenshot of"),
@@ -21,7 +21,7 @@ export const BrowserScreenshotTool: Tool = {
     const outPath = `${home}/${filename}`
 
     const { chromium } = await ensurePlaywright()
-    const browser = await chromium.launch({ headless: true })
+    const browser = await chromium.launch({ headless: true, executablePath: chromiumPath() })
     const page = await browser.newPage({ viewport: { width: width ?? 1280, height: 900 } })
 
     await page.goto(url, { waitUntil: "networkidle", timeout: 30000 })

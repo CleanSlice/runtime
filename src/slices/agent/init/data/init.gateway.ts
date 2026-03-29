@@ -15,11 +15,10 @@ export class InitGateway implements IInitGateway {
     this.ensureDirs(agentDir)
 
     if (existsSync(exampleDir)) {
-      console.log(`[init] first run — initializing ${agentDir} from ${exampleDir}`)
-      this.copyDirRecursive(exampleDir, agentDir)
-      console.log(`[init] agent directory ready`)
+      const count = this.copyDirRecursive(exampleDir, agentDir)
+      console.log(`[init] first run — created ${count} files from ${exampleDir}`)
     } else {
-      console.log(`[init] no example dir at ${exampleDir}, created minimal scaffold`)
+      console.log(`[init] first run — created minimal scaffold`)
     }
   }
 
@@ -76,22 +75,24 @@ export class InitGateway implements IInitGateway {
     }
   }
 
-  private copyDirRecursive(src: string, dest: string): void {
+  private copyDirRecursive(src: string, dest: string): number {
     if (!existsSync(dest)) {
       mkdirSync(dest, { recursive: true })
     }
 
+    let count = 0
     for (const entry of readdirSync(src)) {
       const srcPath = join(src, entry)
       const destPath = join(dest, entry)
 
       if (statSync(srcPath).isDirectory()) {
-        this.copyDirRecursive(srcPath, destPath)
+        count += this.copyDirRecursive(srcPath, destPath)
       } else if (!existsSync(destPath)) {
         copyFileSync(srcPath, destPath)
-        console.log(`[init] created ${entry}`)
+        count++
       }
     }
+    return count
   }
 }
 

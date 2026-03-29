@@ -18,12 +18,10 @@ process.on("unhandledRejection", (reason) => {
 // Validate env vars
 const requiredEnv = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_NAME", "TELEGRAM_BOT_ADMIN_IDS", "CLAUDE_CODE_OAUTH_TOKEN"]
 const optionalEnv = ["LLM_MODEL", "LLM_FALLBACK_MODEL", "SECRET_PROVIDER", "ELEVENLABS_API_KEY", "S3_BUCKET", "S3_PREFIX", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "ANTHROPIC_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT"]
-for (const key of requiredEnv) {
-  if (!process.env[key]) console.warn(`[env] ⚠ ${key} is not set (required)`)
-}
-for (const key of optionalEnv) {
-  if (process.env[key]) console.log(`[env] ${key} ✓`)
-}
+const missingRequired = requiredEnv.filter(k => !process.env[k])
+const setOptional = optionalEnv.filter(k => process.env[k])
+if (setOptional.length) console.log(`[env] ok: ${setOptional.join(", ")}`)
+if (missingRequired.length) console.warn(`[env] ⚠ missing: ${missingRequired.join(", ")}`)
 
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"

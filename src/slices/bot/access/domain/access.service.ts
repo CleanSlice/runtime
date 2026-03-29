@@ -27,7 +27,7 @@ export class AccessService {
   isAllowed(userId: string): boolean {
     this.gateway.load()
     const result = this.strategy.check(userId, this.gateway, this.adminIds)
-    console.log(`[access] isAllowed(${userId}) = ${result.allowed}`)
+    if (!result.allowed) console.log(`[access] denied: ${userId}`)
     return result.allowed
   }
 

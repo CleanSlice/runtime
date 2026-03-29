@@ -10,10 +10,8 @@ export class SecretModule {
     if (provider === "aws") {
       const prefix = process.env.AWS_SECRET_PREFIX ?? "cleanslice/users"
       this.gateway = new AwsSecretRepository(prefix)
-      console.log("[secrets] using AWS Secrets Manager")
     } else {
       this.gateway = new FileSecretRepository(agentDir)
-      console.log("[secrets] using file store")
     }
   }
 

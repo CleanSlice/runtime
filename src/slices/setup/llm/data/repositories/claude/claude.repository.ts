@@ -11,7 +11,6 @@ async function getAnthropic(): Promise<(new (opts: Record<string, unknown>) => A
   if (!_AnthropicClass) {
     const mod = await import("@anthropic-ai/sdk")
     _AnthropicClass = mod.default as unknown as (new (opts: Record<string, unknown>) => Anthropic)
-    console.log("[llm] Anthropic SDK loaded")
   }
   return _AnthropicClass
 }
@@ -142,7 +141,6 @@ export class ClaudeRepository implements ILlmGateway {
       this.apiKeyClient = undefined
     }
 
-    console.log(`[llm] ${this.clients.length} OAuth token(s) + ${this.apiKeyClient ? "API key fallback" : "no API key fallback"}`)
   }
 
   /** Get current active client */
@@ -463,7 +461,7 @@ export class ClaudeRepository implements ILlmGateway {
           const existing = resultIndex.get(b.id)
           if (existing) return existing
           // Synthetic fallback
-          console.warn(`[llm] inserting synthetic result for tool_use id=${b.id.slice(0, 8)}`)
+          console.warn(`[llm] ⚠ synthetic result for interrupted tool_use`)
           return {
             type: "tool_result" as const,
             tool_use_id: b.id,

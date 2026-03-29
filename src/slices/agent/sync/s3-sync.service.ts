@@ -12,7 +12,6 @@ let _s3Module: typeof import("@aws-sdk/client-s3") | undefined
 async function getS3Module() {
   if (!_s3Module) {
     _s3Module = await import("@aws-sdk/client-s3")
-    console.log("[s3-sync] AWS SDK loaded")
   }
   return _s3Module
 }
@@ -149,7 +148,6 @@ export class S3SyncService {
    * Only downloads files that don't exist locally (init) or exist in S3.
    */
   async pull(): Promise<void> {
-    console.log("[s3-sync] pulling from S3...")
     let count = 0
     const keys = await this.s3List(`${this.prefix}/`)
 
@@ -166,7 +164,7 @@ export class S3SyncService {
       }
     }
 
-    console.log(`[s3-sync] pulled ${count} files`)
+    console.log(`[s3] pulled ${count} files`)
   }
 
   /**
@@ -175,7 +173,7 @@ export class S3SyncService {
    */
   async push(): Promise<void> {
     if (this.pushing) {
-      console.log("[s3-sync] push already in progress, skipping")
+      console.log("[s3] push already in progress, skipping")
       return
     }
     this.pushing = true
@@ -189,10 +187,10 @@ export class S3SyncService {
           await this.s3Put(this.s3Key(relPath), body)
           count++
         } catch (err) {
-          console.error(`[s3-sync] failed to push ${relPath}:`, err)
+          console.error(`[s3] failed to push ${relPath}:`, err)
         }
       }
-      console.log(`[s3-sync] pushed ${count} files`)
+      console.log(`[s3] pushed ${count} files`)
     } finally {
       this.pushing = false
     }
@@ -208,7 +206,7 @@ export class S3SyncService {
     try {
       await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
     } catch (err) {
-      console.error(`[s3-sync] failed to push session ${sessionId}:`, err)
+      console.error(`[s3] failed to push session ${sessionId}:`, err)
     }
   }
 
@@ -222,7 +220,7 @@ export class S3SyncService {
     try {
       await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
     } catch (err) {
-      console.error(`[s3-sync] failed to push access:`, err)
+      console.error(`[s3] failed to push access:`, err)
     }
   }
 
@@ -233,9 +231,9 @@ export class S3SyncService {
     if (this.timer) return
     const safeInterval = (Number.isFinite(intervalSec) && intervalSec > 0) ? intervalSec : 60
     this.timer = setInterval(() => {
-      this.push().catch(err => console.error("[s3-sync] auto-sync error:", err))
+      this.push().catch(err => console.error("[s3] auto-sync error:", err))
     }, safeInterval * 1000)
-    console.log(`[s3-sync] auto-sync started (every ${safeInterval}s)`)
+    console.log(`[s3] auto-sync every ${safeInterval}s`)
   }
 
   stopAutoSync(): void {

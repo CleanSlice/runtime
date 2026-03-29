@@ -16,7 +16,8 @@ RUN apk add --no-cache \
     bash \
     git
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+# Use system Chromium — skip Playwright's own browser download
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Install dependencies (cached layer)
