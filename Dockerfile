@@ -28,7 +28,7 @@ COPY . .
 
 # Create agent directory with correct ownership
 RUN adduser -D -u 1001 agent \
-    && mkdir -p .agent/data/sessions .agent/data/secrets .agent/skills \
+    && mkdir -p .agent/data/sessions .agent/data/secrets .agent/skills .agent/workspace \
     && chown -R agent:agent .agent
 
 # Run as non-root

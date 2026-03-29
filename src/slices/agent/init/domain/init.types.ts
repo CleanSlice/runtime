@@ -43,7 +43,7 @@ export interface IAgentConfig {
 }
 
 /** Required subdirectories inside the agent directory */
-export const AGENT_SUBDIRS = ["data", "sessions", "memory", "skills"] as const
+export const AGENT_SUBDIRS = ["data", "sessions", "memory", "skills", "workspace"] as const
 
 /** Default config values — used when agent.config.json is missing or partial */
 export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {

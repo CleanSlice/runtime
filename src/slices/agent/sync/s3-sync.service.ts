@@ -50,6 +50,8 @@ export class S3SyncService {
     /\.sqlite-wal$/,
     /node_modules/,
     /\.DS_Store/,
+    /\/\.git\//,       // git internals — repos are re-cloned, not synced
+    /\.pack$/,         // git pack files
   ]
 
   constructor(config: S3SyncConfig, agentDir: string) {

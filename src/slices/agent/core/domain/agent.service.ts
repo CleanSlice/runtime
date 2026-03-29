@@ -33,7 +33,14 @@ export class AgentService {
     }
 
     if (opts?.agentDir) {
-      parts.push(`# Runtime\n\nAgent dir: ${opts.agentDir}\nSkills dir: ${opts.agentDir}/skills/\n\nTo create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`)
+      parts.push(
+        `# Runtime\n\n` +
+        `Agent dir: ${opts.agentDir}\n` +
+        `Skills dir: ${opts.agentDir}/skills/\n` +
+        `Workspace dir: ${opts.agentDir}/workspace/\n\n` +
+        `Use workspace dir for cloning repos, writing files, and project work. It persists across restarts.\n` +
+        `To create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`
+      )
     }
 
     parts.push(`# Context Recall Rules
