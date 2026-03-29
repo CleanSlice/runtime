@@ -633,18 +633,22 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
 
       console.log(`[memory-flush] flushing session ${sessionId} before compaction`)
       try {
+        // Read existing daily notes to avoid duplicates
+        const existing = this.memory.readRecentDaily() ?? ""
+
         const response = await this.llm.complete(
           `You are a memory extraction agent. Extract durable facts from this conversation that should be remembered across sessions.
 
-Write ONLY concrete, specific values — not summaries. One fact per line. Examples:
-- User's Gmail: user@gmail.com
-- Sent test email to recipient@gmail.com with subject "hello"
-- GitHub token saved as github:token for user miybotagent
-- User prefers responses in Ukrainian
-- Cron job created: send email to X every Monday at 9am
+Write ONLY concrete, specific values — not summaries. Tag each line:
+- [fact] for stable info (emails, accounts, preferences)
+- [event] for what happened (actions, results)
+- [workflow] for reusable steps
 
-Skip: greetings, small talk, errors that were resolved, tool call mechanics.
-If nothing worth remembering — respond with exactly: NOTHING`,
+Skip: greetings, small talk, resolved errors, tool call mechanics.
+If nothing worth remembering — respond with exactly: NOTHING
+
+ALREADY SAVED (do not repeat these):
+${existing || "(nothing saved yet)"}`,
           history,
           []
         )
