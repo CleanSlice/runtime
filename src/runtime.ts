@@ -446,17 +446,27 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         })
 
         // Append user message as shared context so future tasks can see it
+        // NOTE: images are NOT persisted to session (base64 is too large for disk/replay).
+        // They are injected into in-memory history only for the current task.
         const userEvent: Event = {
           id: randomUUID(),
           type: "user",
           ts: Date.now(),
-          data: { text: msg.text, from: msg.from, ...(msg.images?.length ? { images: msg.images } : {}) },
+          data: { text: msg.text, from: msg.from },
           // no taskId — shared, so future tasks see what was requested
         }
         await this.session.append(sessionId, userEvent)
 
         // Read shared history + this task's own events
         const history = await this.session.readForTask(sessionId, taskId)
+
+        // Inject images into the last user event in history (current message) — in-memory only
+        if (msg.images?.length) {
+          const lastUserEvent = history[history.length - 1]
+          if (lastUserEvent && lastUserEvent.type === "user") {
+            (lastUserEvent.data as Record<string, unknown>).images = msg.images
+          }
+        }
 
         const secretKeys = await this.secrets.list(msg.from).catch(() => [] as string[])
         const dailyMemory = this.memory.readRecentDaily()

@@ -220,8 +220,11 @@ export class TelegramRepository {
                     if (imgRes.ok) {
                       const buffer = await imgRes.arrayBuffer()
                       const base64 = Buffer.from(buffer).toString("base64")
-                      const contentType = imgRes.headers.get("content-type") ?? "image/jpeg"
-                      images.push({ base64, mediaType: contentType.split(";")[0].trim() })
+                      // Claude API accepts only: image/jpeg, image/png, image/gif, image/webp
+                      const rawType = (imgRes.headers.get("content-type") ?? "").split(";")[0].trim()
+                      const validTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
+                      const mediaType = validTypes.has(rawType) ? rawType : "image/jpeg"
+                      images.push({ base64, mediaType })
                     }
                   } catch (err) {
                     console.error("[telegram] failed to download photo for vision:", err)
