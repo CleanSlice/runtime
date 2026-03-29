@@ -18,9 +18,45 @@ export function isEmptyMessage(message: string): boolean {
 }
 
 /**
+ * Returns true if the message is very long (over ~3000 characters).
+ * These messages should be skimmed for intent and answered concisely.
+ */
+export function isVeryLongMessage(message: string): boolean {
+  return message.length > 3000
+}
+
+/**
+ * Returns true if the message appears to be highly repetitive
+ * (same short token repeated many times).
+ */
+export function isRepetitiveMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (trimmed.length < 100) return false
+
+  // Split into words/tokens and check if a single token dominates
+  const words = trimmed.split(/\s+/)
+  if (words.length < 10) return false
+
+  const freq: Record<string, number> = {}
+  for (const w of words) {
+    const key = w.toLowerCase()
+    freq[key] = (freq[key] ?? 0) + 1
+  }
+
+  const topCount = Math.max(...Object.values(freq))
+  // If the most frequent token makes up >60% of words, it's repetitive
+  return topCount / words.length > 0.6
+}
+
+/**
  * The exact response to return for empty/whitespace-only messages.
  */
 export const EMPTY_MESSAGE_RESPONSE = "What can I help you with?"
+
+/**
+ * The response to return for very long repetitive messages with no extractable intent.
+ */
+export const REPETITIVE_MESSAGE_RESPONSE = "Looks like repeated text. What do you need help with?"
 
 export class AgentService {
   constructor(private gateway: IAgentGateway) {}
@@ -65,7 +101,7 @@ export class AgentService {
 
     parts.push(`# Context Recall Rules
 
-When the user says "я кидал выше", "я скидав вище", "I sent you earlier", "see above", "ты уже знаешь", "я давал тебе" — DO NOT ask them to repeat.
+When the user says "я кидал выше", "я скидав вище", "I sent you earlier", "see above", "ты уже знаешь", "я давав тебе" — DO NOT ask them to repeat.
 Instead:
 1. Search [ARCHIVED CONTEXT] blocks in the conversation history for the relevant value
 2. Check memory/secrets if applicable
