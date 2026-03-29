@@ -214,6 +214,14 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
   }
 
   async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string; images?: Array<{ base64: string; mediaType: string }> }): Promise<void> {
+    // Empty/whitespace messages cause Claude API 400 — handle gracefully
+    if (!msg.text || !msg.text.trim()) {
+      if (msg.channel !== "internal") {
+        await this.channel.send(msg.channel, msg.from, "What can I help you with?")
+      }
+      return
+    }
+
     // Internal messages are noisy — skip logging them
     if (msg.channel !== "internal" && msg.from !== "cron" && msg.from !== "heartbeat") {
       console.log(`[msg] from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
