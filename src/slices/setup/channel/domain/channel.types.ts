@@ -1,3 +1,8 @@
+export interface MessageImage {
+  base64: string
+  mediaType: string  // "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+}
+
 export interface Message {
   id: string
   text: string
@@ -5,6 +10,7 @@ export interface Message {
   channel: string   // "telegram" | "slack" | "discord" | "api"
   ts: number        // unix timestamp ms
   sessionId: string
+  images?: MessageImage[]
   metadata?: Record<string, unknown>
 }
 

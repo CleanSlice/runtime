@@ -489,7 +489,20 @@ export class ClaudeRepository implements ILlmGateway {
           content: `[ARCHIVED CONTEXT — background info only, do not assume actions were already performed]\n\n${text}\n\n[END ARCHIVED CONTEXT]`,
         })
       } else if (event.type === "user") {
-        messages.push({ role: "user", content: String((event.data as { text?: unknown })?.text ?? event.data) })
+        const d = event.data as { text?: unknown; images?: Array<{ base64: string; mediaType: string }> }
+        const text = String(d.text ?? event.data)
+        const images = d.images
+        if (images && images.length > 0) {
+          // Native vision: send images as content blocks alongside text
+          const content: Array<Record<string, unknown>> = images.map(img => ({
+            type: "image",
+            source: { type: "base64", media_type: img.mediaType, data: img.base64 },
+          }))
+          content.push({ type: "text", text })
+          messages.push({ role: "user", content: content as unknown as Anthropic.ContentBlockParam[] })
+        } else {
+          messages.push({ role: "user", content: text })
+        }
       } else if (event.type === "assistant") {
         messages.push({ role: "assistant", content: String((event.data as { text?: unknown })?.text ?? event.data) })
       } else if (event.type === "tool_call") {

@@ -204,6 +204,8 @@ export class TelegramRepository {
                 let text = msg!.text ?? msg!.caption ?? (hasPhoto ? "[photo]" : "[document]")
                 const metadata: Record<string, unknown> = { chatId: msg!.chat.id, username: msg!.from?.username }
 
+                const images: Array<{ base64: string; mediaType: string }> = []
+
                 if (hasPhoto) {
                   const fileId = msg!.photo![msg!.photo!.length - 1].file_id
                   const fileRes = await fetch(`${this.baseUrl}/getFile?file_id=${fileId}`)
@@ -211,9 +213,22 @@ export class TelegramRepository {
                   const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileJson.result.file_path}`
                   metadata.photoUrl = fileUrl
                   metadata.hasPhoto = true
-                  // Include URL in text so LLM can analyze it
-                  const caption = msg!.caption ? ` Caption: "${msg!.caption}"` : ""
-                  text = `[User sent a photo]${caption}\nPhoto URL: ${fileUrl}\nPlease analyze this image using the image_analyze tool.`
+
+                  // Download image and convert to base64 for native vision
+                  try {
+                    const imgRes = await fetch(fileUrl)
+                    if (imgRes.ok) {
+                      const buffer = await imgRes.arrayBuffer()
+                      const base64 = Buffer.from(buffer).toString("base64")
+                      const contentType = imgRes.headers.get("content-type") ?? "image/jpeg"
+                      images.push({ base64, mediaType: contentType.split(";")[0].trim() })
+                    }
+                  } catch (err) {
+                    console.error("[telegram] failed to download photo for vision:", err)
+                  }
+
+                  const caption = msg!.caption ? msg!.caption : ""
+                  text = caption || "[User sent a photo]"
                 }
 
                 if (hasDocument) {
@@ -239,6 +254,7 @@ export class TelegramRepository {
                   channel: "telegram",
                   ts: msg!.date * 1000,
                   sessionId: "",
+                  ...(images.length > 0 ? { images } : {}),
                   metadata,
                 })
               } finally {

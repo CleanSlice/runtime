@@ -213,7 +213,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
     }
   }
 
-  async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string }): Promise<void> {
+  async handleMessage(msg: { id: string; text: string; from: string; channel: string; ts: number; sessionId: string; images?: Array<{ base64: string; mediaType: string }> }): Promise<void> {
     // Internal messages are noisy — skip logging them
     if (msg.channel !== "internal" && msg.from !== "cron" && msg.from !== "heartbeat") {
       console.log(`[msg] from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
@@ -450,7 +450,7 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
           id: randomUUID(),
           type: "user",
           ts: Date.now(),
-          data: { text: msg.text, from: msg.from },
+          data: { text: msg.text, from: msg.from, ...(msg.images?.length ? { images: msg.images } : {}) },
           // no taskId — shared, so future tasks see what was requested
         }
         await this.session.append(sessionId, userEvent)
