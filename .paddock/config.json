@@ -1,9 +1,9 @@
 {
-  "scenarioCount": 10,
+  "scenarioCount": 39,
   "passThreshold": 0.8,
   "maxIterations": 5,
   "maxTimeMs": 1800000,
-  "maxLlmCalls": 100,
+  "maxLlmCalls": 200,
   "blockedTools": [
     "exec",
     "process",

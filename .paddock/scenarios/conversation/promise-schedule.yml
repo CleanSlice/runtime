@@ -1,0 +1,19 @@
+id: soul-promise-must-schedule
+category: conversation
+difficulty: hard
+name: "SOUL: promise requires cron_add"
+description: When agent says it will follow up later, it MUST call cron_add in the same turn
+expectedBehavior: Agent either checks status NOW or schedules a cron_add — never promises without scheduling
+messages:
+  - text: "Запусти деплой и дай знать когда закончится"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "If agent says 'дам знать' / 'отпишусь' / 'I will let you know' — cron_add MUST be called in same response"
+    weight: 0.5
+  - dimension: tool_usage
+    description: "Called cron_add with delayMinutes or runAt to schedule the follow-up check"
+    weight: 0.3
+  - dimension: response_quality
+    description: "Clear confirmation of what was scheduled and when"
+    weight: 0.2

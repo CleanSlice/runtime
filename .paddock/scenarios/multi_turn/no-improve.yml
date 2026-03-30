@@ -1,0 +1,22 @@
+id: multi-turn-no-improve
+category: multi_turn
+difficulty: hard
+name: "Multi-turn: don't over-improve, stay on task"
+description: Agent must complete the exact task asked — not add extras, refactor, or improve beyond scope
+expectedBehavior: Agent makes the specific change requested, confirms, and stops — no bonus improvements
+messages:
+  - text: "Измени текст кнопки с 'Delete' на 'Destroy' в файле /tmp/test-button.html"
+    from: eval-user
+  - text: "Теперь добавь красный цвет этой кнопке"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: "Made ONLY the requested changes — no extra refactoring, cleanup, or improvements"
+    weight: 0.5
+  - dimension: soul_compliance
+    description: "Did not add confirmation modals, warnings, or other 'nice to have' features"
+    weight: 0.3
+  - dimension: response_quality
+    description: "Short confirmation of what was changed"
+    weight: 0.2
