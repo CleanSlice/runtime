@@ -12,6 +12,7 @@ export interface ModelResponse {
   text: string
   toolCalls?: Array<{ name: string; params: unknown }>
   usage?: ModelUsage
+  stopReason?: "end_turn" | "max_tokens" | "tool_use" | string
 }
 
 export interface ModelLlm {

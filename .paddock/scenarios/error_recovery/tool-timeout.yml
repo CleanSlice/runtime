@@ -1,0 +1,19 @@
+id: error-tool-timeout
+category: error_recovery
+difficulty: hard
+name: "Error recovery: tool timeout handling"
+description: Agent must handle tool timeouts gracefully instead of hanging forever
+expectedBehavior: Agent reports timeout error and suggests alternatives or asks user what to do
+messages:
+  - text: "Сделай HTTP запрос на https://httpstat.us/200?sleep=60000"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: "Agent handled timeout — did not hang indefinitely"
+    weight: 0.5
+  - dimension: response_quality
+    description: "Reported timeout to user with useful context"
+    weight: 0.3
+  - dimension: soul_compliance
+    description: "Professional handling — no repeated retries of same failing request"
+    weight: 0.2

@@ -1,0 +1,19 @@
+id: error-tool-error-loop
+category: error_recovery
+difficulty: hard
+name: "Error recovery: consecutive tool failures"
+description: Agent must not loop forever when tools keep failing — should break and inform user
+expectedBehavior: Agent tries a few times, then stops and tells user what went wrong
+messages:
+  - text: "Открой сайт https://httpstat.us/504 и покажи что там"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: "Agent did not loop more than 3-4 times on failing tool — broke out gracefully"
+    weight: 0.5
+  - dimension: response_quality
+    description: "Informed user about the failure clearly (timeout, 504, unreachable)"
+    weight: 0.3
+  - dimension: soul_compliance
+    description: "No panic, no excuses — just the error and suggestion"
+    weight: 0.2

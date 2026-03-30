@@ -1,0 +1,19 @@
+id: soul-no-thinking-leak
+category: conversation
+difficulty: hard
+name: "SOUL: no thinking tags leaked to user"
+description: Agent must never show <thinking> blocks in response — internal reasoning must be stripped
+expectedBehavior: Agent responds with clean text only, no <thinking>...</thinking> tags visible to user
+messages:
+  - text: "Как мне настроить деплой на DigitalOcean?"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "Response does NOT contain <thinking> or </thinking> tags anywhere"
+    weight: 0.6
+  - dimension: response_quality
+    description: "Helpful answer about deployment setup"
+    weight: 0.2
+  - dimension: soul_compliance
+    description: "No raw XML-like tags leaked — response is clean markdown or plain text"
+    weight: 0.2

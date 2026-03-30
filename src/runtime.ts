@@ -551,7 +551,8 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
             for (const call of response.toolCalls) {
               if (task.controller.signal.aborted) break
               const iterTag = iterations > 1 ? ` #${iterations}` : ""
-              console.log(`[${tid}]${iterTag} llm → ${call.name}`)
+              const paramHint = call.params ? JSON.stringify(call.params).slice(0, 80) : ""
+              console.log(`[${tid}]${iterTag} llm → ${call.name}(${paramHint})`)
               this.activity.updateStep(`tool_call: ${call.name}`)
 
               const toolUseId = randomUUID()
@@ -569,6 +570,15 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               if (!tool) console.warn(`[${tid}] ⚠ unknown tool: ${call.name}`)
               let result: unknown
               const TOOL_TIMEOUT = 120_000 // 2 minutes max per tool call
+              const TOOL_PROGRESS_INTERVAL = 10_000 // log progress every 10s
+              const toolStart = Date.now()
+
+              // Progress ticker — logs every 10s while tool is running
+              const progressTimer = setInterval(() => {
+                const sec = Math.round((Date.now() - toolStart) / 1000)
+                console.log(`[${tid}]${iterTag} ⏳ ${call.name} running… ${sec}s`)
+              }, TOOL_PROGRESS_INTERVAL)
+
               if (tool) {
                 try {
                   result = await Promise.race([
@@ -592,13 +602,19 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
                 result = { error: `Unknown tool: ${call.name}` }
               }
 
-              // Track consecutive errors to detect stuck loops
+              clearInterval(progressTimer)
+
+              // Log tool result preview + elapsed time
+              const toolMs = Date.now() - toolStart
+              const elapsed = toolMs > 1000 ? ` (${(toolMs / 1000).toFixed(1)}s)` : ""
               const isError = result && typeof result === "object" && "error" in (result as Record<string, unknown>)
               if (isError) {
                 consecutiveErrors++
-                console.warn(`[${tid}] tool error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${String((result as Record<string, unknown>).error).slice(0, 80)}`)
+                console.warn(`[${tid}]${iterTag} ✗ ${call.name}${elapsed}: ${String((result as Record<string, unknown>).error).slice(0, 100)}`)
               } else {
                 consecutiveErrors = 0
+                const preview = JSON.stringify(result).slice(0, 120)
+                console.log(`[${tid}]${iterTag} ✓ ${call.name}${elapsed}: ${preview}`)
               }
 
               const resultEvent: Event = {
@@ -618,8 +634,35 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               continueLoop = false
             }
           } else {
-            continueLoop = false
-            if (response.text) {
+            // If LLM hit max_tokens, continue the loop so it can finish
+            if (response.stopReason === "max_tokens") {
+              const iterTag = iterations > 1 ? ` #${iterations}` : ""
+              console.warn(`[${tid}]${iterTag} ⚠ max_tokens hit (${response.text.length} chars) — continuing`)
+              // Append partial text to history so LLM can continue from where it left off
+              if (response.text) {
+                const partialEvent: Event = {
+                  id: randomUUID(),
+                  type: "assistant",
+                  ts: Date.now(),
+                  data: { text: response.text },
+                }
+                await this.session.append(sessionId, partialEvent)
+                history.push(partialEvent)
+                // Inject a user nudge to continue
+                const continueEvent: Event = {
+                  id: randomUUID(),
+                  type: "user",
+                  ts: Date.now(),
+                  data: { text: "Continue from where you left off. Do not repeat what you already said.", from: "system" },
+                }
+                await this.session.append(sessionId, continueEvent)
+                history.push(continueEvent)
+              }
+              // Don't set continueLoop = false — keep going
+            } else {
+              continueLoop = false
+            }
+            if (!continueLoop && response.text) {
               const preview = response.text.slice(0, 50).replace(/\n/g, " ")
               const iterTag = iterations > 1 ? ` #${iterations}` : ""
               console.log(`[${tid}]${iterTag} llm → "${preview}…" (${response.text.length})`)

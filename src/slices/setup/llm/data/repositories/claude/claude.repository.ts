@@ -222,6 +222,7 @@ export class ClaudeRepository implements ILlmGateway {
           const toolCalls: Array<{ name: string; params: unknown }> = []
           const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
           let streamUsage: { input_tokens: number; output_tokens: number } | undefined
+          let streamStopReason: string | undefined
 
           const streamResponse = await this.getClient().messages.stream({
             model,
@@ -261,8 +262,9 @@ export class ClaudeRepository implements ILlmGateway {
                 }
                 pendingTools.delete(event.index)
               }
-            } else if (event.type === "message_delta" && (event as any).usage) {
-              streamUsage = (event as any).usage
+            } else if (event.type === "message_delta") {
+              if ((event as any).usage) streamUsage = (event as any).usage
+              if ((event as any).delta?.stop_reason) streamStopReason = (event as any).delta.stop_reason
             } else if (event.type === "message_start" && (event as any).message?.usage) {
               streamUsage = (event as any).message.usage
             }
@@ -271,6 +273,7 @@ export class ClaudeRepository implements ILlmGateway {
           return {
             text: stripThinking(accumulated),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            stopReason: streamStopReason ?? "end_turn",
             usage: streamUsage ? {
               inputTokens: streamUsage.input_tokens,
               outputTokens: streamUsage.output_tokens,
@@ -359,6 +362,7 @@ export class ClaudeRepository implements ILlmGateway {
           return {
             text: stripThinking(text),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            stopReason: response.stop_reason ?? "end_turn",
             usage: response.usage ? {
               inputTokens: response.usage.input_tokens,
               outputTokens: response.usage.output_tokens,

@@ -1,0 +1,19 @@
+id: soul-try-dont-ask
+category: conversation
+difficulty: hard
+name: "SOUL: try first, ask only if fails"
+description: Agent must attempt actions before asking for prerequisites or permissions
+expectedBehavior: Agent tries the tool call immediately — only reports error if it actually fails
+messages:
+  - text: "Зайди на сервер 10.0.0.1 и проверь что там с CPU"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "Agent did NOT ask 'do you have SSH key?' or 'what credentials?' — tried exec/http first"
+    weight: 0.5
+  - dimension: tool_usage
+    description: "Made at least one tool call attempting to connect (exec, http, etc.)"
+    weight: 0.3
+  - dimension: response_quality
+    description: "If tool failed — reported the actual error. If succeeded — reported the result."
+    weight: 0.2
