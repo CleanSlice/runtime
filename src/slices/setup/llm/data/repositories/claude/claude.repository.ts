@@ -5,6 +5,11 @@ import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../../agent/event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
+/** Strip <thinking>...</thinking> blocks that some models emit as raw text */
+function stripThinking(text: string): string {
+  return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
+}
+
 let _AnthropicClass: (new (opts: Record<string, unknown>) => Anthropic) | undefined
 
 async function getAnthropic(): Promise<(new (opts: Record<string, unknown>) => Anthropic)> {
@@ -236,7 +241,12 @@ export class ClaudeRepository implements ILlmGateway {
             } else if (event.type === "content_block_delta") {
               if (event.delta.type === "text_delta") {
                 accumulated += event.delta.text
-                onChunk(accumulated)
+                // While inside <thinking> block, show indicator instead of raw content
+                if (accumulated.includes("<thinking>") && !accumulated.includes("</thinking>")) {
+                  onChunk("💭")
+                } else {
+                  onChunk(stripThinking(accumulated))
+                }
               } else if (event.delta.type === "input_json_delta") {
                 const pending = pendingTools.get(event.index)
                 if (pending) pending.jsonStr += event.delta.partial_json
@@ -259,7 +269,7 @@ export class ClaudeRepository implements ILlmGateway {
           }
 
           return {
-            text: accumulated,
+            text: stripThinking(accumulated),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             usage: streamUsage ? {
               inputTokens: streamUsage.input_tokens,
@@ -347,7 +357,7 @@ export class ClaudeRepository implements ILlmGateway {
             })
 
           return {
-            text,
+            text: stripThinking(text),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             usage: response.usage ? {
               inputTokens: response.usage.input_tokens,

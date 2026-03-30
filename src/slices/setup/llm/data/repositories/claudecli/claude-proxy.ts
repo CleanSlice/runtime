@@ -78,7 +78,7 @@ If no tool is needed, respond normally.`
     const stdout = await new Response(proc.stdout).text()
     await proc.exited
 
-    const text = stdout.trim()
+    const text = stdout.trim().replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
 
     // Detect tool call — must be a JSON object starting with {"type":"tool_use"...}
     const jsonMatch = text.match(/^\s*(\{[\s\S]*\})\s*$/)

@@ -3,6 +3,11 @@ import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../../agent/event"
 
+/** Strip <thinking>...</thinking> blocks that some models emit as raw text */
+function stripThinking(text: string): string {
+  return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
+}
+
 /**
  * OpenClawRepository — proxies LLM calls through local OpenClaw gateway.
  * Uses the sessions API to run agent turns, which has access to the configured API key.
@@ -46,7 +51,7 @@ export class OpenClawRepository implements ILlmGateway {
 
     const data = await res.json() as { text?: string; toolCalls?: Array<{ name: string; params: unknown }> }
     return {
-      text: data.text ?? "",
+      text: stripThinking(data.text ?? ""),
       toolCalls: data.toolCalls,
     }
   }

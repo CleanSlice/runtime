@@ -4,6 +4,11 @@ import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../../agent/event"
 import { spawn } from "child_process"
 
+/** Strip <thinking>...</thinking> blocks that some models emit as raw text */
+function stripThinking(text: string): string {
+  return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
+}
+
 export class ClaudeCliRepository implements ILlmGateway {
   private cliBin: string
   private model: string
@@ -71,7 +76,7 @@ If no tool is needed, respond with exactly: NO_TOOL`
     ].join("\n")
 
     const text = await this.runCli(prompt)
-    return { text }
+    return { text: stripThinking(text) }
   }
 
   private runCli(prompt: string): Promise<string> {
