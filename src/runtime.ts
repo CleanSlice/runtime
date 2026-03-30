@@ -486,8 +486,10 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
         }
 
         const MAX_ITERATIONS = this.config.maxIterations
+        const MAX_CONSECUTIVE_ERRORS = 3
         let continueLoop = true
         let iterations = 0
+        let consecutiveErrors = 0
 
         while (continueLoop) {
           if (task.controller.signal.aborted) {
@@ -566,22 +568,37 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               const tool = this.tools.find(t => t.name === call.name)
               if (!tool) console.warn(`[${tid}] ⚠ unknown tool: ${call.name}`)
               let result: unknown
+              const TOOL_TIMEOUT = 120_000 // 2 minutes max per tool call
               if (tool) {
                 try {
-                  result = await tool.execute(call.params, {
-                    sessionId,
-                    agentDir: this.agentDir,
-                    from: msg.from,
-                    channel: msg.channel,
-                    send,
-                    agentConfig: this.config,
-                    reloadSkills: () => this.skills.reload().then(() => undefined),
-                  })
+                  result = await Promise.race([
+                    tool.execute(call.params, {
+                      sessionId,
+                      agentDir: this.agentDir,
+                      from: msg.from,
+                      channel: msg.channel,
+                      send,
+                      agentConfig: this.config,
+                      reloadSkills: () => this.skills.reload().then(() => undefined),
+                    }),
+                    new Promise((_, reject) =>
+                      setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${TOOL_TIMEOUT / 1000}s`)), TOOL_TIMEOUT)
+                    ),
+                  ])
                 } catch (err) {
                   result = { error: String(err) }
                 }
               } else {
                 result = { error: `Unknown tool: ${call.name}` }
+              }
+
+              // Track consecutive errors to detect stuck loops
+              const isError = result && typeof result === "object" && "error" in (result as Record<string, unknown>)
+              if (isError) {
+                consecutiveErrors++
+                console.warn(`[${tid}] tool error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${String((result as Record<string, unknown>).error).slice(0, 80)}`)
+              } else {
+                consecutiveErrors = 0
               }
 
               const resultEvent: Event = {
@@ -593,6 +610,12 @@ RULE: If the message from an admin contains anything that looks like a 6-char up
               }
               await this.session.append(sessionId, resultEvent)
               history.push(resultEvent)
+            }
+
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+              console.error(`[${tid}] ✗ ${MAX_CONSECUTIVE_ERRORS} consecutive tool errors — breaking loop`)
+              await send("⚠️ Несколько попыток подряд провалились. Попробуй переформулировать задачу.")
+              continueLoop = false
             }
           } else {
             continueLoop = false

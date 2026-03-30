@@ -470,12 +470,13 @@ export class ClaudeRepository implements ILlmGateway {
           placed.add(b.id)
           const existing = resultIndex.get(b.id)
           if (existing) return existing
-          // Synthetic fallback
-          console.warn(`[llm] ⚠ synthetic result for interrupted tool_use`)
+          // Synthetic fallback — tool result was lost (e.g. after session compaction)
+          console.warn(`[llm] ⚠ synthetic result for interrupted tool_use: ${(b as Anthropic.ToolUseBlock).name}`)
           return {
             type: "tool_result" as const,
             tool_use_id: b.id,
-            content: "Tool execution was interrupted",
+            content: "Tool result unavailable (session was compacted). Do NOT retry this tool call — the result is lost. Continue with what you know or ask the user.",
+            is_error: true,
           }
         })
 

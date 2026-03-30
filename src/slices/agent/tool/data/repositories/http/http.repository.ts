@@ -14,12 +14,22 @@ export const HttpTool: Tool = {
   schema,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { url, method, body, headers } = schema.parse(params)
-    const res = await fetch(url, {
-      method,
-      body: body ?? undefined,
-      headers: headers ?? undefined,
-    })
-    const text = await res.text()
-    return { status: res.status, body: text }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30_000)
+    try {
+      const res = await fetch(url, {
+        method,
+        body: body ?? undefined,
+        headers: headers ?? undefined,
+        signal: controller.signal,
+      })
+      const text = await res.text()
+      return { status: res.status, body: text.slice(0, 50_000) }
+    } catch (err) {
+      if (controller.signal.aborted) return { error: "Request timed out after 30s" }
+      throw err
+    } finally {
+      clearTimeout(timeout)
+    }
   },
 }
