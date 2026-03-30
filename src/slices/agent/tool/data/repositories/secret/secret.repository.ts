@@ -2,10 +2,14 @@ import { z } from "zod"
 import type { Tool, ToolContext } from "../domain/tool.types"
 import { SecretModule } from "../../../../../setup/secret/secret.module"
 
-// Lazy singleton — initialized on first use
+// Lazy singleton — re-initialized when agentDir changes
 let _secrets: SecretModule | null = null
+let _secretsDir: string | null = null
 function getSecrets(ctx: ToolContext): SecretModule {
-  if (!_secrets) _secrets = new SecretModule(ctx.agentDir)
+  if (!_secrets || _secretsDir !== ctx.agentDir) {
+    _secrets = new SecretModule(ctx.agentDir)
+    _secretsDir = ctx.agentDir
+  }
   return _secrets
 }
 

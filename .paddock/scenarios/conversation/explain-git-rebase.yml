@@ -1,0 +1,19 @@
+id: conv-explain-git-rebase
+category: conversation
+difficulty: medium
+name: Explain git rebase
+description: Agent explains git rebase vs merge clearly
+expectedBehavior: Concise technical explanation without tools
+messages:
+  - text: "Explain the difference between git rebase and git merge"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Accurately explained both operations and their differences
+    weight: 0.4
+  - dimension: response_quality
+    description: Concise, structured explanation — not a wall of text
+    weight: 0.3
+  - dimension: soul_compliance
+    description: No filler, no unnecessary caveats, direct explanation
+    weight: 0.3

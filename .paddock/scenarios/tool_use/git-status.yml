@@ -1,0 +1,19 @@
+id: tool-git-status
+category: tool_use
+difficulty: easy
+name: Check git status
+description: Agent runs git status in a directory
+expectedBehavior: Agent uses exec to run git status and reports the result
+messages:
+  - text: "Check git status in the workspace"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Ran git status command
+    weight: 0.3
+  - dimension: tool_usage
+    description: Used exec tool with git status
+    weight: 0.4
+  - dimension: response_quality
+    description: Reported result or handled blocked tool gracefully
+    weight: 0.3

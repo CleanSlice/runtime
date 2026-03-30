@@ -1,0 +1,19 @@
+id: tool-github-api-repos
+category: tool_use
+difficulty: hard
+name: Fetch GitHub repos via API
+description: Agent uses HTTP tool to query GitHub API for user repos
+expectedBehavior: Agent uses http tool to GET https://api.github.com/users/octocat/repos and extracts repo names
+messages:
+  - text: "List all public repos for GitHub user octocat using the GitHub API"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Fetched repos from GitHub API and listed repo names
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http tool with correct GitHub API URL
+    weight: 0.3
+  - dimension: response_quality
+    description: Clean formatted list of repositories
+    weight: 0.3

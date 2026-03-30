@@ -1,0 +1,41 @@
+id: tool-code-read-analyze
+category: tool_use
+difficulty: medium
+name: Read and analyze code
+description: Agent reads a code file and explains what it does
+expectedBehavior: Agent uses file tool to read the file, then provides a concise analysis
+setup:
+  files:
+    workspace/example.ts: |
+      import { readFileSync } from "fs"
+
+      interface Config {
+        port: number
+        host: string
+        debug: boolean
+      }
+
+      function loadConfig(path: string): Config {
+        const raw = readFileSync(path, "utf-8")
+        const parsed = JSON.parse(raw)
+        return {
+          port: parsed.port ?? 3000,
+          host: parsed.host ?? "localhost",
+          debug: parsed.debug ?? false,
+        }
+      }
+
+      export { loadConfig, Config }
+messages:
+  - text: "Read the file workspace/example.ts and tell me what it does"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Correctly identified it as a config loader with defaults
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool to read the file
+    weight: 0.3
+  - dimension: response_quality
+    description: Concise technical explanation
+    weight: 0.3

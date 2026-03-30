@@ -1,0 +1,19 @@
+id: tool-code-generate-compose
+category: tool_use
+difficulty: hard
+name: Generate docker-compose.yml
+description: Agent creates a docker-compose file for a web app with database
+expectedBehavior: Agent writes a valid docker-compose.yml with app and postgres services
+messages:
+  - text: "Create a docker-compose.yml with a Node.js app on port 3000 and a PostgreSQL database"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Valid YAML with app and postgres services, correct port mapping, environment vars
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool to write docker-compose.yml
+    weight: 0.3
+  - dimension: response_quality
+    description: Mentioned key config points (env vars, volumes, networking)
+    weight: 0.3

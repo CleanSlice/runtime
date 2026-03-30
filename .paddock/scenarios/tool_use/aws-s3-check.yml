@@ -1,0 +1,19 @@
+id: tool-aws-s3-check
+category: tool_use
+difficulty: hard
+name: Check AWS S3 bucket
+description: Agent attempts to list S3 bucket contents using exec or handles gracefully
+expectedBehavior: Agent tries exec with aws s3 ls command, handles blocked tool or missing credentials gracefully
+messages:
+  - text: "List the contents of my S3 bucket my-app-backups"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Attempted aws s3 ls command or explained what's needed
+    weight: 0.3
+  - dimension: tool_usage
+    description: Tried exec with aws CLI or checked for credentials first
+    weight: 0.3
+  - dimension: error_handling
+    description: Handled blocked tool or missing AWS credentials gracefully
+    weight: 0.4

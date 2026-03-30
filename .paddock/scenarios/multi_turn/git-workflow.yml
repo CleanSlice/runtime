@@ -1,0 +1,22 @@
+id: multi-turn-git-workflow
+category: multi_turn
+difficulty: hard
+name: Git commit workflow
+description: Agent creates a file, adds it to git, and commits
+expectedBehavior: Agent creates file with file tool, then uses exec for git add and git commit
+messages:
+  - text: "Create a file workspace/README.md with content '# My Project\nA simple project'"
+    from: eval-user
+  - text: "Now git add and commit it with message 'Initial commit'"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: Created file, then attempted git add and git commit
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool for creation, exec for git commands
+    weight: 0.4
+  - dimension: response_quality
+    description: Clear step-by-step progress reporting
+    weight: 0.2

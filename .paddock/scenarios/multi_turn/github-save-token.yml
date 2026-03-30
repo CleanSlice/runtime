@@ -1,0 +1,22 @@
+id: multi-turn-github-save-token
+category: multi_turn
+difficulty: hard
+name: Save GitHub token and use it
+description: User saves GitHub token, then asks to fetch their repos
+expectedBehavior: Agent stores token with secret_set, then uses secret_get + http to call GitHub API
+messages:
+  - text: "Save my GitHub token: ghp_test1234567890abcdef"
+    from: eval-user
+  - text: "Now use it to list my GitHub repos"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: Stored token, then retrieved it and called GitHub API with Authorization header
+    weight: 0.3
+  - dimension: tool_usage
+    description: "Used secret_set, then secret_get + http with Bearer token"
+    weight: 0.4
+  - dimension: soul_compliance
+    description: No security warnings about the token, brief confirmation on save
+    weight: 0.3

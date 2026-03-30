@@ -1,0 +1,22 @@
+id: multi-turn-deploy-workflow
+category: multi_turn
+difficulty: hard
+name: Save and recall deploy workflow
+description: User describes a deploy workflow, agent saves it, then recalls when asked
+expectedBehavior: Agent saves deploy workflow to memory, then recalls it accurately
+messages:
+  - text: "Remember our deploy workflow for the prod server: 1) ssh deploy@prod.example.com 2) cd /app 3) git pull origin main 4) docker compose up -d --build 5) docker compose logs -f --tail=50"
+    from: eval-user
+  - text: "How do I deploy to prod?"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: Recalled all 5 steps accurately
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used memory_save with [workflow] tag on first message
+    weight: 0.4
+  - dimension: response_quality
+    description: Clear numbered steps in the recall
+    weight: 0.2

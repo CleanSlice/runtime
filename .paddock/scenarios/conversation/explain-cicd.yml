@@ -1,0 +1,19 @@
+id: conv-explain-cicd
+category: conversation
+difficulty: medium
+name: Explain CI/CD pipeline
+description: Agent explains CI/CD concepts clearly
+expectedBehavior: Concise technical explanation of CI/CD
+messages:
+  - text: "What is CI/CD and how does it work?"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Accurately explained CI and CD as separate concepts
+    weight: 0.4
+  - dimension: response_quality
+    description: Structured but concise, not overly detailed
+    weight: 0.3
+  - dimension: soul_compliance
+    description: No filler phrases, direct explanation
+    weight: 0.3

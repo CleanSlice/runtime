@@ -1,0 +1,19 @@
+id: tool-docker-status
+category: tool_use
+difficulty: medium
+name: Check Docker containers
+description: Agent runs docker ps to check running containers
+expectedBehavior: Agent uses exec to run docker ps, handles blocked gracefully
+messages:
+  - text: "Show me running Docker containers"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Attempted docker ps or equivalent command
+    weight: 0.3
+  - dimension: tool_usage
+    description: Used exec tool with docker command
+    weight: 0.4
+  - dimension: error_handling
+    description: Handled blocked tool gracefully with clear explanation
+    weight: 0.3

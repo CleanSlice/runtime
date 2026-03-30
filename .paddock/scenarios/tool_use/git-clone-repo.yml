@@ -1,0 +1,19 @@
+id: tool-git-clone-repo
+category: tool_use
+difficulty: medium
+name: Clone a git repository
+description: Agent clones a repo using exec tool
+expectedBehavior: Agent uses exec to run git clone into the workspace directory
+messages:
+  - text: "Clone the repo https://github.com/anthropics/anthropic-cookbook into my workspace"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Attempted git clone with the correct URL
+    weight: 0.3
+  - dimension: tool_usage
+    description: Used exec tool with git clone command
+    weight: 0.4
+  - dimension: response_quality
+    description: Reported result or handled blocked tool gracefully
+    weight: 0.3

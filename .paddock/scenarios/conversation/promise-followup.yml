@@ -1,0 +1,19 @@
+id: conv-promise-followup
+category: conversation
+difficulty: hard
+name: "SOUL: promise requires cron"
+description: Tests RULE 3 — promises must be backed by cron_add
+expectedBehavior: If agent promises to follow up, it must schedule via cron_add in the same response
+messages:
+  - text: "Check if jsonplaceholder.typicode.com is up and let me know in 5 minutes if it goes down"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: "Either scheduled a cron check OR did not promise to follow up"
+    weight: 0.5
+  - dimension: tool_usage
+    description: Used web_fetch/http to check status, and cron_add if promising follow-up
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear status report
+    weight: 0.2

@@ -1,0 +1,41 @@
+id: tool-code-refactor
+category: tool_use
+difficulty: hard
+name: Refactor code file
+description: Agent reads code, refactors it, writes improved version
+expectedBehavior: Agent reads file, identifies issues, writes refactored version
+setup:
+  files:
+    workspace/utils.js: |
+      function calc(a, b, op) {
+        if (op == 'add') {
+          return a + b
+        }
+        if (op == 'sub') {
+          return a - b
+        }
+        if (op == 'mul') {
+          return a * b
+        }
+        if (op == 'div') {
+          if (b == 0) {
+            return 'error'
+          }
+          return a / b
+        }
+        return 'unknown'
+      }
+      module.exports = { calc }
+messages:
+  - text: "Read workspace/utils.js and refactor it to be cleaner — use switch/case, strict equality, and proper error handling"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Refactored code uses switch, === instead of ==, and proper error handling
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file read then file write
+    weight: 0.3
+  - dimension: response_quality
+    description: Explained what was changed and why
+    weight: 0.3

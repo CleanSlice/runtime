@@ -1,0 +1,19 @@
+id: tool-npm-package-info
+category: tool_use
+difficulty: medium
+name: Fetch npm package info
+description: Agent fetches npm package details via registry API
+expectedBehavior: Agent uses http to query npm registry and extracts package info
+messages:
+  - text: "What's the latest version of the express npm package?"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Found and reported the latest express version number
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http or web_search to find the info
+    weight: 0.3
+  - dimension: response_quality
+    description: Direct answer with version number
+    weight: 0.3

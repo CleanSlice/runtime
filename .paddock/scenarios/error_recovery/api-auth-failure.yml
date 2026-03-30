@@ -1,0 +1,22 @@
+id: error-api-auth-failure
+category: error_recovery
+difficulty: hard
+name: Handle API auth failure
+description: Agent handles 401 from an API call gracefully
+expectedBehavior: Agent makes API call, gets auth error, explains what credential is needed
+setup:
+  files:
+    data/secrets/eval-user.json: '{"github:token":"ghp_expired_token_12345"}'
+messages:
+  - text: "Use my GitHub token to create a new private repo called test-repo"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: Handled 401/403 from GitHub API, suggested updating the token
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used secret_get then http, properly handled error response
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear explanation of what went wrong and how to fix
+    weight: 0.3

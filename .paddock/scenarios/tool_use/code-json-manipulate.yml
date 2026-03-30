@@ -1,0 +1,35 @@
+id: tool-code-json-manipulate
+category: tool_use
+difficulty: medium
+name: Read and modify JSON config
+description: Agent reads a JSON file, modifies a value, writes it back
+expectedBehavior: Agent uses file to read JSON, updates the value, writes back valid JSON
+setup:
+  files:
+    workspace/config.json: |
+      {
+        "app": {
+          "name": "my-app",
+          "version": "1.0.0",
+          "port": 3000,
+          "debug": true
+        },
+        "database": {
+          "host": "localhost",
+          "port": 5432,
+          "name": "mydb"
+        }
+      }
+messages:
+  - text: "Read workspace/config.json, change the app port to 8080 and debug to false, then save it"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: "Changed port to 8080 and debug to false, valid JSON output"
+    weight: 0.5
+  - dimension: tool_usage
+    description: Used file read then file write
+    weight: 0.3
+  - dimension: response_quality
+    description: Brief confirmation of what was changed
+    weight: 0.2

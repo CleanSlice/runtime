@@ -1,0 +1,19 @@
+id: tool-code-generate-dockerfile
+category: tool_use
+difficulty: medium
+name: Generate a Dockerfile
+description: Agent creates a Dockerfile for a Node.js app
+expectedBehavior: Agent uses file tool to write a proper Dockerfile with multi-stage build
+messages:
+  - text: "Create a Dockerfile for a Node.js 20 app that runs 'npm start' on port 3000"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Valid Dockerfile with FROM node:20, EXPOSE 3000, CMD npm start
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool to write Dockerfile
+    weight: 0.3
+  - dimension: response_quality
+    description: Brief explanation of what the Dockerfile does
+    weight: 0.3

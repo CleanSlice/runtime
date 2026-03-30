@@ -1,0 +1,22 @@
+id: multi-turn-infra-setup-do
+category: multi_turn
+difficulty: hard
+name: DigitalOcean setup workflow
+description: User saves DO token, then asks to check infrastructure
+expectedBehavior: Agent stores token, then uses it to query DO API
+messages:
+  - text: "Save my DigitalOcean token: dop_v1_abc123def456"
+    from: eval-user
+  - text: "Now check how many droplets I have"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: Stored token, then used it to query DO API droplets endpoint
+    weight: 0.3
+  - dimension: tool_usage
+    description: "secret_set for token, then secret_get + http with Bearer auth"
+    weight: 0.4
+  - dimension: soul_compliance
+    description: No warnings about token, brief confirmation on save
+    weight: 0.3

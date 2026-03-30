@@ -1,0 +1,19 @@
+id: tool-github-api-gist
+category: tool_use
+difficulty: hard
+name: Fetch GitHub gists
+description: Agent fetches public gists for a user
+expectedBehavior: Agent uses http to query GitHub gists API
+messages:
+  - text: "List the latest 3 public gists from GitHub user octocat"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Fetched gists and listed descriptions/filenames
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http with correct GitHub API endpoint /users/octocat/gists
+    weight: 0.3
+  - dimension: response_quality
+    description: Clean formatted list
+    weight: 0.3

@@ -1,0 +1,19 @@
+id: error-file-not-found
+category: error_recovery
+difficulty: medium
+name: Handle missing file gracefully
+description: User asks to read a file that doesn't exist
+expectedBehavior: Agent attempts to read, gets error, reports clearly without panic
+messages:
+  - text: "Read the file workspace/config.production.yml"
+    from: eval-user
+successCriteria:
+  - dimension: error_handling
+    description: Handled file not found gracefully
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool to attempt read
+    weight: 0.3
+  - dimension: response_quality
+    description: Clear message that file doesn't exist, no over-apologizing
+    weight: 0.3

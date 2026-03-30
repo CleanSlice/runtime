@@ -1,0 +1,16 @@
+id: conv-greeting-russian
+category: conversation
+difficulty: easy
+name: Russian greeting
+description: Agent responds to Russian greeting in Russian
+expectedBehavior: Agent greets back in Russian, mirrors the language
+messages:
+  - text: "Привет!"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: Response is in Russian (mirroring user language)
+    weight: 0.5
+  - dimension: response_quality
+    description: Friendly, brief greeting with an offer to help
+    weight: 0.5

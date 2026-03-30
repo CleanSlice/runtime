@@ -1,0 +1,22 @@
+id: multi-turn-code-create-and-run
+category: multi_turn
+difficulty: hard
+name: Create code and attempt to run it
+description: Agent creates a script and tries to execute it
+expectedBehavior: Agent writes file with file tool, then uses exec to run it
+messages:
+  - text: "Write a bash script at /tmp/hello.sh that prints the current date and hostname"
+    from: eval-user
+  - text: "Now run it"
+    from: eval-user
+    delayMs: 2000
+successCriteria:
+  - dimension: correctness
+    description: Created valid bash script, attempted to execute
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file write then exec (chmod + run)
+    weight: 0.4
+  - dimension: error_handling
+    description: Handled blocked exec gracefully if applicable
+    weight: 0.2

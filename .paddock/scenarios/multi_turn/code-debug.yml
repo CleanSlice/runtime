@@ -1,0 +1,47 @@
+id: multi-turn-code-debug
+category: multi_turn
+difficulty: hard
+name: Debug code across turns
+description: User shares broken code, agent finds bug, fixes it
+expectedBehavior: Agent reads the file, identifies the bug, writes the fix
+setup:
+  files:
+    workspace/app.js: |
+      const http = require('http')
+
+      const server = http.createServer((req, res) => {
+        const url = req.url
+        if (url === '/health') {
+          res.writeHead(200)
+          res.end(JSON.stringify({ status: 'ok' }))
+        } else if (url == '/users') {
+          const users = getUsers()
+          res.writeHead(200)
+          res.end(JSON.stringfy(users))
+        } else {
+          res.writeHead(404)
+          res.end('Not found')
+        }
+      })
+
+      function getUsers() {
+        return [{ id: 1, name: 'Alice' }]
+      }
+
+      server.listen(3000)
+messages:
+  - text: "There's a bug in workspace/app.js — the /users endpoint crashes. Find and fix it"
+    from: eval-user
+  - text: "Are there any other issues in that file?"
+    from: eval-user
+    delayMs: 3000
+successCriteria:
+  - dimension: correctness
+    description: "Found JSON.stringfy typo (should be JSON.stringify) and == instead of ==="
+    weight: 0.5
+  - dimension: tool_usage
+    description: Used file read then file write to fix
+    weight: 0.3
+  - dimension: response_quality
+    description: Clearly explained the bugs found
+    weight: 0.2

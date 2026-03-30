@@ -1,0 +1,22 @@
+id: tool-do-api-domains
+category: tool_use
+difficulty: hard
+name: Check DigitalOcean domains
+description: Agent queries DO API for domain records
+expectedBehavior: Agent retrieves DO token from secrets, queries domains API
+setup:
+  files:
+    data/secrets/eval-user.json: '{"digitalocean:token":"dop_v1_test123456789"}'
+messages:
+  - text: "Check my DNS records on DigitalOcean for domain example.com"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Attempted DO API call to /v2/domains/example.com/records
+    weight: 0.3
+  - dimension: tool_usage
+    description: Used secret_get for token, then http with correct endpoint and auth
+    weight: 0.4
+  - dimension: response_quality
+    description: Reported API result or error clearly
+    weight: 0.3

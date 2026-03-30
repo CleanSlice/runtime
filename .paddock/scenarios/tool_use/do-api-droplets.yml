@@ -1,0 +1,22 @@
+id: tool-do-api-droplets
+category: tool_use
+difficulty: hard
+name: List DigitalOcean droplets
+description: Agent uses stored DO API token to list droplets
+expectedBehavior: Agent retrieves DO token from secrets, makes API call to list droplets
+setup:
+  files:
+    data/secrets/eval-user.json: '{"digitalocean:token":"dop_v1_test123456789"}'
+messages:
+  - text: "List my DigitalOcean droplets"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Attempted to call DO API at api.digitalocean.com/v2/droplets with auth header
+    weight: 0.3
+  - dimension: tool_usage
+    description: Used secret_get for DO token, then http tool with Authorization Bearer header
+    weight: 0.4
+  - dimension: response_quality
+    description: Reported result or API error clearly
+    weight: 0.3

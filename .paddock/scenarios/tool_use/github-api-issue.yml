@@ -1,0 +1,19 @@
+id: tool-github-api-issue
+category: tool_use
+difficulty: hard
+name: Fetch GitHub issue details
+description: Agent uses HTTP to fetch a specific GitHub issue
+expectedBehavior: Agent uses http to GET issue details and extracts title, state, author
+messages:
+  - text: "Get the details of issue #1 in the octocat/Hello-World repo on GitHub"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Extracted issue title, state, and author correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used http tool with correct GitHub API endpoint /repos/octocat/Hello-World/issues/1
+    weight: 0.3
+  - dimension: response_quality
+    description: Concise summary of the issue
+    weight: 0.3

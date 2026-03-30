@@ -1,0 +1,22 @@
+id: memory-save-server-info
+category: memory
+difficulty: medium
+name: Remember server details
+description: Agent saves infrastructure details to memory
+expectedBehavior: Agent uses memory_save with [fact] tag for server details
+messages:
+  - text: "Remember: our prod server is at 164.90.152.42, staging is at 164.90.152.43, and the deploy user is 'deploy'"
+    from: eval-user
+  - text: "What's our staging server IP?"
+    from: eval-user
+    delayMs: 1500
+successCriteria:
+  - dimension: correctness
+    description: Recalled staging IP 164.90.152.43 correctly
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used memory_save with [fact] tag
+    weight: 0.4
+  - dimension: response_quality
+    description: Direct answer without unnecessary details
+    weight: 0.2

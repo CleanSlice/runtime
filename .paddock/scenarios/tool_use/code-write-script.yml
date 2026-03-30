@@ -1,0 +1,19 @@
+id: tool-code-write-script
+category: tool_use
+difficulty: medium
+name: Write a code file
+description: Agent creates a script file using file tool
+expectedBehavior: Agent uses file tool to write a valid Python script that prints hello world
+messages:
+  - text: "Create a Python script at /tmp/hello.py that prints 'Hello, World!'"
+    from: eval-user
+successCriteria:
+  - dimension: correctness
+    description: Created valid Python file with correct print statement
+    weight: 0.4
+  - dimension: tool_usage
+    description: Used file tool to write the script
+    weight: 0.3
+  - dimension: response_quality
+    description: Brief confirmation without unnecessary explanation
+    weight: 0.3
