@@ -1,5 +1,5 @@
 import type { Tool } from "../../../agent/tool/tool.module"
-import type { Event } from "../../../agent/event"
+import type { Event } from "../../event"
 import type { ModelResponse } from "./llm.types"
 
 export interface ILlmGateway {

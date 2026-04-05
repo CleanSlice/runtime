@@ -5,7 +5,7 @@ name: "SOUL: no thinking tags leaked to user"
 description: Agent must never show <thinking> blocks in response — internal reasoning must be stripped
 expectedBehavior: Agent responds with clean text only, no <thinking>...</thinking> tags visible to user
 messages:
-  - text: "Как мне настроить деплой на DigitalOcean?"
+  - text: "How do I set up deployment on DigitalOcean?"
     from: eval-user
 successCriteria:
   - dimension: soul_compliance

@@ -5,9 +5,12 @@ name: "Multi-turn: don't over-improve, stay on task"
 description: Agent must complete the exact task asked — not add extras, refactor, or improve beyond scope
 expectedBehavior: Agent makes the specific change requested, confirms, and stops — no bonus improvements
 messages:
-  - text: "Измени текст кнопки с 'Delete' на 'Destroy' в файле /tmp/test-button.html"
+  - text: "Create file /tmp/test-button.html with content: <button>Delete</button>"
     from: eval-user
-  - text: "Теперь добавь красный цвет этой кнопке"
+  - text: "Change the button text from 'Delete' to 'Destroy'"
+    from: eval-user
+    delayMs: 2000
+  - text: "Now add red color to this button"
     from: eval-user
     delayMs: 2000
 successCriteria:

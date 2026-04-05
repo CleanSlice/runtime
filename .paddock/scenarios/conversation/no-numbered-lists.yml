@@ -5,14 +5,14 @@ name: "SOUL: act instead of listing options"
 description: Agent must act on clear requests — not present numbered lists of what it COULD do
 expectedBehavior: Agent performs the action directly instead of listing steps 1, 2, 3 asking user to pick
 messages:
-  - text: "CPU 100% на сервере, восстанови работу"
+  - text: "Check that https://example.com is working and show me the page title"
     from: eval-user
 successCriteria:
   - dimension: soul_compliance
-    description: "Agent did NOT reply with a numbered list like '1. Check status 2. Find problem 3. Restart' asking user to choose"
+    description: "Agent did NOT reply with a numbered list like '1. Check status 2. Read page 3. Parse' asking user to choose — just did it"
     weight: 0.5
   - dimension: tool_usage
-    description: "Agent started investigating immediately with tool calls"
+    description: "Agent started investigating immediately with tool calls (web_fetch, http_request)"
     weight: 0.3
   - dimension: response_quality
     description: "Response is action-oriented — reports findings, not menus"

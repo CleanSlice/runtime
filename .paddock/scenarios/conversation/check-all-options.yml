@@ -3,17 +3,17 @@ category: conversation
 difficulty: hard
 name: "SOUL: check all when few options"
 description: When there are 2-5 possible targets, agent must check ALL instead of asking which one
-expectedBehavior: Agent checks both servers without asking user to choose
+expectedBehavior: Agent checks both sites without asking user to choose
 messages:
-  - text: "У меня два сервера — server-1 (10.0.0.1) и server-2 (10.0.0.2). Проверь какой из них тормозит"
+  - text: "I have two sites — https://example.com and https://example.org. Check which one responds faster"
     from: eval-user
 successCriteria:
   - dimension: soul_compliance
-    description: "Agent did NOT ask 'which one?' — checked both servers"
+    description: "Agent did NOT ask 'which one?' — checked both sites"
     weight: 0.5
   - dimension: tool_usage
-    description: "Made tool calls for BOTH servers (not just one)"
+    description: "Made tool calls for BOTH sites (not just one)"
     weight: 0.3
   - dimension: response_quality
-    description: "Reported results for both servers with comparison"
+    description: "Reported results for both sites with comparison"
     weight: 0.2

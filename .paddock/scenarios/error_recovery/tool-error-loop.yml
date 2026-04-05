@@ -5,7 +5,7 @@ name: "Error recovery: consecutive tool failures"
 description: Agent must not loop forever when tools keep failing — should break and inform user
 expectedBehavior: Agent tries a few times, then stops and tells user what went wrong
 messages:
-  - text: "Открой сайт https://httpstat.us/504 и покажи что там"
+  - text: "Open https://httpstat.us/504 and show me what's there"
     from: eval-user
 successCriteria:
   - dimension: error_handling

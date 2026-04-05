@@ -1,5 +1,5 @@
 import type { Tool } from "../../../agent/tool/tool.module"
-import type { Event } from "../../../agent/event"
+import type { Event } from "../../event"
 
 export interface ModelUsage {
   inputTokens: number
@@ -12,6 +12,7 @@ export interface ModelResponse {
   text: string
   toolCalls?: Array<{ name: string; params: unknown }>
   usage?: ModelUsage
+  stopReason?: "end_turn" | "max_tokens" | "tool_use" | "stop_sequence"
 }
 
 export interface ModelLlm {
@@ -23,5 +24,8 @@ export interface ModelLlm {
 }
 
 export type LlmConfig =
-  | { provider: "claude"; apiKey?: string; model?: string; fallbackModel?: string; proxyUrl?: string }
+  | { provider: "claude"; apiKey?: string; model?: string; fallbackModel?: string; proxyUrl?: string; maxTokens?: number }
   | { provider: "claude-cli"; cliBin?: string; model?: string }
+  | { provider: "deepseek"; apiKey?: string; model?: string; baseUrl?: string; maxTokens?: number }
+  | { provider: "mistral"; apiKey?: string; model?: string; baseUrl?: string; maxTokens?: number }
+  | { provider: "openrouter"; apiKey?: string; model?: string; baseUrl?: string; maxTokens?: number }

@@ -1,7 +1,7 @@
 import type { ILlmGateway } from "../../../domain/llm.gateway"
 import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
-import type { Event } from "../../../../../agent/event"
+import type { Event } from "../../../../event"
 
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
 function stripThinking(text: string): string {

@@ -2,17 +2,20 @@ id: error-max-tokens-continue
 category: error_recovery
 difficulty: hard
 name: "Error recovery: truncated response continues"
-description: When LLM hits max_tokens and returns a truncated response, agent must continue automatically instead of going silent
-expectedBehavior: Agent detects truncated output, continues the loop, and delivers the complete response to user
+description: When LLM hits max_tokens, agent must automatically continue and deliver the complete response
+expectedBehavior: Agent detects truncated output via max_tokens stop reason, continues the loop, and delivers a complete response covering all items
+setup:
+  files:
+    agent.config.json: '{"maxIterations":25,"taskLabelLength":60,"maxTokens":512,"heartbeat":{"intervalMin":30},"session":{"compactionThreshold":60,"recentKeep":20},"s3":{"syncIntervalSec":60},"tools":{"spawnAgent":{"timeoutMin":5,"outputLimit":4000},"browser":{"outputLimit":5000},"webFetch":{"maxChars":8000}}}'
 messages:
-  - text: "Напиши подробный пошаговый план деплоя NestJS приложения на DigitalOcean с Docker, Nginx, SSL, CI/CD через GitHub Actions, мониторингом через Grafana, и настройкой бэкапов PostgreSQL. Максимально детально, каждый шаг с командами."
+  - text: "From your own knowledge (no need to search), list all 26 letters of the English alphabet. For each letter, write exactly 3 sentences: one fun fact about the letter, one common word starting with it, and one famous person whose last name starts with it. Do all 26, A through Z, do not skip any."
     from: eval-user
 successCriteria:
   - dimension: correctness
-    description: "Response is complete — not cut off mid-sentence. If max_tokens was hit, agent continued and delivered full answer."
+    description: "Response covers all 26 letters A through Z — not cut off mid-list"
     weight: 0.5
   - dimension: response_quality
-    description: "Answer covers all requested topics (Docker, Nginx, SSL, CI/CD, Grafana, backups) — not truncated"
+    description: "Response is coherent, each letter has 3 sentences, not truncated mid-entry"
     weight: 0.3
   - dimension: soul_compliance
     description: "Agent did NOT go silent after partial response — user received a complete message"

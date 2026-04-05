@@ -48,7 +48,7 @@ process.on("unhandledRejection", (reason) => {
 
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
-import { InitModule } from "./slices/agent/init"
+import { InitModule } from "./slices/runtime/init"
 
 interface AgentConfig {
   name: string

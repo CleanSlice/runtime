@@ -52,6 +52,31 @@ export const MemorySearchTool: Tool = {
       }
     }
 
+    // Search daily memory files (memory/YYYY-MM-DD.md)
+    const memoryDir = join(ctx.agentDir, "memory")
+    if (existsSync(memoryDir)) {
+      try {
+        const files = await readdir(memoryDir)
+        for (const file of files.filter(f => f.endsWith(".md"))) {
+          const filePath = join(memoryDir, file)
+          try {
+            const text = await Bun.file(filePath).text()
+            const lines = text.split("\n").filter(l => l.trim())
+            for (const line of lines) {
+              const score = scoreText(line, words)
+              if (score > 0) {
+                results.push({ source: `memory/${file}`, text: line.trim(), score })
+              }
+            }
+          } catch {
+            // skip unreadable files
+          }
+        }
+      } catch {
+        // memory dir not readable
+      }
+    }
+
     // Search session JSONL files
     const sessionsDir = join(ctx.agentDir, "data", "sessions")
     if (existsSync(sessionsDir)) {

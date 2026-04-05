@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk"
 import type { ILlmGateway } from "../../../domain/llm.gateway"
 import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
-import type { Event } from "../../../../../agent/event"
+import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
@@ -100,14 +100,16 @@ export class ClaudeRepository implements ILlmGateway {
   private model: string
   private fallbackModel: string | undefined
   private apiKey: string | undefined
+  private maxTokens: number
   private initialized = false
   // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
   private primaryOverloadedAt = 0
 
-  constructor({ model, apiKey, fallbackModel }: { model: string; apiKey?: string; fallbackModel?: string }) {
+  constructor({ model, apiKey, fallbackModel, maxTokens }: { model: string; apiKey?: string; fallbackModel?: string; maxTokens?: number }) {
     this.model = model
     this.fallbackModel = fallbackModel
     this.apiKey = apiKey
+    this.maxTokens = maxTokens ?? 16384
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -158,13 +160,13 @@ export class ClaudeRepository implements ILlmGateway {
     const nextIndex = this.currentClientIndex + 1
     if (nextIndex < this.clients.length) {
       console.warn(`[llm] OAuth token[${this.currentClientIndex}] failed (${failedStatus}), switching to token[${nextIndex}]`)
-      void sendAdminAlert(`⚠️ OAuth token #${this.currentClientIndex + 1} failed (${failedStatus})\n\nСвитчнулся на токен #${nextIndex + 1}. Осталось токенов: ${this.clients.length - nextIndex}`)
+      void sendAdminAlert(`⚠️ OAuth token #${this.currentClientIndex + 1} failed (${failedStatus})\n\nSwitched to token #${nextIndex + 1}. Remaining tokens: ${this.clients.length - nextIndex}`)
       this.currentClientIndex = nextIndex
       return true
     }
     if (this.apiKeyClient) {
       console.warn(`[llm] all OAuth tokens exhausted, switching to API key fallback`)
-      void sendAdminAlert(`🚨 Все OAuth токены исчерпаны!\n\nИспользую API key fallback. Обнови токены в .env`)
+      void sendAdminAlert(`🚨 All OAuth tokens exhausted!\n\nUsing API key fallback. Update tokens in .env`)
       // Replace current with apiKeyClient
       this.clients[this.currentClientIndex] = this.apiKeyClient
       this.apiKeyClient = undefined
@@ -222,10 +224,11 @@ export class ClaudeRepository implements ILlmGateway {
           const toolCalls: Array<{ name: string; params: unknown }> = []
           const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
           let streamUsage: { input_tokens: number; output_tokens: number } | undefined
+          let stopReason: string | undefined
 
           const streamResponse = await this.getClient().messages.stream({
             model,
-            max_tokens: 8096,
+            max_tokens: this.maxTokens,
             system: systemPrompt,
             messages,
             ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
@@ -261,8 +264,9 @@ export class ClaudeRepository implements ILlmGateway {
                 }
                 pendingTools.delete(event.index)
               }
-            } else if (event.type === "message_delta" && (event as any).usage) {
-              streamUsage = (event as any).usage
+            } else if (event.type === "message_delta") {
+              if ((event as any).usage) streamUsage = (event as any).usage
+              if ((event as any).delta?.stop_reason) stopReason = (event as any).delta.stop_reason
             } else if (event.type === "message_start" && (event as any).message?.usage) {
               streamUsage = (event as any).message.usage
             }
@@ -271,6 +275,7 @@ export class ClaudeRepository implements ILlmGateway {
           return {
             text: stripThinking(accumulated),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            stopReason: (stopReason ?? "end_turn") as ModelResponse["stopReason"],
             usage: streamUsage ? {
               inputTokens: streamUsage.input_tokens,
               outputTokens: streamUsage.output_tokens,
@@ -295,7 +300,7 @@ export class ClaudeRepository implements ILlmGateway {
       // Auth error → try next OAuth token or API key
       if (status === 401 || status === 403) {
         if (this.switchToNextClient(status)) continue
-        void sendAdminAlert(`🚨 Auth error ${status} — все fallback-ы исчерпаны. Бот не работает!`)
+        void sendAdminAlert(`🚨 Auth error ${status} — all fallbacks exhausted. Bot is down!`)
         break
       }
       if (model === this.model && result.wasOverloaded) {
@@ -338,7 +343,7 @@ export class ClaudeRepository implements ILlmGateway {
         async () => {
           const response = await this.getClient().messages.create({
             model,
-            max_tokens: 8096,
+            max_tokens: this.maxTokens,
             system: systemPrompt,
             messages,
             ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
@@ -359,6 +364,7 @@ export class ClaudeRepository implements ILlmGateway {
           return {
             text: stripThinking(text),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            stopReason: response.stop_reason as ModelResponse["stopReason"],
             usage: response.usage ? {
               inputTokens: response.usage.input_tokens,
               outputTokens: response.usage.output_tokens,
@@ -383,7 +389,7 @@ export class ClaudeRepository implements ILlmGateway {
       // Auth error → try next OAuth token or API key
       if (status === 401 || status === 403) {
         if (this.switchToNextClient(status)) continue
-        void sendAdminAlert(`🚨 Auth error ${status} — все fallback-ы исчерпаны. Бот не работает!`)
+        void sendAdminAlert(`🚨 Auth error ${status} — all fallbacks exhausted. Bot is down!`)
         break
       }
       if (model === this.model && result.wasOverloaded) {

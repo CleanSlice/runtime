@@ -25,7 +25,7 @@ if (missingRequired.length) console.warn(`[env] ⚠ missing: ${missingRequired.j
 
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
-import { InitModule } from "./slices/agent/init"
+import { InitModule } from "./slices/runtime/init"
 
 const init = new InitModule(
   process.env.CLEANSLICE_AGENT_DIR ?? ".agent",
@@ -37,7 +37,16 @@ const toolGateway = new ToolGateway()
 const runtime = new AgentRuntime({
   init,
   agentDir: ".agent",
-  llm: { provider: "claude", model: process.env.CLAUDE_MODEL },  // uses CLAUDE_CODE_OAUTH_TOKEN + beta header
+  llm: (() => {
+    const provider = process.env.LLM_PROVIDER ?? "claude"
+    const model = process.env.LLM_MODEL
+    switch (provider) {
+      case "deepseek": return { provider: "deepseek" as const, model: model ?? "deepseek-chat" }
+      case "mistral": return { provider: "mistral" as const, model: model ?? "mistral-medium-latest" }
+      case "openrouter": return { provider: "openrouter" as const, model: model ?? "anthropic/claude-sonnet-4" }
+      default: return { provider: "claude" as const, model }
+    }
+  })(),
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_BOT_TOKEN ?? "" },
     ...(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN ? [{

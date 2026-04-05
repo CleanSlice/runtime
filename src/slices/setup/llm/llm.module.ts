@@ -3,7 +3,7 @@ import type { LlmConfig } from "./domain/llm.types"
 import { LlmService } from "./domain/llm.service"
 import type { ModelResponse } from "./domain/llm.types"
 import type { Tool } from "../../agent/tool"
-import type { Event } from "../../agent/event"
+import type { Event } from "../event"
 
 export { LlmConfig }
 

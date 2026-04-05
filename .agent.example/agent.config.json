@@ -1,6 +1,7 @@
 {
   "maxIterations": 25,
   "taskLabelLength": 60,
+  "maxTokens": 16384,
 
   "_comment_access": "Access strategy: open | allowlist | code | approval (default)",
   "accessStrategy": "approval",
@@ -26,8 +27,7 @@
   "stopPhrases": [
     "/stop",
     "stop", "abort", "cancel",
-    "стоп", "остановись", "отмена",
-    "стоп", "зупинись", "скасуй"
+    "halt", "enough", "quit"
   ],
 
   "tools": {

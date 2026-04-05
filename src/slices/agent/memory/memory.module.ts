@@ -1,4 +1,7 @@
 import type { MemoryEntry } from "./domain/memory.types"
+import type { Event } from "../../setup/event"
+import type { LlmModule } from "../../setup/llm/llm.module"
+import type { SessionModule } from "../session/session.module"
 import { MemoryService } from "./domain/memory.service"
 import { MemoryGateway } from "./data/memory.gateway"
 
@@ -21,13 +24,19 @@ export class MemoryModule {
     this.service.insert(entry)
   }
 
-  /** Append to today's daily memory file */
   appendDaily(text: string): void {
-    MemoryService.appendDaily(this.agentDir, text)
+    this.service.appendDaily(text)
   }
 
-  /** Read today + yesterday daily files for system prompt */
   readRecentDaily(): string | undefined {
-    return MemoryService.readRecentDaily(this.agentDir)
+    return this.service.readRecentDaily()
+  }
+
+  ensureAdminInMemory(adminIds: string[]): void {
+    this.service.ensureAdminInMemory(adminIds)
+  }
+
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): void {
+    this.service.flushAndCompact(sessionId, history, llm, session, compactionThreshold)
   }
 }

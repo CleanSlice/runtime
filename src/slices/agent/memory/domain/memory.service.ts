@@ -1,19 +1,27 @@
 import type { IMemoryGateway } from "./memory.gateway"
 import type { MemoryEntry } from "./memory.types"
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from "fs"
-import { join } from "path"
+import type { Event } from "../../../setup/event"
+import type { LlmModule } from "../../../setup/llm/llm.module"
+import type { SessionModule } from "../../session/session.module"
+import { buildAdminOwnerPrompt } from "../../agent/domain/prompts/admin-owner.prompt"
+import { buildMemoryFlushPrompt } from "../../agent/domain/prompts/error-hint.prompt"
 
 const MD_FILES = ["SOUL.md", "USER.md", "MEMORY.md", "HEARTBEAT.md"]
 
 export class MemoryService {
   constructor(private gateway: IMemoryGateway) {}
 
+  // ─── Search / Insert ───────────────────────────────────────────────
+
   async load(agentDir: string): Promise<void> {
     for (const file of MD_FILES) {
       const path = `${agentDir}/${file}`
-      if (!existsSync(path)) continue
-      const content = await Bun.file(path).text()
-      this.gateway.insert({ id: file, content, source: file, ts: Date.now() })
+      try {
+        const content = await Bun.file(path).text()
+        this.gateway.insert({ id: file, content, source: file, ts: Date.now() })
+      } catch {
+        // file may not exist
+      }
     }
   }
 
@@ -25,47 +33,67 @@ export class MemoryService {
     return this.gateway.search(query)
   }
 
-  // ─── Daily memory files ─────────────────────────────────────────────────
+  // ─── Daily memory ─────────────────────────────────────────────────
 
-  private static dateStr(date: Date): string {
-    return date.toISOString().slice(0, 10)
+  appendDaily(text: string): void {
+    this.gateway.appendDaily(text)
   }
 
-  private static memoryDir(agentDir: string): string {
-    return join(agentDir, "memory")
+  readRecentDaily(): string | undefined {
+    return this.gateway.readRecentDaily()
   }
 
-  private static dailyPath(agentDir: string, date: Date): string {
-    return join(MemoryService.memoryDir(agentDir), `${MemoryService.dateStr(date)}.md`)
-  }
+  // ─── Admin memory (MEMORY.md) ─────────────────────────────────────
 
-  /** Append a line to today's daily memory file */
-  static appendDaily(agentDir: string, text: string): void {
-    const dir = MemoryService.memoryDir(agentDir)
-    mkdirSync(dir, { recursive: true })
-    const path = MemoryService.dailyPath(agentDir, new Date())
-    appendFileSync(path, text.endsWith("\n") ? text : text + "\n", "utf-8")
-  }
+  ensureAdminInMemory(adminIds: string[]): void {
+    if (adminIds.length === 0) return
 
-  /** Read today + yesterday daily memory files for injection into system prompt */
-  static readRecentDaily(agentDir: string): string | undefined {
-    const today = new Date()
-    const yesterday = new Date(today.getTime() - 86_400_000)
-    const parts: string[] = []
+    const marker = "## Bot Owner"
+    const ownerBlock = buildAdminOwnerPrompt(adminIds)
+    const content = this.gateway.readMemoryFile()
 
-    for (const date of [yesterday, today]) {
-      const path = MemoryService.dailyPath(agentDir, date)
-      if (!existsSync(path)) continue
-      try {
-        const content = readFileSync(path, "utf-8").trim()
-        if (content) {
-          parts.push(`### ${MemoryService.dateStr(date)}\n${content}`)
-        }
-      } catch {
-        // skip
+    if (content) {
+      if (content.includes(marker)) {
+        const updated = content.replace(
+          new RegExp(`${marker}[\\s\\S]*?(?=\\n## |$)`),
+          ownerBlock,
+        )
+        this.gateway.writeMemoryFile(updated)
+      } else {
+        this.gateway.writeMemoryFile(content + "\n" + ownerBlock)
       }
+    } else {
+      this.gateway.writeMemoryFile(ownerBlock)
+    }
+    console.log(`[init] admin IDs written to MEMORY.md: ${adminIds.join(", ")}`)
+  }
+
+  // ─── Memory flush + compaction ─────────────────────────────────────
+
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): void {
+    this.doFlush(sessionId, history, llm, session, compactionThreshold).catch(err =>
+      console.error("[memory-flush] unhandled:", err)
+    )
+  }
+
+  private async doFlush(sessionId: string, _history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): Promise<void> {
+    const events = await session.read(sessionId)
+    if (events.length <= compactionThreshold) return
+
+    console.log(`[memory-flush] flushing session ${sessionId} before compaction`)
+    try {
+      const existing = this.readRecentDaily() ?? ""
+      const response = await llm.complete(buildMemoryFlushPrompt(existing), events, [])
+
+      const text = response.text?.trim()
+      if (text && text !== "NOTHING") {
+        this.appendDaily(text)
+        console.log(`[memory-flush] saved ${text.split("\n").length} notes`)
+      }
+    } catch (err) {
+      console.error("[memory-flush] failed:", err)
     }
 
-    return parts.length > 0 ? parts.join("\n\n") : undefined
+    session.compactAsync(sessionId, llm.getGateway())
   }
 }

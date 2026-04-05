@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
-import { MemoryService } from "../../../../memory/domain/memory.service"
+import { MemoryGateway } from "../../../../memory/data/memory.gateway"
 
 const schema = z.object({
   text: z.string().describe(
@@ -21,7 +21,8 @@ export const MemorySaveTool: Tool = {
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { text } = schema.parse(params)
-    MemoryService.appendDaily(ctx.agentDir, text)
+    const gateway = new MemoryGateway(ctx.agentDir)
+    gateway.appendDaily(text)
     return { ok: true }
   },
 }

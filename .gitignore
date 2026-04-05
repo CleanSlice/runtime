@@ -4,3 +4,4 @@ dist/
 .env
 *.sqlite
 .agent/users/
+.paddock/reports/

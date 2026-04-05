@@ -26,7 +26,7 @@ name: Basic web search
 description: User asks to search the web for a simple fact
 expectedBehavior: Agent should use web_search tool and summarize results
 messages:
-  - text: "Найди в интернете какая сейчас погода в Москве"
+  - text: "Search the web for the current weather in New York"
     from: eval-user
 successCriteria:
   - dimension: correctness

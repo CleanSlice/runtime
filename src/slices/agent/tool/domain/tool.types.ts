@@ -1,5 +1,5 @@
 import type { ZodSchema } from "zod"
-import type { IAgentConfig } from "../../init"
+import type { IAgentConfig } from "../../../runtime/init"
 
 export interface ToolContext {
   sessionId: string

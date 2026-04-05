@@ -3,9 +3,9 @@ category: error_recovery
 difficulty: hard
 name: "Error recovery: tool timeout handling"
 description: Agent must handle tool timeouts gracefully instead of hanging forever
-expectedBehavior: Agent reports timeout error and suggests alternatives or asks user what to do
+expectedBehavior: Agent reports timeout or slow response error and informs user
 messages:
-  - text: "Сделай HTTP запрос на https://httpstat.us/200?sleep=60000"
+  - text: "Make an HTTP request to http://10.255.255.1"
     from: eval-user
 successCriteria:
   - dimension: error_handling
