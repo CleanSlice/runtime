@@ -51,6 +51,7 @@ export class AgentRuntime {
   private router: BotService
   private runtimeService: RuntimeService
   private activityModule: ActivityModule
+  private channelConfigs: RuntimeConfig["channels"]
   private s3sync?: S3SyncService
 
   /**
@@ -59,6 +60,7 @@ export class AgentRuntime {
    */
   constructor(config: RuntimeConfig) {
     this.config = config.init.config
+    this.channelConfigs = config.channels
     const agentDir = config.init.agentDir
     const tools = config.tools ?? []
 
@@ -244,6 +246,10 @@ export class AgentRuntime {
 
   /** Wire cron and heartbeat — both emit synthetic internal messages. */
   private startBackgroundJobs(): void {
+    // Skip background jobs when all channels are mock (e.g. paddock eval runs)
+    const allMock = this.channelConfigs.every(c => c.type === "mock")
+    if (allMock) return
+
     this.cron.onJob(async job => {
       await this.handleMessage({
         id: randomUUID(), text: job.message,

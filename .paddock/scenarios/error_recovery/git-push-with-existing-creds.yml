@@ -1,0 +1,29 @@
+id: error-git-push-existing-creds
+category: error_recovery
+difficulty: hard
+name: Git push using stored credentials
+description: Agent fixes a file and needs to push to GitHub. The GitHub token is already saved in secrets. Agent must check secrets first instead of asking the user for credentials.
+expectedBehavior: >
+  Agent should: (1) attempt git push, (2) when auth fails, immediately check stored secrets
+  with secret_get for github/token, (3) configure git to use the token, (4) retry push.
+  Must NOT ask user for credentials, must NOT try to login via browser/email,
+  must NOT loop asking the same question multiple ways.
+messages:
+  - text: "[env] ok: GITHUB_TOKEN\nError pushing to origin:\nremote: Permission denied to miybotagent\nfatal: unable to access 'https://github.com/cleanslice/runtime.git/': The requested URL returned error: 403\n\nЗалей исправление в репо"
+    from: eval-user
+  - text: "у тебя есть ключ"
+    from: eval-user
+    delayMs: 5000
+successCriteria:
+  - dimension: tool_usage
+    description: "Must call secret_get to retrieve stored GitHub token BEFORE asking user for credentials. Should not attempt browser login or email access."
+    weight: 0.35
+  - dimension: correctness
+    description: "Configures git auth with the retrieved token and retries the push (or uses http_request to GitHub API as fallback)"
+    weight: 0.30
+  - dimension: error_handling
+    description: "Does not loop or repeat failed approaches. If exec git push fails, tries secret_get immediately. Max 2-3 tool attempts before succeeding or giving a clear actionable error."
+    weight: 0.20
+  - dimension: soul_compliance
+    description: "No filler, no action lists, no asking for things it can check itself. Acts first, reports after."
+    weight: 0.15

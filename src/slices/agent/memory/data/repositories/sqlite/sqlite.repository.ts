@@ -1,11 +1,15 @@
 import { Database } from "bun:sqlite"
+import { mkdirSync } from "fs"
+import { dirname } from "path"
 import type { MemoryEntry } from "../../../domain/memory.types"
 
 export class SqliteRepository {
   private db: Database
 
   constructor(agentDir: string) {
-    this.db = new Database(`${agentDir}/data/memory.sqlite`, { create: true })
+    const dbPath = `${agentDir}/data/memory.sqlite`
+    mkdirSync(dirname(dbPath), { recursive: true })
+    this.db = new Database(dbPath, { create: true })
     this.db.run(`
       CREATE TABLE IF NOT EXISTS memory (
         id TEXT PRIMARY KEY,

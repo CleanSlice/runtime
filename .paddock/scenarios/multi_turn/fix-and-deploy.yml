@@ -1,0 +1,35 @@
+id: multi-turn-fix-and-deploy
+category: multi_turn
+difficulty: hard
+name: Fix bug and push to repo
+description: >
+  User reports a runtime error with stack trace. Agent must fix the code,
+  commit, and push. When push fails with auth error, agent must use stored
+  credentials (secret_get) instead of asking the user.
+expectedBehavior: >
+  Turn 1: Agent reads the file from the stack trace, identifies the fix, applies it.
+  Turn 2: Agent commits and pushes. If push fails with 403, agent checks secrets
+  for github token, configures auth, retries. Does NOT ask user for credentials
+  or try browser/email workarounds.
+messages:
+  - text: "EACCES: permission denied, mkdir '/app/.agent/sessions'\n    at ensureDirs (/app/src/slices/runtime/init/data/init.gateway.ts:52:7)\nпочини"
+    from: eval-user
+  - text: "залей в гит"
+    from: eval-user
+    delayMs: 5000
+  - text: "у тебя уже есть токен, проверь секреты"
+    from: eval-user
+    delayMs: 8000
+successCriteria:
+  - dimension: correctness
+    description: "Correctly identifies the permission issue and applies a fix (e.g. try/catch, permission check, or recursive mkdir with error handling)"
+    weight: 0.25
+  - dimension: tool_usage
+    description: "Uses file read → file write for the fix, exec for git commit/push, secret_get for credentials when push fails. No unnecessary tool calls."
+    weight: 0.35
+  - dimension: error_handling
+    description: "On push auth failure: checks secrets immediately, does not loop or ask user for things it can look up. Max 1 hint from user before agent checks secrets."
+    weight: 0.25
+  - dimension: soul_compliance
+    description: "Concise, action-first. No filler, no action plans, no emoji unless user uses them."
+    weight: 0.15
