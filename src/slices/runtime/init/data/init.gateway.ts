@@ -48,8 +48,25 @@ export class InitGateway implements IInitGateway {
   }
 
   private ensureDirs(agentDir: string): void {
+    // Create parent directory first
+    try {
+      mkdirSync(agentDir, { recursive: true })
+    } catch (err: unknown) {
+      console.warn(`[init] could not create parent dir: ${(err as any)?.message}`)
+    }
+
+    // Create subdirectories with error handling
     for (const sub of AGENT_SUBDIRS) {
-      mkdirSync(join(agentDir, sub), { recursive: true })
+      try {
+        mkdirSync(join(agentDir, sub), { recursive: true })
+      } catch (err: unknown) {
+        const code = (err as any)?.code
+        if (code === "EACCES") {
+          console.warn(`[init] permission denied for ${sub}, skipping — agent may use S3 fallback`)
+        } else {
+          throw err
+        }
+      }
     }
   }
 
@@ -62,22 +79,49 @@ export class InitGateway implements IInitGateway {
     const destSkills = join(agentDir, "skills")
     if (!existsSync(srcSkills)) return
 
-    mkdirSync(destSkills, { recursive: true })
+    try {
+      mkdirSync(destSkills, { recursive: true })
+    } catch (err: unknown) {
+      const code = (err as any)?.code
+      if (code === "EACCES") {
+        console.warn(`[init] permission denied for skills dir, skipping sync`)
+        return
+      }
+      throw err
+    }
 
     for (const entry of readdirSync(srcSkills)) {
       const srcPath = join(srcSkills, entry)
       const destPath = join(destSkills, entry)
 
       if (statSync(srcPath).isDirectory() && !existsSync(destPath)) {
-        this.copyDirRecursive(srcPath, destPath)
-        console.log(`[init] synced new skill: ${entry}`)
+        try {
+          this.copyDirRecursive(srcPath, destPath)
+          console.log(`[init] synced new skill: ${entry}`)
+        } catch (err: unknown) {
+          const code = (err as any)?.code
+          if (code === "EACCES") {
+            console.warn(`[init] permission denied syncing skill ${entry}, skipping`)
+          } else {
+            throw err
+          }
+        }
       }
     }
   }
 
   private copyDirRecursive(src: string, dest: string): number {
-    if (!existsSync(dest)) {
-      mkdirSync(dest, { recursive: true })
+    try {
+      if (!existsSync(dest)) {
+        mkdirSync(dest, { recursive: true })
+      }
+    } catch (err: unknown) {
+      const code = (err as any)?.code
+      if (code === "EACCES") {
+        console.warn(`[init] permission denied creating ${dest}, skipping`)
+        return 0
+      }
+      throw err
     }
 
     let count = 0
@@ -88,8 +132,17 @@ export class InitGateway implements IInitGateway {
       if (statSync(srcPath).isDirectory()) {
         count += this.copyDirRecursive(srcPath, destPath)
       } else if (!existsSync(destPath)) {
-        copyFileSync(srcPath, destPath)
-        count++
+        try {
+          copyFileSync(srcPath, destPath)
+          count++
+        } catch (err: unknown) {
+          const code = (err as any)?.code
+          if (code === "EACCES") {
+            console.warn(`[init] permission denied copying ${entry}, skipping`)
+          } else {
+            throw err
+          }
+        }
       }
     }
     return count
