@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/cleanslice-runtime-banner.png" alt="CleanSlice Runtime" />
+</p>
+
 # CleanSlice Runtime
 
 > Agent runtime for the CleanSlice ecosystem. Define an agent as files, connect it to channels (Telegram, Slack), and let it use tools — all powered by a pluggable LLM backend.
