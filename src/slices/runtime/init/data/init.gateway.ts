@@ -51,23 +51,33 @@ export class InitGateway implements IInitGateway {
     // Create parent directory first
     try {
       mkdirSync(agentDir, { recursive: true })
+      console.log(`[init] ✓ created agent directory: ${agentDir}`)
     } catch (err: unknown) {
+      const code = (err as any)?.code
+      if (code === "EACCES") {
+        console.warn(`[init] permission denied creating ${agentDir}, cannot proceed`)
+        throw err
+      }
       console.warn(`[init] could not create parent dir: ${(err as any)?.message}`)
+      throw err
     }
 
-    // Create subdirectories with error handling
+    // Create subdirectories with strict error handling
+    // All subdirs MUST be created successfully or fail hard
     for (const sub of AGENT_SUBDIRS) {
       try {
-        mkdirSync(join(agentDir, sub), { recursive: true })
+        const subPath = join(agentDir, sub)
+        mkdirSync(subPath, { recursive: true })
+        console.log(`[init] ✓ created ${sub} directory`)
       } catch (err: unknown) {
         const code = (err as any)?.code
-        if (code === "EACCES") {
-          console.warn(`[init] permission denied for ${sub}, skipping — agent may use S3 fallback`)
-        } else {
-          throw err
-        }
+        const message = (err as any)?.message
+        console.error(`[init] ✗ FATAL: cannot create ${sub} directory: ${message}`)
+        throw err
       }
     }
+
+    console.log(`[init] ✓ All agent directories ready`)
   }
 
   /**
