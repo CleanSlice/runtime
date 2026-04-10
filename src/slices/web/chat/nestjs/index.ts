@@ -1,0 +1,7 @@
+export { AgentChatModule } from './agent-chat.module'
+export { AgentChatController } from './agent-chat.controller'
+export { ChatWsGateway } from './agent-chat.ws-gateway'
+export { AgentWsGateway } from './agent-chat.agent-ws'
+export * from './domain'
+export * from './data'
+export * from './dtos'

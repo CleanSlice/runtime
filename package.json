@@ -20,6 +20,7 @@
     "@aws-sdk/client-secrets-manager": "3.1009.0",
     "gray-matter": "^4.0.3",
     "playwright": "1.58.2",
+    "socket.io-client": "^4.8.3",
     "zod": "^3.23.0",
     "zod-to-json-schema": "^3.23.0"
   },

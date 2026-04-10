@@ -46,4 +46,9 @@ export class ChannelService {
       await ch.send(to, text)
     }
   }
+
+  /** Get a channel gateway by name */
+  get(name: string): IChannelGateway | undefined {
+    return this.channels.find(c => c.name === name)
+  }
 }

@@ -17,7 +17,7 @@ process.on("unhandledRejection", (reason) => {
 
 // Validate env vars
 const requiredEnv = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_NAME", "TELEGRAM_BOT_ADMIN_IDS", "CLAUDE_CODE_OAUTH_TOKEN"]
-const optionalEnv = ["LLM_MODEL", "LLM_FALLBACK_MODEL", "SECRET_PROVIDER", "ELEVENLABS_API_KEY", "S3_BUCKET", "S3_PREFIX", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "ANTHROPIC_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT"]
+const optionalEnv = ["LLM_MODEL", "LLM_FALLBACK_MODEL", "SECRET_PROVIDER", "ELEVENLABS_API_KEY", "S3_BUCKET", "S3_PREFIX", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "ANTHROPIC_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT", "WEB_API_URL"]
 const missingRequired = requiredEnv.filter(k => !process.env[k])
 const setOptional = optionalEnv.filter(k => process.env[k])
 if (setOptional.length) console.log(`[env] ok: ${setOptional.join(", ")}`)
@@ -53,6 +53,10 @@ const runtime = new AgentRuntime({
       type: "slack" as const,
       botToken: process.env.SLACK_BOT_TOKEN,
       appToken: process.env.SLACK_APP_TOKEN,
+    }] : []),
+    ...(process.env.WEB_API_URL ? [{
+      type: "web" as const,
+      apiUrl: process.env.WEB_API_URL,
     }] : []),
   ],
   tools: toolGateway.getAll(),

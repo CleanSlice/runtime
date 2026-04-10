@@ -3,22 +3,25 @@ import type { ChannelConfig } from "../domain/channel.types"
 import type { Message } from "../domain/channel.types"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
+import { WebRepository } from "./repositories/web/web.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
-  private repository: TelegramRepository | SlackRepository | IChannelGateway
+  private repository: TelegramRepository | SlackRepository | WebRepository | IChannelGateway
 
   constructor(config: ChannelConfig) {
     this.name = config.type
     this.repository = this.createRepository(config)
   }
 
-  private createRepository(config: ChannelConfig): TelegramRepository | SlackRepository | IChannelGateway {
+  private createRepository(config: ChannelConfig): TelegramRepository | SlackRepository | WebRepository | IChannelGateway {
     switch (config.type) {
       case "telegram":
         return new TelegramRepository(config.token)
       case "slack":
         return new SlackRepository(config.botToken, config.appToken)
+      case "web":
+        return new WebRepository(config.apiUrl)
       case "mock":
         return config.instance
     }
@@ -41,7 +44,7 @@ export class ChannelGateway implements IChannelGateway {
   }
 
   streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
-    if (this.repository instanceof TelegramRepository && this.repository.streamSend) {
+    if ((this.repository instanceof TelegramRepository || this.repository instanceof WebRepository) && this.repository.streamSend) {
       return this.repository.streamSend(to, streamer)
     }
     // Fallback for non-streaming channels
