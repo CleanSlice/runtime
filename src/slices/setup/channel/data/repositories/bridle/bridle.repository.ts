@@ -1,7 +1,51 @@
 import type { IChannelGateway } from "../../../domain/channel.gateway"
-import { buildMessage, type Message } from "../../../domain/channel.types"
+import { MessagePartTypes, buildMessage, type Message, type MessagePart } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
+
+/** Wire part types from bridle protocol */
+interface WirePart {
+  type: "text" | "image" | "file"
+  text?: string
+  base64?: string
+  mediaType?: string
+  url?: string
+  name?: string
+  mimeType?: string
+}
+
+/** Extract images and files from wire parts for buildMessage() */
+function extractMediaFromWireParts(wireParts: WirePart[]): { images?: Array<{ base64: string; mediaType: string }>; files?: Array<{ path: string; name: string; mimeType?: string }> } {
+  const images: Array<{ base64: string; mediaType: string }> = []
+  const files: Array<{ path: string; name: string; mimeType?: string }> = []
+
+  for (const part of wireParts) {
+    if (part.type === "image" && part.base64 && part.mediaType) {
+      images.push({ base64: part.base64, mediaType: part.mediaType })
+    } else if (part.type === "file" && part.url && part.name) {
+      files.push({ path: part.url, name: part.name, mimeType: part.mimeType })
+    }
+  }
+
+  return {
+    ...(images.length ? { images } : {}),
+    ...(files.length ? { files } : {}),
+  }
+}
+
+/** Convert runtime MessagePart[] to bridle wire parts */
+function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
+  return parts.map(part => {
+    switch (part.type) {
+      case MessagePartTypes.Text:
+        return { type: "text" as const, text: part.text }
+      case MessagePartTypes.Image:
+        return { type: "image" as const, base64: part.base64, mediaType: part.mediaType }
+      case MessagePartTypes.File:
+        return { type: "file" as const, url: part.path, name: part.name, mimeType: part.mimeType }
+    }
+  })
+}
 
 /**
  * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
@@ -11,17 +55,7 @@ import { io, type Socket } from "socket.io-client"
  *
  * Auth: BRIDLE_API_KEY + BRIDLE_BOT_ID in Socket.IO handshake.
  *
- * Events (Hub → Agent):
- *   "message"  { clientId, text, messageId, images? }
- *   "pong"     {}
- *
- * Events (Agent → Hub):
- *   "register"     {}
- *   "message"      { clientId, text, messageId, ts }
- *   "stream"       { clientId, text, messageId, ts }
- *   "stream_end"   { clientId, text, messageId, ts }
- *   "typing"       { clientId, ts }
- *   "ping"         {}
+ * Wire protocol carries `parts: BridlePart[]` for rich content (text, images, files).
  */
 export class BridleRepository implements IChannelGateway {
   readonly name = "bridle"
@@ -34,8 +68,6 @@ export class BridleRepository implements IChannelGateway {
     this.apiUrl = apiUrl
   }
 
-  // ── IChannelGateway implementation ──────────────────────────
-
   async start(): Promise<void> {
     this.connect()
   }
@@ -46,10 +78,12 @@ export class BridleRepository implements IChannelGateway {
     console.log("[bridle] channel stopped")
   }
 
-  async send(to: string, text: string): Promise<void> {
+  async send(to: string, text: string, parts?: MessagePart[]): Promise<void> {
+    const wireParts = parts ? messagePartsToWireParts(parts) : (text ? [{ type: "text" as const, text }] : [])
     this.socket?.emit("message", {
       clientId: to,
       text,
+      parts: wireParts,
       messageId: randomUUID(),
       ts: Date.now(),
     })
@@ -77,7 +111,13 @@ export class BridleRepository implements IChannelGateway {
       if (sending || pendingText === lastSent) return
       sending = true
       const toSend = pendingText
-      this.socket?.emit("stream", { clientId: to, text: toSend, messageId, ts: Date.now() })
+      this.socket?.emit("stream", {
+        clientId: to,
+        text: toSend,
+        parts: [{ type: "text", text: toSend }],
+        messageId,
+        ts: Date.now(),
+      })
       lastSent = toSend
       sending = false
     }
@@ -91,11 +131,15 @@ export class BridleRepository implements IChannelGateway {
       })
     } finally {
       clearInterval(interval)
-      this.socket?.emit("stream_end", { clientId: to, text: finalText, messageId, ts: Date.now() })
+      this.socket?.emit("stream_end", {
+        clientId: to,
+        text: finalText,
+        parts: [{ type: "text", text: finalText }],
+        messageId,
+        ts: Date.now(),
+      })
     }
   }
-
-  // ── Socket.io client ───────────────────────────────────────
 
   private connect(): void {
     const url = this.apiUrl
@@ -126,22 +170,22 @@ export class BridleRepository implements IChannelGateway {
       this.socket?.emit("register", {})
     })
 
-    // Incoming messages from browser clients (routed via hub)
     this.socket.on("message", (data: unknown) => {
       const msg = data as Record<string, unknown>
-      if (!msg?.text || !msg?.clientId || !this.handler) return
+      if (!msg?.clientId || !this.handler) return
 
-      const images = Array.isArray(msg.images)
-        ? (msg.images as Array<Record<string, unknown>>).filter((img) => img.base64 && img.mediaType)
-        : undefined
+      const text = (msg.text as string) ?? ""
+      const wireParts = (msg.parts as WirePart[]) ?? []
+      const { images, files } = extractMediaFromWireParts(wireParts)
 
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
-        text: msg.text as string,
+        text,
         from: msg.clientId as string,
         channel: "bridle",
         ts: Date.now(),
-        ...(images?.length ? { images: images as Array<{ base64: string; mediaType: string }> } : {}),
+        ...(images ? { images } : {}),
+        ...(files ? { files } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => console.error("[bridle] handler error:", err))
     })

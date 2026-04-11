@@ -43,10 +43,9 @@ export class ChannelGateway implements IChannelGateway {
   }
 
   streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
-    if ((this.repository instanceof TelegramRepository || this.repository instanceof BridleRepository) && this.repository.streamSend) {
+    if ('streamSend' in this.repository && typeof this.repository.streamSend === 'function') {
       return this.repository.streamSend(to, streamer)
     }
-    // Fallback for non-streaming channels
     return streamer(() => {}).then(text => this.repository.send(to, text))
   }
 }
