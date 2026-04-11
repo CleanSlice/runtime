@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../domain/tool.types"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { SecretModule } from "../../../../../setup/secret/secret.module"
 
 // Lazy singleton — initialized on first use

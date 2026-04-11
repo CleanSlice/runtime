@@ -1,6 +1,6 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../domain/tool.types"
-import type { ChannelServer } from "../../channel/channel.module"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
+import type { ChannelServer } from "../../../../../setup/channel/channel.module"
 
 const schema = z.object({
   to: z.string().describe("Recipient ID"),

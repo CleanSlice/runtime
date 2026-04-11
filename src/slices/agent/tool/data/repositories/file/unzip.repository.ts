@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { execSync } from "child_process"
 import path from "path"
-import type { Tool, ToolContext } from "../../domain/tool.types"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
 
 const schema = z.object({
   path: z.string().describe("Path to the zip archive"),

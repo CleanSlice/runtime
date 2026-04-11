@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../domain/tool.types"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
 
 const schema = z.object({
   action: z.enum(["read", "write"]),

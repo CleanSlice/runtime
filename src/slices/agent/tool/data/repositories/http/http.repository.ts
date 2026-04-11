@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../domain/tool.types"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
 
 const schema = z.object({
   url: z.string().url().describe("URL to fetch"),

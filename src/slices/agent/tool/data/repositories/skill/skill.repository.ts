@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { join } from "path"
 import { mkdirSync } from "fs"
-import type { Tool, ToolContext } from "../../domain/tool.types"
+import type { Tool, ToolContext } from "../../../domain/tool.types"
 
 const schema = z.object({
   name: z.string().describe("Skill name (slug, e.g. 'github', 'trello', 'weather')"),
