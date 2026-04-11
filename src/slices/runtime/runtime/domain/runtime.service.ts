@@ -1,4 +1,4 @@
-import type { Message } from "../../setup/channel"
+import { getMessageImages, type Message } from "../../setup/channel"
 import type { Event } from "../../setup/event"
 import type { SessionModule } from "../../agent/session/session.module"
 import type { AgentModule } from "../../agent/agent/agent.module"
@@ -107,10 +107,11 @@ export class RuntimeService {
     const history = await this.deps.session.readForTask(sessionId, taskId)
 
     // Inject images into the last user event (in-memory only)
-    if (msg.images?.length) {
+    const images = getMessageImages(msg)
+    if (images.length) {
       const lastUserEvent = history[history.length - 1]
       if (lastUserEvent && lastUserEvent.type === "user") {
-        (lastUserEvent.data as Record<string, unknown>).images = msg.images
+        (lastUserEvent.data as Record<string, unknown>).images = images
       }
     }
 

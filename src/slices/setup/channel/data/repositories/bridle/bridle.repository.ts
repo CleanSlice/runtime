@@ -1,19 +1,21 @@
 import type { IChannelGateway } from "../../../domain/channel.gateway"
-import type { Message } from "../../../domain/channel.types"
+import { buildMessage, type Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
 
 /**
- * Web channel — agent connects TO the NestJS API as a socket.io client.
- * The API is the hub between browser users and the agent.
+ * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
+ * The hub relays messages between browser users and this agent.
  *
- * Flow:  Browser ↔ socket.io /ws/chat ↔ NestJS API ↔ socket.io /ws/agent ↔ Agent (this)
+ * Flow:  Browser ↔ /ws/chat ↔ Bridle Hub ↔ /ws/agent ↔ Agent (this)
  *
- * Events (API → Agent):
+ * Auth: BRIDLE_API_KEY + BRIDLE_BOT_ID in Socket.IO handshake.
+ *
+ * Events (Hub → Agent):
  *   "message"  { clientId, text, messageId, images? }
  *   "pong"     {}
  *
- * Events (Agent → API):
+ * Events (Agent → Hub):
  *   "register"     {}
  *   "message"      { clientId, text, messageId, ts }
  *   "stream"       { clientId, text, messageId, ts }
@@ -21,8 +23,8 @@ import { io, type Socket } from "socket.io-client"
  *   "typing"       { clientId, ts }
  *   "ping"         {}
  */
-export class WebRepository implements IChannelGateway {
-  readonly name = "web"
+export class BridleRepository implements IChannelGateway {
+  readonly name = "bridle"
 
   private handler?: (msg: Message) => Promise<void>
   private socket: Socket | null = null
@@ -41,7 +43,7 @@ export class WebRepository implements IChannelGateway {
   async stop(): Promise<void> {
     this.socket?.disconnect()
     this.socket = null
-    console.log("[web] channel stopped")
+    console.log("[bridle] channel stopped")
   }
 
   async send(to: string, text: string): Promise<void> {
@@ -97,51 +99,55 @@ export class WebRepository implements IChannelGateway {
 
   private connect(): void {
     const url = this.apiUrl
-    console.log(`[web] connecting to API at ${url}/ws/agent`)
+    console.log(`[bridle] connecting to hub at ${url}/ws/agent`)
 
     this.socket = io(`${url}/ws/agent`, {
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 3000,
       reconnectionAttempts: Infinity,
+      auth: {
+        apiKey: process.env.BRIDLE_API_KEY ?? "",
+        botId: process.env.BRIDLE_BOT_ID ?? "",
+      },
     })
 
     this.socket.on("connect", () => {
-      console.log("[web] connected to API")
+      console.log("[bridle] connected to hub")
       this.socket?.emit("register", {})
     })
 
     this.socket.on("disconnect", (reason) => {
-      console.log(`[web] disconnected from API: ${reason}`)
+      console.log(`[bridle] disconnected from hub: ${reason}`)
     })
 
     this.socket.on("reconnect", () => {
-      console.log("[web] reconnected to API")
+      console.log("[bridle] reconnected to hub")
       this.socket?.emit("register", {})
     })
 
-    // Incoming messages from browser clients (routed via API hub)
-    this.socket.on("message", (data: any) => {
-      if (!data?.text || !data?.clientId || !this.handler) return
+    // Incoming messages from browser clients (routed via hub)
+    this.socket.on("message", (data: unknown) => {
+      const msg = data as Record<string, unknown>
+      if (!msg?.text || !msg?.clientId || !this.handler) return
 
-      const images = Array.isArray(data.images)
-        ? data.images.filter((img: any) => img.base64 && img.mediaType)
+      const images = Array.isArray(msg.images)
+        ? (msg.images as Array<Record<string, unknown>>).filter((img) => img.base64 && img.mediaType)
         : undefined
 
-      this.handler({
-        id: data.messageId ?? randomUUID(),
-        text: data.text,
-        from: data.clientId,
-        channel: "web",
+      this.handler(buildMessage({
+        id: (msg.messageId as string) ?? randomUUID(),
+        text: msg.text as string,
+        from: msg.clientId as string,
+        channel: "bridle",
         ts: Date.now(),
-        sessionId: "",
-        ...(images?.length ? { images } : {}),
-        metadata: { clientId: data.clientId, source: "web" },
-      }).catch(err => console.error("[web] handler error:", err))
+        ...(images?.length ? { images: images as Array<{ base64: string; mediaType: string }> } : {}),
+        metadata: { clientId: msg.clientId, source: "bridle" },
+      })).catch(err => console.error("[bridle] handler error:", err))
     })
 
     this.socket.on("connect_error", (err) => {
-      console.error("[web] connection error:", err.message)
+      console.error("[bridle] connection error:", err.message)
     })
   }
 }

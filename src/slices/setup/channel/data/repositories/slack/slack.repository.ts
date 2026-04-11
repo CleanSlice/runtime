@@ -1,4 +1,4 @@
-import type { Message } from "../../../domain/channel.types"
+import { buildMessage, type Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 
 export class SlackRepository {
@@ -51,15 +51,14 @@ export class SlackRepository {
           const handler = this.handler
           // Non-blocking — handle in parallel
           ;(async () => {
-            await handler({
+            await handler(buildMessage({
               id: randomUUID(),
               text: event.text,
               from: event.user,
               channel: "slack",
               ts: Date.now(),
-              sessionId: "",
               metadata: { channel: event.channel, ts: event.ts },
-            })
+            }))
           })().catch(err => console.error("[slack] message handler error:", err))
         }
       }

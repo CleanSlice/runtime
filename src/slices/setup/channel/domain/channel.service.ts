@@ -1,5 +1,5 @@
 import type { IChannelGateway } from "./channel.gateway"
-import type { Message } from "./channel.types"
+import type { Message, MessagePart } from "./channel.types"
 
 export class ChannelService {
   private channels: IChannelGateway[] = []
@@ -30,10 +30,10 @@ export class ChannelService {
     await Promise.all(this.channels.map(ch => ch.stop()))
   }
 
-  async send(channel: string, to: string, text: string): Promise<void> {
+  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)
-    await ch.send(to, text)
+    await ch.send(to, text, parts)
   }
 
   async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {

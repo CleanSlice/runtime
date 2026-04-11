@@ -1,10 +1,10 @@
-import type { Message } from "./channel.types"
+import type { Message, MessagePart } from "./channel.types"
 
 export interface IChannelGateway {
   readonly name: string
   start(): Promise<void>
   stop(): Promise<void>
-  send(to: string, text: string): Promise<void>
+  send(to: string, text: string, parts?: MessagePart[]): Promise<void>
   onMessage(handler: (msg: Message) => Promise<void>): void
   /**
    * Stream text to the channel — sends a placeholder, then edits it as chunks arrive.

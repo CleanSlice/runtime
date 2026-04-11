@@ -1,4 +1,4 @@
-import type { Message } from "../../../domain/channel.types"
+import { buildMessage, type Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 
 interface TelegramUpdate {
@@ -250,16 +250,15 @@ export class TelegramRepository {
                   text = `[User sent a file: ${fileName}]${caption}\nLocal path: ${localPath}\nProcess this file as needed.`
                 }
 
-                await handler({
+                await handler(buildMessage({
                   id: randomUUID(),
                   text,
                   from: chatId,
                   channel: "telegram",
                   ts: msg!.date * 1000,
-                  sessionId: "",
                   ...(images.length > 0 ? { images } : {}),
                   metadata,
-                })
+                }))
               } finally {
                 clearInterval(typingInterval)
               }

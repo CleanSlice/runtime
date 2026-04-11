@@ -1,6 +1,6 @@
 import type { Tool } from "../../agent/tool"
 import { ToolService } from "../../agent/tool/domain/tool.service"
-import type { Message, ChannelConfig } from "../../setup/channel"
+import { buildMessage, MessageRoleTypes, type Message, type ChannelConfig } from "../../setup/channel"
 import type { LlmConfig } from "../../setup/llm/llm.module"
 import { S3SyncService, type S3SyncConfig } from "../../bot/sync/s3-sync.service"
 import { ChannelModule } from "../../setup/channel/channel.module"
@@ -251,20 +251,20 @@ export class AgentRuntime {
     if (allMock) return
 
     this.cron.onJob(async job => {
-      await this.handleMessage({
+      await this.handleMessage(buildMessage({
         id: randomUUID(), text: job.message,
         from: job.to ?? "cron", channel: job.channel ?? "internal",
-        ts: Date.now(), sessionId: `${job.channel ?? "internal"}:${job.to ?? "cron"}`,
-      })
+        ts: Date.now(), role: MessageRoleTypes.System,
+      }))
     })
     this.cron.start()
 
     this.heartbeat.onHeartbeat(async (message) => {
-      await this.handleMessage({
+      await this.handleMessage(buildMessage({
         id: randomUUID(), text: message,
         from: "heartbeat", channel: "internal",
-        ts: Date.now(), sessionId: "heartbeat",
-      })
+        ts: Date.now(), role: MessageRoleTypes.System,
+      }))
     })
     this.heartbeat.start()
   }

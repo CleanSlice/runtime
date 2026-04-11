@@ -1,4 +1,4 @@
-import type { Message } from "./domain/channel.types"
+import type { Message, MessagePart } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
@@ -25,8 +25,8 @@ export class ChannelModule {
     await this.service.stop()
   }
 
-  async send(channel: string, to: string, text: string): Promise<void> {
-    await this.service.send(channel, to, text)
+  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
+    await this.service.send(channel, to, text, parts)
   }
 
   async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
