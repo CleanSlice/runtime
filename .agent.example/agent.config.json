@@ -30,6 +30,12 @@
     "halt", "enough", "quit"
   ],
 
+  "_comment_managed": "Files overwritten from .agent.example on every restart. Set to [] to disable.",
+  "managedFiles": ["SOUL.md"],
+
+  "_comment_syncSkills": "Sync skills from .agent.example on restart. User-created skills are never deleted.",
+  "syncSkills": true,
+
   "tools": {
     "spawnAgent": {
       "timeoutMin": 5,

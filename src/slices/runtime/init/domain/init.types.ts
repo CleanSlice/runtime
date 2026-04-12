@@ -41,10 +41,31 @@ export interface IAgentConfig {
 
   /** Words/phrases that immediately cancel all running tasks. Case-insensitive. */
   stopPhrases: string[]
+
+  /**
+   * Files overwritten from .agent.example on every restart.
+   * Only files listed here are touched — everything else is preserved.
+   * Default: ["SOUL.md"]
+   */
+  managedFiles: string[]
+
+  /**
+   * Whether to sync skills from .agent.example on restart.
+   * Only overwrites skills that exist in both .agent and .agent.example.
+   * Skills only in .agent (user-created) are never deleted.
+   * Default: true
+   */
+  syncSkills: boolean
 }
 
 /** Required subdirectories inside the agent directory */
 export const AGENT_SUBDIRS = ["data", "sessions", "memory", "skills", "workspace"] as const
+
+/**
+ * Default list of managed files — synced from .agent.example on startup.
+ * Can be overridden via agent.config.json `managedFiles` field.
+ */
+export const DEFAULT_MANAGED_FILES = ["SOUL.md"] as const
 
 /** Default config values — used when agent.config.json is missing or partial */
 export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
@@ -83,4 +104,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     "stop", "abort", "cancel",
     "halt", "enough", "quit",
   ],
+
+  managedFiles: [...DEFAULT_MANAGED_FILES],
+  syncSkills: true,
 }

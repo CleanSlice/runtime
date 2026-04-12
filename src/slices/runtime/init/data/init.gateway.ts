@@ -7,8 +7,15 @@ import { AGENT_CONFIG_DEFAULTS, AGENT_SUBDIRS } from "../domain/init.types"
 export class InitGateway implements IInitGateway {
   scaffold(agentDir: string, exampleDir: string): void {
     if (this.isInitialized(agentDir)) {
-      // Already initialized — sync new skills from example
-      this.syncSkills(agentDir, exampleDir)
+      // Load config to determine what to sync
+      const config = this.loadConfig(agentDir)
+
+      if (config.managedFiles.length > 0) {
+        this.syncManagedFiles(agentDir, exampleDir, config.managedFiles)
+      }
+      if (config.syncSkills) {
+        this.syncSkills(agentDir, exampleDir)
+      }
       return
     }
 
@@ -81,8 +88,41 @@ export class InitGateway implements IInitGateway {
   }
 
   /**
-   * Copy new skills from exampleDir/skills/ into agentDir/skills/.
-   * Only adds skills that don't already exist — never overwrites user modifications.
+   * Overwrite managed files from example on every startup.
+   * Only files listed in config.managedFiles are touched.
+   */
+  private syncManagedFiles(agentDir: string, exampleDir: string, files: string[]): void {
+    if (!existsSync(exampleDir)) return
+
+    for (const file of files) {
+      const src = join(exampleDir, file)
+      const dest = join(agentDir, file)
+      if (!existsSync(src)) continue
+
+      try {
+        const srcContent = readFileSync(src, "utf-8")
+        const destContent = existsSync(dest) ? readFileSync(dest, "utf-8") : ""
+
+        if (srcContent !== destContent) {
+          copyFileSync(src, dest)
+          console.log(`[init] updated managed file: ${file}`)
+        }
+      } catch (err: unknown) {
+        const code = (err as any)?.code
+        if (code === "EACCES") {
+          console.warn(`[init] permission denied updating ${file}, skipping`)
+        } else {
+          throw err
+        }
+      }
+    }
+  }
+
+  /**
+   * Sync skills from exampleDir/skills/ into agentDir/skills/.
+   * - Skills in example → overwritten in agent (version updates)
+   * - Skills only in agent (user-created) → left untouched
+   * - Skills only in example (new) → added to agent
    */
   private syncSkills(agentDir: string, exampleDir: string): void {
     const srcSkills = join(exampleDir, "skills")
@@ -102,20 +142,35 @@ export class InitGateway implements IInitGateway {
 
     for (const entry of readdirSync(srcSkills)) {
       const srcPath = join(srcSkills, entry)
-      const destPath = join(destSkills, entry)
+      if (!statSync(srcPath).isDirectory()) continue
 
-      if (statSync(srcPath).isDirectory() && !existsSync(destPath)) {
-        try {
-          this.copyDirRecursive(srcPath, destPath)
-          console.log(`[init] synced new skill: ${entry}`)
-        } catch (err: unknown) {
-          const code = (err as any)?.code
-          if (code === "EACCES") {
-            console.warn(`[init] permission denied syncing skill ${entry}, skipping`)
-          } else {
-            throw err
-          }
+      const destPath = join(destSkills, entry)
+      try {
+        this.overwriteDirRecursive(srcPath, destPath)
+        console.log(`[init] synced skill: ${entry}`)
+      } catch (err: unknown) {
+        const code = (err as any)?.code
+        if (code === "EACCES") {
+          console.warn(`[init] permission denied syncing skill ${entry}, skipping`)
+        } else {
+          throw err
         }
+      }
+    }
+  }
+
+  /** Copy directory, overwriting existing files (for managed content like skills) */
+  private overwriteDirRecursive(src: string, dest: string): void {
+    if (!existsSync(dest)) mkdirSync(dest, { recursive: true })
+
+    for (const entry of readdirSync(src)) {
+      const srcPath = join(src, entry)
+      const destPath = join(dest, entry)
+
+      if (statSync(srcPath).isDirectory()) {
+        this.overwriteDirRecursive(srcPath, destPath)
+      } else {
+        copyFileSync(srcPath, destPath)
       }
     }
   }
