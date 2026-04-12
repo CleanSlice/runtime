@@ -23,6 +23,7 @@ const setOptional = optionalEnv.filter(k => process.env[k])
 if (setOptional.length) console.log(`[env] ok: ${setOptional.join(", ")}`)
 if (missingRequired.length) console.warn(`[env] ⚠ missing: ${missingRequired.join(", ")}`)
 
+import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
@@ -63,7 +64,7 @@ const runtime = new AgentRuntime({
 })
 
 await runtime.start()
-console.log("🤖 Agent runtime started")
+console.log(`🤖 Agent runtime v${pkg.version} started`)
 if (process.env.BRIDLE_URL) console.log(`[bridle] enabled → ${process.env.BRIDLE_URL}`)
 else console.log("[bridle] disabled (BRIDLE_URL not set)")
 
