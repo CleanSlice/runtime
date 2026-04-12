@@ -143,9 +143,9 @@ export class BridleRepository implements IChannelGateway {
 
   private connect(): void {
     const url = this.apiUrl
-    console.log(`[bridle] connecting to hub at ${url}/agent`)
+    console.log(`[bridle] connecting to hub at ${url}`)
 
-    this.socket = io(`${url}/agent`, {
+    this.socket = io(url, {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 3000,
