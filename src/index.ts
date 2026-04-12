@@ -64,6 +64,8 @@ const runtime = new AgentRuntime({
 
 await runtime.start()
 console.log("🤖 Agent runtime started")
+if (process.env.BRIDLE_URL) console.log(`[bridle] enabled → ${process.env.BRIDLE_URL}`)
+else console.log("[bridle] disabled (BRIDLE_URL not set)")
 
 // Graceful shutdown on SIGTERM (docker stop) and SIGINT (ctrl+c)
 // Gives runtime time to push final S3 sync before exit
