@@ -1,11 +1,13 @@
 import type { IAgentGateway } from "./agent.gateway"
 import type { AgentConfig } from "./agent.types"
+import type { SkillSummary } from "../../skill/domain/skill.types"
 
 export interface BuildPromptOpts {
   agentDir?: string
   toolingPrompt?: string
   secretKeys?: string[]
   dailyMemory?: string
+  skills?: SkillSummary[]
 }
 
 /**
@@ -42,7 +44,15 @@ export class AgentService {
     }
 
     if (config.heartbeat) parts.push(`# Heartbeat\n\n${config.heartbeat}`)
-    for (const skill of config.skills) parts.push(`# Skill\n\n${skill}`)
+
+    // Skill catalog: only names + descriptions (full content loaded on demand)
+    const allSkills = [...config.skills, ...(opts?.skills ?? [])]
+    if (allSkills.length > 0) {
+      const catalog = allSkills
+        .map(s => `- **${s.name}**: ${s.description}`)
+        .join("\n")
+      parts.push(`# Available Skills\n\nThese skills are loaded automatically when relevant to the task.\n\n${catalog}`)
+    }
 
     if (opts?.secretKeys && opts.secretKeys.length > 0) {
       parts.push(
@@ -76,7 +86,7 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[] }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -85,6 +95,6 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
       if (userContext?.trim()) config.user = userContext
     }
 
-    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys, dailyMemory: opts?.dailyMemory })
+    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys, dailyMemory: opts?.dailyMemory, skills: opts?.skills })
   }
 }

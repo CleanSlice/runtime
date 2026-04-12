@@ -1,3 +1,5 @@
+import type { SkillSummary } from "../../skill/domain/skill.types"
+
 export interface AgentFile {
   path: string
   content: string
@@ -9,5 +11,5 @@ export interface AgentConfig {
   memory?: string
   heartbeat?: string
   agents?: string   // AGENTS.md — runtime instructions
-  skills: string[]
+  skills: SkillSummary[]
 }

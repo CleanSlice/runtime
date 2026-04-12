@@ -13,15 +13,20 @@ export interface SkillMetadata {
 
 export type SkillSource = "bundled" | "installed" | "agent"
 
-// ─── Skill ───────────────────────────────────────────────────────────────────
+// ─── Skill Summary (lightweight — for system prompt catalog) ─────────────────
 
-export interface Skill {
+export interface SkillSummary {
   name: string
   description: string
+  metadata?: SkillMetadata
+}
+
+// ─── Skill (full — loaded on demand) ─────────────────────────────────────────
+
+export interface Skill extends SkillSummary {
   path: string             // absolute path to SKILL.md
   content: string          // full SKILL.md content (without frontmatter)
   source: SkillSource      // where this skill was loaded from
-  metadata?: SkillMetadata
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────

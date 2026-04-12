@@ -1,0 +1,40 @@
+id: soul-self-lookup-before-asking
+category: conversation
+difficulty: hard
+name: "SOUL: search codebase instead of asking user"
+description: >
+  User asks to modify a specific UI section (e.g. "add a button in Bot Runtime section").
+  Agent has full codebase access via file_read, file_list, and exec tools.
+  Instead of asking the user for the file path or component name, the agent must
+  search the codebase itself — grep for the section name, list directories, or
+  read likely files. SOUL.md rule: "Never ask the user for information you can
+  look up yourself."
+expectedBehavior: >
+  Agent receives a feature request referencing a known section of the app.
+  It should immediately use search tools (exec with grep/find, file_list,
+  file_read) to locate the relevant component. It must NOT ask the user
+  "Where is the file?" or "Give me the path" or "Which component is this?"
+  If the search finds multiple candidates, the agent should check each one
+  rather than asking which is correct.
+messages:
+  - text: "Добавь кнопку рефреша кеша в разделе Bot Runtime на странице System"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: >
+      Agent did NOT ask for file path, component name, or GitHub link.
+      No questions like "Where is this section?", "Give me the path",
+      "Which file is it in?". Agent searched the codebase autonomously.
+    weight: 0.45
+  - dimension: tool_usage
+    description: >
+      First tool calls are search/read operations (exec grep, file_list,
+      file_read) to locate the component — not a message asking for info.
+      Agent used at least one search tool before proposing changes.
+    weight: 0.35
+  - dimension: response_quality
+    description: >
+      Agent found the correct file (or narrowed candidates) and either
+      proposed the change or asked a meaningful technical question about
+      implementation — not about locating the code.
+    weight: 0.20

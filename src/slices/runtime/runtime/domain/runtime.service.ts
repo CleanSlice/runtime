@@ -135,17 +135,38 @@ export class RuntimeService {
   private async buildPrompt(msg: Message, tid: string): Promise<string> {
     const secretKeys = await this.deps.secrets.list(msg.from).catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
+
+    // Get all loaded skills — pass summaries to system prompt catalog
+    const allSkills = this.deps.skills.getAll()
+    const skillSummaries = allSkills.map(s => ({
+      name: s.name,
+      description: s.description,
+      metadata: s.metadata,
+    }))
+
     let systemPrompt = await this.deps.agent.buildPrompt({
       userId: msg.from,
       toolingPrompt: this.deps.toolingPrompt,
       secretKeys,
       dailyMemory,
+      skills: skillSummaries,
     })
 
-    const skill = this.deps.skills.select(msg.text)
-    if (skill) {
-      systemPrompt += `\n\n## Active Skill: ${skill.name}\n${skill.content}`
-      console.log(`[${tid}] skill: ${skill.name}`)
+    // Inject full content for always-on skills
+    const injected = new Set<string>()
+    for (const skill of allSkills) {
+      if (skill.metadata?.always) {
+        systemPrompt += `\n\n---\n\n## Skill: ${skill.name}\n\n${skill.content}`
+        injected.add(skill.name)
+        console.log(`[${tid}] skill(always): ${skill.name}`)
+      }
+    }
+
+    // Inject full content for message-matched skill (skip if already injected)
+    const matched = this.deps.skills.select(msg.text)
+    if (matched && !injected.has(matched.name)) {
+      systemPrompt += `\n\n---\n\n## Active Skill: ${matched.name}\n\n${matched.content}`
+      console.log(`[${tid}] skill: ${matched.name}`)
     }
 
     return systemPrompt

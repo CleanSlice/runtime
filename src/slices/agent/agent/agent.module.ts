@@ -1,5 +1,6 @@
 import { AgentGateway } from "./data/agent.gateway"
 import { AgentService } from "./domain/agent.service"
+import type { SkillSummary } from "../skill/domain/skill.types"
 
 export class AgentModule {
   private service: AgentService
@@ -8,7 +9,7 @@ export class AgentModule {
     this.service = new AgentService(new AgentGateway())
   }
 
-  async buildPrompt(opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string }): Promise<string> {
+  async buildPrompt(opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[] }): Promise<string> {
     return this.service.buildPrompt(this.agentDir, opts)
   }
 }

@@ -26,18 +26,8 @@ export class AgentGateway implements IAgentGateway {
       this.readIfExists(`${agentDir}/AGENTS.md`),
     ])
 
-    const skills: string[] = []
-    const skillsDir = `${agentDir}/skills`
-    try {
-      const glob = new Bun.Glob("**/*.md")
-      for await (const file of glob.scan(skillsDir)) {
-        const content = await Bun.file(`${skillsDir}/${file}`).text()
-        skills.push(content)
-      }
-    } catch {
-      // no skills dir
-    }
-
-    return { soul, user, memory, heartbeat, agents, skills }
+    // Skills are loaded separately via SkillModule and injected by RuntimeService.
+    // Only descriptions go into the system prompt; full content loads on demand.
+    return { soul, user, memory, heartbeat, agents, skills: [] }
   }
 }
