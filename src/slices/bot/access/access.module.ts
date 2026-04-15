@@ -1,42 +1,52 @@
 import { AccessService } from "./domain/access.service"
 import { AccessGateway } from "./data/access.gateway"
-import type { IAccessStrategy, UserRecord } from "./domain/access.types"
+import type { IAccessStrategy, StrategyName, StrategyOverride, UserRecord } from "./domain/access.types"
 import { ApprovalRepository } from "./data/repositories/approval/approval.repository"
 import { OpenRepository } from "./data/repositories/open/open.repository"
+import { PublicRepository } from "./data/repositories/public/public.repository"
 import { AllowlistRepository } from "./data/repositories/allowlist/allowlist.repository"
 import { CodeRepository } from "./data/repositories/code/code.repository"
 
+export interface IStrategyConfig {
+  accessStrategy?: StrategyName
+  allowlist?: string[]
+  accessCode?: string
+}
+
 export class AccessModule {
+  private gateway: AccessGateway
   private service: AccessService
 
   constructor(agentDir: string, adminIds: string[] = [], strategy: IAccessStrategy) {
-    this.service = new AccessService(new AccessGateway(agentDir), strategy, adminIds)
+    this.gateway = new AccessGateway(agentDir)
+    this.service = new AccessService(this.gateway, strategy, adminIds)
   }
 
-  /** Factory: create AccessModule from config without importing concrete repositories */
-  static create(agentDir: string, adminIds: string[], config: {
-    accessStrategy?: "open" | "allowlist" | "code" | "approval"
-    allowlist?: string[]
-    accessCode?: string
-  }): AccessModule {
-    const strategy = config.accessStrategy ?? "approval"
-    let impl: IAccessStrategy
-    switch (strategy) {
+  /** Factory: create AccessModule from config. Persisted runtime override (if any) takes precedence. */
+  static create(agentDir: string, adminIds: string[], config: IStrategyConfig): AccessModule {
+    const probe = new AccessGateway(agentDir)
+    const override = probe.getStrategyOverride()
+    const effective: IStrategyConfig = override
+      ? { accessStrategy: override.name, allowlist: override.allowlist, accessCode: override.accessCode }
+      : config
+    return new AccessModule(agentDir, adminIds, AccessModule.buildStrategy(effective))
+  }
+
+  private static buildStrategy(config: IStrategyConfig): IAccessStrategy {
+    const name: StrategyName = config.accessStrategy ?? "approval"
+    switch (name) {
       case "open":
-        impl = new OpenRepository()
-        break
+        return new OpenRepository()
+      case "public":
+        return new PublicRepository()
       case "allowlist":
-        impl = new AllowlistRepository(config.allowlist ?? [])
-        break
+        return new AllowlistRepository(config.allowlist ?? [])
       case "code":
-        impl = new CodeRepository(config.accessCode ?? "")
-        break
+        return new CodeRepository(config.accessCode ?? "")
       case "approval":
       default:
-        impl = new ApprovalRepository()
-        break
+        return new ApprovalRepository()
     }
-    return new AccessModule(agentDir, adminIds, impl)
   }
 
   isAdmin(userId: string): boolean {
@@ -61,5 +71,20 @@ export class AccessModule {
 
   stats() {
     return this.service.stats()
+  }
+
+  getStrategyName(): string {
+    return this.service.getStrategyName()
+  }
+
+  /** Switch the active strategy at runtime. Persisted to data/access.json. */
+  setStrategy(name: StrategyName, options?: { allowlist?: string[]; accessCode?: string }): void {
+    const override: StrategyOverride = { name, allowlist: options?.allowlist, accessCode: options?.accessCode }
+    const impl = AccessModule.buildStrategy({
+      accessStrategy: name,
+      allowlist: options?.allowlist,
+      accessCode: options?.accessCode,
+    })
+    this.service.setStrategy(impl, override)
   }
 }

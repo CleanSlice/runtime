@@ -19,6 +19,7 @@ export const MemorySaveTool: Tool = {
     "Use ONLY for durable facts, significant events, and reusable workflows. " +
     "Do NOT save greetings, small talk, resolved errors, or tool call mechanics.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { text } = schema.parse(params)
     const gateway = new MemoryGateway(ctx.agentDir)

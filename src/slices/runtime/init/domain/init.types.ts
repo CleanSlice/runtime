@@ -4,8 +4,8 @@ export interface IAgentConfig {
   taskLabelLength: number
   maxTokens: number
 
-  /** Access control strategy. Defaults to "approval". */
-  accessStrategy?: "open" | "allowlist" | "code" | "approval"
+  /** Access control strategy. Defaults to "approval". Runtime override in data/access.json takes precedence. */
+  accessStrategy?: "open" | "public" | "allowlist" | "code" | "approval"
 
   /** For "allowlist" strategy: list of allowed Telegram user IDs */
   allowlist?: string[]

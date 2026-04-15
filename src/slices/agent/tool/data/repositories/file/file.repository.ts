@@ -11,6 +11,7 @@ export const FileTool: Tool = {
   name: "file",
   description: "Read or write files on the filesystem",
   schema,
+  adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { action, path, content } = schema.parse(params)
     if (action === "read") {

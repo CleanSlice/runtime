@@ -59,6 +59,7 @@ export const TtsTool: Tool = {
   name: "tts",
   description: "Convert text to speech and send as voice message to Telegram.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { text, chat_id } = schema.parse(params)
 

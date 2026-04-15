@@ -12,6 +12,7 @@ function getSecrets(ctx: ToolContext): SecretModule {
 export const SecretSetTool: Tool = {
   name: "secret_set",
   description: "Save a secret value for the current user. Use for passwords, tokens, API keys. Key format: 'service:field' e.g. 'instagram:password', 'upwork:email'",
+  adminOnly: true,
   schema: z.object({
     key: z.string().describe("Secret key, e.g. 'instagram:password'"),
     value: z.string().describe("Secret value to store"),
@@ -49,6 +50,7 @@ export const SecretListTool: Tool = {
 export const SecretDeleteTool: Tool = {
   name: "secret_delete",
   description: "Delete a saved secret for the current user.",
+  adminOnly: true,
   schema: z.object({
     key: z.string().describe("Secret key to delete"),
   }),

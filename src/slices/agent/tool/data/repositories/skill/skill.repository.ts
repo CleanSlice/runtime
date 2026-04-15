@@ -16,6 +16,7 @@ export const SkillWriteTool: Tool = {
     "The skill is immediately reloaded and available after writing. " +
     "Use this when the user asks you to create, save, or remember a new skill or workflow.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { name, description, content } = schema.parse(params)
 

@@ -1,5 +1,8 @@
 import type { ICommandContext, ICommandResult } from "./command.types"
 import type { AccessModule } from "../../access/access.module"
+import type { StrategyName } from "../../access/domain/access.types"
+
+const VALID_STRATEGIES: StrategyName[] = ["open", "public", "allowlist", "code", "approval"]
 import type { SkillModule } from "../../../agent/skill/skill.module"
 import type { VoiceModule } from "../../voice/voice.module"
 import type { TaskManager } from "../../../agent/task/domain/task.service"
@@ -24,6 +27,11 @@ export class CommandService {
     // /skills — list or reload skills (admin only)
     if (text === "/skills" || text === "/skills reload") {
       return this.handleSkills(ctx, text, send)
+    }
+
+    // /access [strategy] — view or switch access strategy
+    if (text === "/access" || text.startsWith("/access ")) {
+      return this.handleAccess(ctx, text, send)
     }
 
     // /voice toggle
@@ -59,7 +67,9 @@ export class CommandService {
         `/voice — Toggle voice mode\n` +
         `/cancel <id> — Cancel a task\n` +
         `/skills — List loaded skills\n` +
-        `/skills reload — Reload skills from disk (admin only)`,
+        `/skills reload — Reload skills from disk (admin only)\n` +
+        `/access — Show current access strategy\n` +
+        `/access <name> — Switch strategy: open|public|allowlist|code|approval (admin only)`,
       )
       return { handled: true }
     }
@@ -151,6 +161,36 @@ export class CommandService {
         return `${icon} [${t.id.slice(0, 6)}] ${t.label} — ${elapsed}s`
       })
       .join("\n")
+  }
+
+  private async handleAccess(ctx: ICommandContext, text: string, send: SendFn): Promise<ICommandResult> {
+    const current = this.deps.access.getStrategyName()
+    const arg = text.replace(/^\/access\s*/, "").trim()
+
+    if (!arg) {
+      await send(`🔐 Current access strategy: *${current}*\n\nAvailable: ${VALID_STRATEGIES.join(", ")}\nSwitch via /access <name> (admin only).`)
+      return { handled: true }
+    }
+
+    if (!this.deps.access.isAdmin(ctx.from)) {
+      await send("🔒 Only admins can change the access strategy.")
+      return { handled: true }
+    }
+
+    const next = arg.toLowerCase() as StrategyName
+    if (!VALID_STRATEGIES.includes(next)) {
+      await send(`❓ Unknown strategy "${arg}". Use one of: ${VALID_STRATEGIES.join(", ")}.`)
+      return { handled: true }
+    }
+
+    if (next === "allowlist" || next === "code") {
+      await send(`⚠️ "${next}" requires extra config (allowlist users / accessCode). Use the \`set_access_strategy\` tool with parameters instead.`)
+      return { handled: true }
+    }
+
+    this.deps.access.setStrategy(next)
+    await send(`✅ Access strategy switched to *${next}*.`)
+    return { handled: true }
   }
 
   private async handleStart(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {

@@ -12,6 +12,8 @@ import type { LoopModule } from "../../loop/loop.module"
 import type { TaskManager } from "../../../agent/task/domain/task.service"
 import type { Task } from "../../../agent/task/domain/task.gateway"
 import type { Tool } from "../../../agent/tool"
+import { ToolService } from "../../../agent/tool/domain/tool.service"
+import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { randomUUID } from "crypto"
 
@@ -27,7 +29,7 @@ interface RuntimeDeps {
   loop: LoopModule
   tasks: TaskManager
   tools: Tool[]
-  toolingPrompt: string
+  access: AccessModule
   agentDir: string
   config: IAgentConfig
 }
@@ -39,6 +41,8 @@ export class RuntimeService {
   execute(msg: Message, sessionId: string, isInternal: boolean): void {
     const labelLen = this.deps.config.taskLabelLength
     const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
+    const isAdmin = isInternal ? true : this.deps.access.isAdmin(msg.from)
+    const visibleTools = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
 
     const send = async (text: string) => {
       if (msg.channel !== "internal") {
@@ -62,7 +66,8 @@ export class RuntimeService {
         })
 
         const history = await this.buildHistory(msg, sessionId, task.id)
-        const systemPrompt = await this.buildPrompt(msg, tid)
+        const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools)
+        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt)
 
         await this.deps.loop.service.run({
           task,
@@ -73,11 +78,13 @@ export class RuntimeService {
           isInternal,
           systemPrompt,
           history,
-          tools: this.deps.tools,
+          tools: visibleTools,
           send,
           streamSend: (ch, to, streamer) => this.deps.channel.streamSend(ch, to, streamer),
           agentConfig: this.deps.config,
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
+          access: this.deps.access,
+          isAdmin,
         })
 
         this.deps.session.touch(sessionId)
@@ -132,7 +139,7 @@ export class RuntimeService {
     return history
   }
 
-  private async buildPrompt(msg: Message, tid: string): Promise<string> {
+  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string): Promise<string> {
     const secretKeys = await this.deps.secrets.list(msg.from).catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
@@ -146,7 +153,7 @@ export class RuntimeService {
 
     let systemPrompt = await this.deps.agent.buildPrompt({
       userId: msg.from,
-      toolingPrompt: this.deps.toolingPrompt,
+      toolingPrompt,
       secretKeys,
       dailyMemory,
       skills: skillSummaries,

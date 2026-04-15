@@ -1,5 +1,5 @@
 import type { IAccessGateway } from "./access.gateway"
-import type { IAccessStrategy, UserRecord } from "./access.types"
+import type { IAccessStrategy, StrategyOverride, UserRecord } from "./access.types"
 
 export class AccessService {
   constructor(
@@ -71,5 +71,16 @@ export class AccessService {
       active: users.filter(u => u.status === "active" || u.status === "admin").length,
       pending: users.filter(u => u.status === "pending").length,
     }
+  }
+
+  getStrategyName(): string {
+    return this.strategy.name
+  }
+
+  /** Replace the active strategy and persist it as a runtime override. */
+  setStrategy(impl: IAccessStrategy, override: StrategyOverride): void {
+    this.strategy = impl
+    this.gateway.setStrategyOverride(override)
+    this.gateway.save()
   }
 }

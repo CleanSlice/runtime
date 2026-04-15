@@ -219,7 +219,10 @@ export class LoopService {
       if (!tool) console.warn(`[${tid}] ⚠ unknown tool: ${call.name}`)
       let result: unknown
 
-      if (tool) {
+      if (tool && tool.adminOnly && !ctx.isAdmin) {
+        console.warn(`[${tid}] ⚠ admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
+        result = { error: `Tool "${call.name}" is admin-only and cannot be called by this user.` }
+      } else if (tool) {
         try {
           result = await Promise.race([
             tool.execute(call.params, {
@@ -230,6 +233,8 @@ export class LoopService {
               send: ctx.send,
               agentConfig: ctx.agentConfig,
               reloadSkills: ctx.reloadSkills,
+              access: ctx.access,
+              isAdmin: ctx.isAdmin,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)

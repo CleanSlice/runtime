@@ -1,9 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs"
 import type { IAccessGateway } from "../domain/access.gateway"
-import type { UserRecord } from "../domain/access.types"
+import type { UserRecord, StrategyOverride } from "../domain/access.types"
 
 interface AccessStore {
   users: Record<string, UserRecord>
+  strategyOverride?: StrategyOverride
 }
 
 export class AccessGateway implements IAccessGateway {
@@ -39,5 +40,14 @@ export class AccessGateway implements IAccessGateway {
 
   getAllUsers(): UserRecord[] {
     return Object.values(this.store.users)
+  }
+
+  getStrategyOverride(): StrategyOverride | undefined {
+    return this.store.strategyOverride
+  }
+
+  setStrategyOverride(override: StrategyOverride | undefined): void {
+    if (override) this.store.strategyOverride = override
+    else delete this.store.strategyOverride
   }
 }

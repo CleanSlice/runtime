@@ -1,5 +1,4 @@
 import type { Tool } from "../../agent/tool"
-import { ToolService } from "../../agent/tool/domain/tool.service"
 import { buildMessage, MessageRoleTypes, type Message, type ChannelConfig } from "../../setup/channel"
 import type { LlmConfig } from "../../setup/llm/llm.module"
 import { S3SyncService, type S3SyncConfig } from "../../bot/sync/s3-sync.service"
@@ -143,8 +142,7 @@ export class AgentRuntime {
     this.runtimeService = new RuntimeService({
       session: this.session, agent, skills: this.skills, secrets,
       memory: this.memory, channel: this.channel, activity: activityService,
-      llm: this.llm, loop, tasks, tools,
-      toolingPrompt: ToolService.buildToolingPromptFrom(tools),
+      llm: this.llm, loop, tasks, tools, access,
       agentDir, config: this.config,
     })
 

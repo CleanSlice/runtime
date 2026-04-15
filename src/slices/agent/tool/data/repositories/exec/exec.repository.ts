@@ -9,6 +9,7 @@ export const ExecTool: Tool = {
   name: "exec",
   description: "Execute a shell command and return stdout/stderr",
   schema,
+  adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { command } = schema.parse(params)
     const proc = Bun.spawn(["sh", "-c", command], {

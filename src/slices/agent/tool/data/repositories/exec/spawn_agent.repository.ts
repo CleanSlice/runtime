@@ -11,6 +11,7 @@ export const SpawnAgentTool: Tool = {
   name: "spawn_agent",
   description: "Spawn a Claude Code agent to handle a complex task. The agent runs in the background and reports back.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { task, workdir, notify_chat_id } = schema.parse(params)
 

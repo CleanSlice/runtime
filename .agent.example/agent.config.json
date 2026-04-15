@@ -3,7 +3,7 @@
   "taskLabelLength": 60,
   "maxTokens": 16384,
 
-  "_comment_access": "Access strategy: open | allowlist | code | approval (default)",
+  "_comment_access": "Access strategy: open | public | allowlist | code | approval (default). Runtime override via /access or set_access_strategy is persisted to data/access.json and overrides this.",
   "accessStrategy": "approval",
   "_comment_allowlist": "For allowlist strategy: list of allowed Telegram user IDs",
   "allowlist": [],

@@ -19,6 +19,7 @@ export const ProcessExecTool: Tool = {
   name: "process_exec",
   description: "Run a shell command in the background and get its output later. Useful for long-running commands.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { action, command, pid } = schema.parse(params)
 

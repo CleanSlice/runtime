@@ -1,6 +1,7 @@
 import type { Event } from "../../../setup/event"
 import type { Tool } from "../../../agent/tool"
 import type { Task } from "../../../agent/task/domain/task.service"
+import type { AccessModule } from "../../../bot/access/access.module"
 
 export interface ILoopConfig {
   maxIterations: number
@@ -30,6 +31,8 @@ export interface ILoopContext {
   streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<void>
   agentConfig: import("../init").IAgentConfig
   reloadSkills: () => Promise<void>
+  access?: AccessModule
+  isAdmin: boolean
 }
 
 export interface ILoopResult {

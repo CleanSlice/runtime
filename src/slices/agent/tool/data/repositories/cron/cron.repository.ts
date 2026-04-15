@@ -44,6 +44,7 @@ export const CronListRepository = {
 export const CronAddRepository = {
   name: "cron_add",
   description: "Add a scheduled job. For recurring tasks use schedule (cron expression). For one-time reminders use delayMinutes or runAt (unix timestamp ms). IMPORTANT: the message field must contain all concrete values (real emails, real text) — never use placeholders like test@example.com.",
+  adminOnly: true,
   schema: z.object({
     name: z.string(),
     schedule: z.string().optional().default("* * * * *").describe("Cron expression for recurring tasks"),
@@ -83,6 +84,7 @@ export const CronAddRepository = {
 export const CronRemoveRepository = {
   name: "cron_remove",
   description: "Remove a cron job by id or name",
+  adminOnly: true,
   schema: z.object({
     id: z.string().optional(),
     name: z.string().optional(),
@@ -100,6 +102,7 @@ export const CronRemoveRepository = {
 export const CronDisableRepository = {
   name: "cron_disable",
   description: "Disable a cron job by id or name (keeps it but stops it from running)",
+  adminOnly: true,
   schema: z.object({
     id: z.string().optional(),
     name: z.string().optional(),

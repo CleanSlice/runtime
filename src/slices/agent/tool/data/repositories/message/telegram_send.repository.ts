@@ -11,6 +11,7 @@ export const TelegramSendTool: Tool = {
   name: "telegram_send",
   description: "Send a Telegram message to any chat ID. Use this to proactively message users.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { chat_id, text, parse_mode } = schema.parse(params)
 

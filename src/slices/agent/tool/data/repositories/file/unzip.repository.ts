@@ -12,6 +12,7 @@ export const UnzipTool: Tool = {
   name: "unzip",
   description: "Extract a zip archive to a directory. Use when the user sends a zip file.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { path: zipPath, outputDir } = schema.parse(params)
     const dest = outputDir ?? path.dirname(zipPath)

@@ -24,6 +24,7 @@ export const MemorySearchTool: Tool = {
   name: "memory_search",
   description: "Search agent memory and conversation history for relevant information. Use when you need to recall past conversations or stored knowledge.",
   schema,
+  adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { query, maxResults } = schema.parse(params)
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
