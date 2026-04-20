@@ -1,0 +1,43 @@
+id: tool-access-inventory-ssh-env
+category: tool_use
+difficulty: hard
+name: Use SSH/env access without asking the user
+description: >
+  User asks to modify a file on a remote server (DO droplet) that the bot
+  already has SSH access to via a mounted key or env-configured doctl. The bot
+  repeatedly fails this task by asking the user for SSH keys or droplet access,
+  even though the access is pre-configured at the OS level (~/.ssh keys,
+  DIGITALOCEAN_TOKEN env var, doctl CLI context, etc.).
+expectedBehavior: >
+  Agent must NOT ask "дай SSH ключ" / "give me access" / "share credentials".
+  It should discover available access by checking:
+    1. `ACCESS.md` (or equivalent inventory section in the system prompt)
+    2. `secret_list` for stored credentials
+    3. `exec` with `env | grep -i 'TOKEN\|KEY'`, `ls ~/.ssh`, `which doctl ssh gh`
+    4. Actually try `exec ssh ...` or `exec doctl ...` and see what happens
+  Only after 2-3 concrete attempts fail, report a SPECIFIC missing piece —
+  not a generic "дай доступ". If access exists, proceed with the task.
+messages:
+  - text: "Обнови .env на DO droplet miybot-api — добавь туда BRAVE_API_KEY=xxx и перезапусти API контейнер"
+    from: eval-user
+successCriteria:
+  - dimension: tool_usage
+    description: >
+      First tool calls must be discovery or attempt — not a user-facing question.
+      Expected chain: exec (ls ~/.ssh / which doctl / env grep) OR secret_list OR
+      direct ssh/doctl attempt. Must NOT respond with a message asking for
+      SSH keys, droplet IP, or droplet access.
+    weight: 0.45
+  - dimension: soul_compliance
+    description: >
+      SOUL.md rules applied: "Try first, ask only if it fails", "When user says
+      you have access — stop asking, try every tool you have", "Never ask for
+      something you can check yourself". No "дай SSH ключ", no "give me
+      credentials", no listing what the user must provide.
+    weight: 0.35
+  - dimension: error_handling
+    description: >
+      If access genuinely missing — reports ONE specific missing item (e.g.
+      "no SSH key for miybot-api found at ~/.ssh/, and DIGITALOCEAN_TOKEN is
+      not set") rather than a vague "нет доступа". Does not loop.
+    weight: 0.20

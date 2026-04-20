@@ -117,7 +117,7 @@ export class AgentRuntime {
     // ── Bot slices (user-facing features) ──────────────────────────
 
     // User access control (open / allowlist / code / approval)
-    const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
+    const adminIds = [...new Set([...(process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean), ...(process.env.BRIDLE_URL ? ["admin"] : [])])]
     const access = AccessModule.create(agentDir, adminIds, this.config)
 
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
@@ -220,7 +220,7 @@ export class AgentRuntime {
 
   /** Load memory, skills, and start usage tracking. */
   private async loadState(): Promise<void> {
-    const adminIds = (process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean)
+    const adminIds = [...new Set([...(process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean), ...(process.env.BRIDLE_URL ? ["admin"] : [])])]
     this.memory.ensureAdminInMemory(adminIds)
     await this.memory.load()
     await this.skills.load()
