@@ -52,6 +52,7 @@ export class AgentRuntime {
   private activityModule: ActivityModule
   private channelConfigs: RuntimeConfig["channels"]
   private s3sync?: S3SyncService
+  private access: AccessModule
 
   /**
    * Dependency injection — instantiates and wires all modules.
@@ -116,9 +117,10 @@ export class AgentRuntime {
 
     // ── Bot slices (user-facing features) ──────────────────────────
 
-    // User access control (open / allowlist / code / approval)
+    // User access control (open / public / allowlist / code / approval)
     const adminIds = [...new Set([...(process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean), ...(process.env.BRIDLE_URL ? ["admin"] : [])])]
-    const access = AccessModule.create(agentDir, adminIds, this.config)
+    this.access = AccessModule.create(agentDir, adminIds, this.config)
+    const access = this.access
 
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
     const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session })
@@ -215,6 +217,9 @@ export class AgentRuntime {
   private async restoreState(): Promise<void> {
     if (!this.s3sync) return
     await this.s3sync.pull()
+    // AccessModule was constructed before the S3 pull (disk was empty / stale),
+    // so its in-memory strategy may not match the just-pulled access.json.
+    this.access.reload()
     this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 60)
   }
 

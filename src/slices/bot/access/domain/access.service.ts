@@ -1,11 +1,14 @@
 import type { IAccessGateway } from "./access.gateway"
 import type { IAccessStrategy, StrategyOverride, UserRecord } from "./access.types"
 
+export type StrategyBuilder = (override: StrategyOverride) => IAccessStrategy
+
 export class AccessService {
   constructor(
     private gateway: IAccessGateway,
     private strategy: IAccessStrategy,
     private adminIds: string[],
+    private rebuildStrategy?: StrategyBuilder,
   ) {
     // Ensure admins always exist
     for (const id of adminIds) {
@@ -26,12 +29,15 @@ export class AccessService {
 
   isAllowed(userId: string): boolean {
     this.gateway.load()
+    this.syncStrategyFromDisk()
     const result = this.strategy.check(userId, this.gateway, this.adminIds)
     if (!result.allowed) console.log(`[access] denied: ${userId}`)
     return result.allowed
   }
 
   registerPending(userId: string): UserRecord {
+    this.gateway.load()
+    this.syncStrategyFromDisk()
     if (this.strategy.onNewUser) {
       return this.strategy.onNewUser(userId, this.gateway)
     }
@@ -82,5 +88,24 @@ export class AccessService {
     this.strategy = impl
     this.gateway.setStrategyOverride(override)
     this.gateway.save()
+  }
+
+  /** Re-read the persisted override and swap the in-memory strategy if it drifted. */
+  reload(): void {
+    this.gateway.load()
+    this.syncStrategyFromDisk()
+  }
+
+  /**
+   * If the persisted override disagrees with the current in-memory strategy,
+   * rebuild it. Covers S3 restore at boot, auto-sync at runtime, and manual
+   * edits to access.json — without requiring a process restart.
+   */
+  private syncStrategyFromDisk(): void {
+    if (!this.rebuildStrategy) return
+    const override = this.gateway.getStrategyOverride()
+    if (!override || override.name === this.strategy.name) return
+    this.strategy = this.rebuildStrategy(override)
+    console.log(`[access] strategy reloaded from disk → "${override.name}"`)
   }
 }

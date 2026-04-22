@@ -19,7 +19,12 @@ export class AccessModule {
 
   constructor(agentDir: string, adminIds: string[] = [], strategy: IAccessStrategy) {
     this.gateway = new AccessGateway(agentDir)
-    this.service = new AccessService(this.gateway, strategy, adminIds)
+    const rebuild = (ov: StrategyOverride) => AccessModule.buildStrategy({
+      accessStrategy: ov.name,
+      allowlist: ov.allowlist,
+      accessCode: ov.accessCode,
+    })
+    this.service = new AccessService(this.gateway, strategy, adminIds, rebuild)
   }
 
   /** Factory: create AccessModule from config. Persisted runtime override (if any) takes precedence. */
@@ -30,6 +35,11 @@ export class AccessModule {
       ? { accessStrategy: override.name, allowlist: override.allowlist, accessCode: override.accessCode }
       : config
     return new AccessModule(agentDir, adminIds, AccessModule.buildStrategy(effective))
+  }
+
+  /** Re-sync the in-memory strategy with access.json on disk. Call after external writes (S3 restore, auto-sync). */
+  reload(): void {
+    this.service.reload()
   }
 
   private static buildStrategy(config: IStrategyConfig): IAccessStrategy {
