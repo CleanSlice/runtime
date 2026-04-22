@@ -118,36 +118,51 @@ export class ClaudeRepository implements ILlmGateway {
 
     const AnthropicCtor = await getAnthropic()
 
-    // Build OAuth client pool from CLAUDE_CODE_OAUTH_TOKEN (comma-separated or single)
-    // Also supports legacy CLAUDE_CODE_OAUTH_TOKEN_2, _3... for backwards compat
-    const oauthTokens: string[] = []
-    const t0 = process.env.CLAUDE_CODE_OAUTH_TOKEN
-    if (t0) {
-      // Support comma-separated list: token1,token2,token3
-      oauthTokens.push(...t0.split(",").map(t => t.trim()).filter(Boolean))
-    }
-    for (let i = 2; i <= 10; i++) {
-      const t = process.env[`CLAUDE_CODE_OAUTH_TOKEN_${i}`]
-      if (t) oauthTokens.push(t.trim())
+    // Preferred: unified LLM_API_KEY / config.apiKey. Accepts a comma-separated
+    // list of credentials; each item is auto-classified by its prefix.
+    //   sk-ant-oat* → OAuth token (Claude Code header)
+    //   anything else → x-api-key
+    // Legacy: CLAUDE_CODE_OAUTH_TOKEN (comma-separated + _2.._10) +
+    // ANTHROPIC_API_KEY fallback — kept for pre-migration envs.
+    const primary = this.apiKey ?? process.env.LLM_API_KEY
+    const oauthClients: Anthropic[] = []
+    let apiKeyClient: Anthropic | undefined
+
+    const addKey = (raw: string) => {
+      const key = raw.trim()
+      if (!key) return
+      if (key.startsWith("sk-ant-oat")) {
+        oauthClients.push(new AnthropicCtor({
+          authToken: key,
+          defaultHeaders: { "anthropic-beta": "oauth-2025-04-20,claude-code-20250219" },
+        }))
+      } else if (!apiKeyClient) {
+        apiKeyClient = new AnthropicCtor({ apiKey: key })
+      }
     }
 
-    this.clients = oauthTokens.map(token => new AnthropicCtor({
-      authToken: token,
-      defaultHeaders: { "anthropic-beta": "oauth-2025-04-20,claude-code-20250219" },
-    }))
-
-    // API key as final fallback
-    const key = this.apiKey ?? process.env.ANTHROPIC_API_KEY
-    if (key) {
-      this.apiKeyClient = new AnthropicCtor({ apiKey: key })
+    if (primary) {
+      for (const k of primary.split(",")) addKey(k)
+    } else {
+      // Legacy env path
+      const t0 = process.env.CLAUDE_CODE_OAUTH_TOKEN
+      if (t0) for (const t of t0.split(",")) addKey(t)
+      for (let i = 2; i <= 10; i++) {
+        const t = process.env[`CLAUDE_CODE_OAUTH_TOKEN_${i}`]
+        if (t) addKey(t)
+      }
+      const k = process.env.ANTHROPIC_API_KEY
+      if (k) addKey(k)
     }
+
+    this.clients = oauthClients
+    this.apiKeyClient = apiKeyClient
 
     if (this.clients.length === 0 && this.apiKeyClient) {
       // Only API key — use it as primary
       this.clients = [this.apiKeyClient]
       this.apiKeyClient = undefined
     }
-
   }
 
   /** Get current active client */

@@ -39,13 +39,48 @@ const runtime = new AgentRuntime({
   init,
   agentDir: ".agent",
   llm: (() => {
+    // Canonical agent-facing contract:
+    //   LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODEL, LLM_API_KEY
+    // For Anthropic, LLM_API_KEY accepts comma-separated OAuth tokens and/or
+    // a mixed OAuth+apiKey list — each token is auto-classified by its
+    // "sk-ant-oat" prefix inside ClaudeRepository.
+    // Provider-specific env vars (ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, ...,
+    // CLAUDE_CODE_OAUTH_TOKEN) remain as legacy fallbacks.
     const provider = process.env.LLM_PROVIDER ?? "claude"
     const model = process.env.LLM_MODEL
+    const fallbackModel = process.env.LLM_FALLBACK_MODEL
+    const apiKey = process.env.LLM_API_KEY
     switch (provider) {
-      case "deepseek": return { provider: "deepseek" as const, model: model ?? "deepseek-chat" }
-      case "mistral": return { provider: "mistral" as const, model: model ?? "mistral-medium-latest" }
-      case "openrouter": return { provider: "openrouter" as const, model: model ?? "anthropic/claude-sonnet-4" }
-      default: return { provider: "claude" as const, model }
+      case "deepseek":
+        return {
+          provider: "deepseek" as const,
+          model: model ?? "deepseek-chat",
+          fallbackModel,
+          apiKey: apiKey ?? process.env.DEEPSEEK_API_KEY,
+        }
+      case "mistral":
+        return {
+          provider: "mistral" as const,
+          model: model ?? "mistral-medium-latest",
+          fallbackModel,
+          apiKey: apiKey ?? process.env.MISTRAL_API_KEY,
+        }
+      case "openrouter":
+        return {
+          provider: "openrouter" as const,
+          model: model ?? "anthropic/claude-sonnet-4",
+          fallbackModel,
+          apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
+        }
+      case "anthropic":
+      case "claude":
+      default:
+        return {
+          provider: "claude" as const,
+          model,
+          fallbackModel,
+          apiKey,
+        }
     }
   })(),
   channels: [

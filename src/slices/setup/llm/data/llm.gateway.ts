@@ -34,21 +34,21 @@ export class LlmGateway implements ILlmGateway {
         })
       case "deepseek":
         return new DeepSeekRepository({
-          apiKey: config.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "",
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? "",
           model: config.model ?? "deepseek-chat",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })
       case "mistral":
         return new MistralRepository({
-          apiKey: config.apiKey ?? process.env.MISTRAL_API_KEY ?? "",
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.MISTRAL_API_KEY ?? "",
           model: config.model ?? "mistral-medium-latest",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })
       case "openrouter":
         return new OpenRouterRepository({
-          apiKey: config.apiKey ?? process.env.OPENROUTER_API_KEY ?? "",
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "",
           model: config.model ?? "anthropic/claude-sonnet-4",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
