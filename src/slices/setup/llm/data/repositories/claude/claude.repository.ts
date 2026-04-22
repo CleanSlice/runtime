@@ -71,6 +71,12 @@ async function withRetry<T>(
       return { ok: true, value }
     } catch (err: unknown) {
       lastError = err
+      // Local JS errors (TypeError, ReferenceError, SyntaxError) are bugs, not network —
+      // no point retrying; surface them immediately so the real cause is visible in logs.
+      if (err instanceof TypeError || err instanceof ReferenceError || err instanceof SyntaxError) {
+        console.error(`[llm] ${label} non-retryable JS error:`, err)
+        throw err
+      }
       const status = (err as { status?: number })?.status
       if (status === 401 || status === 403) throw err
       // 400 = model not available or bad request — stop retrying, let caller try fallback
@@ -102,6 +108,7 @@ export class ClaudeRepository implements ILlmGateway {
   private apiKey: string | undefined
   private maxTokens: number
   private initialized = false
+  private initPromise?: Promise<void>
   // Circuit breaker: timestamp when primary was last marked overloaded (0 = healthy)
   private primaryOverloadedAt = 0
 
@@ -112,10 +119,23 @@ export class ClaudeRepository implements ILlmGateway {
     this.maxTokens = maxTokens ?? 16384
   }
 
+  /**
+   * Idempotent init guarded by a single promise so concurrent callers share one attempt.
+   * On failure, the promise is cleared and `initialized` stays false — the next call retries
+   * from scratch instead of racing with a half-finished state.
+   */
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) return
-    this.initialized = true
+    if (!this.initPromise) {
+      this.initPromise = this.doInitialize().catch(err => {
+        this.initPromise = undefined
+        throw err
+      })
+    }
+    await this.initPromise
+  }
 
+  private async doInitialize(): Promise<void> {
     const AnthropicCtor = await getAnthropic()
 
     // Preferred: unified LLM_API_KEY / config.apiKey. Accepts a comma-separated
@@ -155,6 +175,13 @@ export class ClaudeRepository implements ILlmGateway {
       if (k) addKey(k)
     }
 
+    if (oauthClients.length === 0 && !apiKeyClient) {
+      throw new Error(
+        "[llm] No Claude credentials configured. Set LLM_API_KEY (OAuth sk-ant-oat*, an API key, or a comma-separated mix); " +
+        "legacy CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY also accepted."
+      )
+    }
+
     this.clients = oauthClients
     this.apiKeyClient = apiKeyClient
 
@@ -163,11 +190,21 @@ export class ClaudeRepository implements ILlmGateway {
       this.clients = [this.apiKeyClient]
       this.apiKeyClient = undefined
     }
+
+    console.log(`[llm] claude initialized — oauth=${oauthClients.length}, apiKeyFallback=${apiKeyClient ? "yes" : "no"}`)
+    this.initialized = true
   }
 
-  /** Get current active client */
+  /** Get current active client. Throws if init never populated any clients. */
   private getClient(): Anthropic {
-    return this.clients[this.currentClientIndex] ?? this.clients[0]
+    const client = this.clients[this.currentClientIndex] ?? this.clients[0]
+    if (!client) {
+      throw new Error(
+        `[llm] no Claude client available (clients=${this.clients.length}, index=${this.currentClientIndex}). ` +
+        `ensureInitialized did not populate any credentials — check LLM_API_KEY.`
+      )
+    }
+    return client
   }
 
   /** Switch to next OAuth token or API key fallback. Returns true if switched. */
