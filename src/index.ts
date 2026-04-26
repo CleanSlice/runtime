@@ -15,13 +15,35 @@ process.on("unhandledRejection", (reason) => {
 
 
 
-// Validate env vars
-const requiredEnv = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_NAME", "TELEGRAM_BOT_ADMIN_IDS", "CLAUDE_CODE_OAUTH_TOKEN"]
-const optionalEnv = ["LLM_MODEL", "LLM_FALLBACK_MODEL", "SECRET_PROVIDER", "ELEVENLABS_API_KEY", "S3_BUCKET", "S3_PREFIX", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "ANTHROPIC_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT", "BRIDLE_URL"]
-const missingRequired = requiredEnv.filter(k => !process.env[k])
-const setOptional = optionalEnv.filter(k => process.env[k])
-if (setOptional.length) console.log(`[env] ok: ${setOptional.join(", ")}`)
-if (missingRequired.length) console.warn(`[env] ⚠ missing: ${missingRequired.join(", ")}`)
+// Validate env vars.
+// Canonical contract: LLM_API_KEY for LLM creds, BRIDLE_URL / TELEGRAM_BOT_* /
+// SLACK_* for channels. Legacy provider-specific keys (ANTHROPIC_API_KEY,
+// DEEPSEEK_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY, CLAUDE_CODE_OAUTH_TOKEN)
+// still work as `??` fallbacks deeper in the stack but should not be set by
+// new agents. Showing them in `[env] ok:` makes leftover values visible.
+const knownEnv = [
+  // LLM (canonical)
+  "LLM_PROVIDER", "LLM_MODEL", "LLM_FALLBACK_MODEL", "LLM_API_KEY",
+  // LLM (legacy — flag if present)
+  "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  // Channels
+  "BRIDLE_URL", "BRIDLE_API_KEY",
+  "TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_NAME", "TELEGRAM_BOT_ADMIN_IDS",
+  "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN",
+  // Storage / secrets
+  "SECRET_PROVIDER", "S3_BUCKET", "S3_PREFIX", "S3_ENDPOINT",
+  "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX",
+  // Misc
+  "ELEVENLABS_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT",
+]
+const setEnv = knownEnv.filter(k => process.env[k])
+if (setEnv.length) console.log(`[env] ok: ${setEnv.join(", ")}`)
+
+const hasChannel = !!(process.env.BRIDLE_URL || process.env.TELEGRAM_BOT_TOKEN || (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN))
+const hasLlmCred = !!process.env.LLM_API_KEY
+if (!hasChannel) console.warn("[env] ⚠ no channel configured (set BRIDLE_URL, TELEGRAM_BOT_TOKEN, or SLACK_BOT_TOKEN+SLACK_APP_TOKEN)")
+if (!hasLlmCred) console.warn("[env] ⚠ LLM_API_KEY not set")
 
 import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
