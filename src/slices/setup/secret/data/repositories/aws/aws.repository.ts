@@ -45,12 +45,23 @@ export class AwsSecretRepository implements ISecretGateway {
     const client = await this.getClient()
     const name = this.secretName(userId)
     const value = JSON.stringify(store)
+    const keyCount = Object.keys(store).length
     try {
       await client.send(new PutSecretValueCommand({ SecretId: name, SecretString: value }))
+      console.log(`[secrets] put ${name} (${keyCount} keys)`)
     } catch (err: unknown) {
       if ((err as { name?: string })?.name === "ResourceNotFoundException") {
-        await client.send(new CreateSecretCommand({ Name: name, SecretString: value }))
+        try {
+          await client.send(new CreateSecretCommand({ Name: name, SecretString: value }))
+          console.log(`[secrets] created ${name} (${keyCount} keys)`)
+        } catch (createErr: unknown) {
+          const e = createErr as { name?: string; message?: string }
+          console.error(`[secrets] create failed ${name}: ${e.name ?? ""} ${e.message ?? String(createErr)}`)
+          throw createErr
+        }
       } else {
+        const e = err as { name?: string; message?: string }
+        console.error(`[secrets] put failed ${name}: ${e.name ?? ""} ${e.message ?? String(err)}`)
         throw err
       }
     }

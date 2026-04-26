@@ -9,9 +9,12 @@ export class SecretModule {
     const provider = process.env.SECRET_PROVIDER ?? "file"
     if (provider === "aws") {
       const prefix = process.env.AWS_SECRET_PREFIX ?? "cleanslice/users"
+      const region = process.env.AWS_REGION ?? "us-east-1"
       this.gateway = new AwsSecretRepository(prefix)
+      console.log(`[secrets] using AWS Secrets Manager (region=${region}, prefix=${prefix})`)
     } else {
       this.gateway = new FileSecretRepository(agentDir)
+      console.log(`[secrets] using file store (${agentDir}/data/secrets/)`)
     }
   }
 
