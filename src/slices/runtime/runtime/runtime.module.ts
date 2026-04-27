@@ -150,10 +150,11 @@ export class AgentRuntime {
 
     // ── Optional: S3 backup ────────────────────────────────────────
 
+    const debounceMs = this.config.s3?.watcherDebounceMs
     if (config.s3) {
-      this.s3sync = new S3SyncService(config.s3, agentDir)
+      this.s3sync = new S3SyncService({ ...config.s3, watcherDebounceMs: debounceMs }, agentDir)
     } else if (process.env.S3_BUCKET) {
-      this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX }, agentDir)
+      this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX, watcherDebounceMs: debounceMs }, agentDir)
     }
   }
 
@@ -173,6 +174,7 @@ export class AgentRuntime {
     this.heartbeat.stop()
     await this.usage.flush()
     if (this.s3sync) {
+      this.s3sync.stopWatcher()
       this.s3sync.stopAutoSync()
       await this.s3sync.push()
     }
@@ -220,7 +222,9 @@ export class AgentRuntime {
     // AccessModule was constructed before the S3 pull (disk was empty / stale),
     // so its in-memory strategy may not match the just-pulled access.json.
     this.access.reload()
-    this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 60)
+    this.s3sync.startWatcher()
+    // Periodic full sweep is opt-in (0 = off); watcher handles changes in real time.
+    this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 0)
   }
 
   /** Load memory, skills, and start usage tracking. */

@@ -20,8 +20,10 @@
     "recentKeep": 20
   },
 
+  "_comment_s3": "Sync is event-driven (fs.watch + diff). syncIntervalSec is an optional periodic full-sweep safety net — set 0 to disable, or e.g. 21600 (6h) for paranoid backup.",
   "s3": {
-    "syncIntervalSec": 600
+    "syncIntervalSec": 0,
+    "watcherDebounceMs": 30000
   },
 
   "stopPhrases": [

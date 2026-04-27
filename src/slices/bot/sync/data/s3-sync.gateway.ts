@@ -1,12 +1,9 @@
 import type { ISyncGateway } from "../domain/sync.gateway"
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from "fs"
-import { join, relative } from "path"
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, watch, type FSWatcher } from "fs"
+import { join, relative, sep } from "path"
 
 // Lazy-loaded AWS SDK types
 type S3Client = import("@aws-sdk/client-s3").S3Client
-type GetObjectCommand = import("@aws-sdk/client-s3").GetObjectCommand
-type PutObjectCommand = import("@aws-sdk/client-s3").PutObjectCommand
-type ListObjectsV2Command = import("@aws-sdk/client-s3").ListObjectsV2Command
 
 let _s3Module: typeof import("@aws-sdk/client-s3") | undefined
 
@@ -24,17 +21,23 @@ export interface S3SyncConfig {
   accessKeyId?: string
   secretAccessKey?: string
   endpoint?: string    // e.g. "http://host.k3d.internal:9000" for local MinIO
+  watcherDebounceMs?: number
+}
+
+interface ManifestEntry {
+  mtimeMs: number
+  size: number
 }
 
 /**
  * S3SyncService — syncs the entire .agent/ directory to/from S3.
  *
- * S3 layout:  {prefix}/SOUL.md
- *             {prefix}/MEMORY.md
- *             {prefix}/data/memory.sqlite
- *             {prefix}/data/sessions/abc.jsonl
- *             {prefix}/skills/my-skill/SKILL.md
- *             etc.
+ * Sync model:
+ *  - Pull on startup (full restore)
+ *  - Event-driven push: fs.watch enqueues dirty paths, debounced flush
+ *    diffs against an in-memory manifest (mtime+size) and pushes only changes
+ *  - Optional periodic full sweep as safety net (disabled by default)
+ *  - Final diff push on shutdown
  */
 export class S3SyncService implements ISyncGateway {
   private s3: S3Client | undefined
@@ -44,6 +47,16 @@ export class S3SyncService implements ISyncGateway {
   private agentDir: string
   private timer?: ReturnType<typeof setInterval>
   private pushing = false
+
+  // Watcher state
+  private watcher?: FSWatcher
+  private dirty = new Set<string>()
+  private flushTimer?: ReturnType<typeof setTimeout>
+  private debounceMs: number
+  private flushing = false
+
+  // Differential push manifest: relPath -> {mtimeMs, size}
+  private manifest = new Map<string, ManifestEntry>()
 
   // Files/dirs to skip — binary blobs that change too often or shouldn't be synced
   private static readonly SKIP_PATTERNS = [
@@ -60,6 +73,7 @@ export class S3SyncService implements ISyncGateway {
     this.prefix = config.prefix?.replace(/\/$/, "") ?? "agent-data"
     this.agentDir = agentDir
     this.s3Config = config
+    this.debounceMs = config.watcherDebounceMs ?? 30_000
 
     mkdirSync(agentDir, { recursive: true })
   }
@@ -130,12 +144,17 @@ export class S3SyncService implements ISyncGateway {
 
   // ── Local file walker ─────────────────────────────────────────────────────────
 
+  private isSkipped(rel: string): boolean {
+    const norm = rel.split(sep).join("/")
+    return S3SyncService.SKIP_PATTERNS.some(p => p.test(norm))
+  }
+
   private walkDir(dir: string, result: string[] = []): string[] {
     if (!existsSync(dir)) return result
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry)
       const rel = relative(this.agentDir, full)
-      if (S3SyncService.SKIP_PATTERNS.some(p => p.test(rel))) continue
+      if (this.isSkipped(rel)) continue
       if (statSync(full).isDirectory()) {
         this.walkDir(full, result)
       } else {
@@ -145,11 +164,33 @@ export class S3SyncService implements ISyncGateway {
     return result
   }
 
+  // ── Differential push core ────────────────────────────────────────────────────
+
+  /** Push a single file if mtime/size differs from manifest. Returns true if pushed. */
+  private async pushIfChanged(relPath: string): Promise<boolean> {
+    const localPath = join(this.agentDir, relPath)
+    if (!existsSync(localPath)) {
+      // File deleted locally — drop from manifest. (We don't delete from S3 yet.)
+      this.manifest.delete(relPath)
+      return false
+    }
+    const stat = statSync(localPath)
+    if (!stat.isFile()) return false
+    const prev = this.manifest.get(relPath)
+    if (prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size) {
+      return false
+    }
+    const body = readFileSync(localPath)
+    await this.s3Put(this.s3Key(relPath), body)
+    this.manifest.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size })
+    return true
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────────
 
   /**
-   * Pull entire .agent/ from S3 on startup.
-   * Only downloads files that don't exist locally (init) or exist in S3.
+   * Pull entire .agent/ from S3 on startup. Populates the manifest with the
+   * mtime/size of just-downloaded files so they aren't immediately re-pushed.
    */
   async pull(): Promise<void> {
     let count = 0
@@ -164,16 +205,27 @@ export class S3SyncService implements ISyncGateway {
       const body = await this.s3Get(key)
       if (body) {
         writeFileSync(localPath, body)
+        const stat = statSync(localPath)
+        this.manifest.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size })
         count++
       }
+    }
+
+    // Seed manifest with any local-only files that already match S3 (so we
+    // don't re-push them on first sweep). We can't know S3 mtime cheaply, so
+    // just record their current stat — diff logic kicks in on the next change.
+    for (const rel of this.walkDir(this.agentDir)) {
+      if (this.manifest.has(rel)) continue
+      const stat = statSync(join(this.agentDir, rel))
+      this.manifest.set(rel, { mtimeMs: stat.mtimeMs, size: stat.size })
     }
 
     console.log(`[s3] pulled ${count} files`)
   }
 
   /**
-   * Push entire .agent/ to S3.
-   * Called periodically + on shutdown.
+   * Full sweep: walk the directory and push files whose mtime/size changed
+   * since the last successful push. Used as periodic safety net and on shutdown.
    */
   async push(): Promise<void> {
     if (this.pushing) {
@@ -181,63 +233,94 @@ export class S3SyncService implements ISyncGateway {
       return
     }
     this.pushing = true
-    let count = 0
+    let pushed = 0
 
     try {
       const files = this.walkDir(this.agentDir)
       for (const relPath of files) {
         try {
-          const body = readFileSync(join(this.agentDir, relPath))
-          await this.s3Put(this.s3Key(relPath), body)
-          count++
+          if (await this.pushIfChanged(relPath)) pushed++
         } catch (err) {
           console.error(`[s3] failed to push ${relPath}:`, err)
         }
       }
-      console.log(`[s3] pushed ${count} files`)
+      if (pushed > 0) console.log(`[s3] sweep pushed ${pushed} changed files`)
     } finally {
       this.pushing = false
     }
   }
 
-  /**
-   * Push a single session file immediately after it's written.
-   */
-  async pushSession(sessionId: string): Promise<void> {
-    const relPath = `data/sessions/${sessionId}.jsonl`
-    const localPath = join(this.agentDir, relPath)
-    if (!existsSync(localPath)) return
+  /** Start fs.watch-based event-driven sync. */
+  startWatcher(): void {
+    if (this.watcher) return
     try {
-      await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
+      this.watcher = watch(this.agentDir, { recursive: true }, (_event, filename) => {
+        if (!filename) return
+        const rel = filename.toString()
+        if (this.isSkipped(rel)) return
+        this.dirty.add(rel)
+        this.scheduleFlush()
+      })
+      console.log(`[s3] watcher started, debounce ${this.debounceMs}ms`)
     } catch (err) {
-      console.error(`[s3] failed to push session ${sessionId}:`, err)
+      console.error("[s3] failed to start watcher:", err)
+    }
+  }
+
+  stopWatcher(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = undefined
+    }
+    if (this.watcher) {
+      this.watcher.close()
+      this.watcher = undefined
+    }
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer) return
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined
+      this.flushDirty().catch(err => console.error("[s3] flush error:", err))
+    }, this.debounceMs)
+  }
+
+  private async flushDirty(): Promise<void> {
+    if (this.flushing || this.dirty.size === 0) return
+    this.flushing = true
+    const batch = Array.from(this.dirty)
+    this.dirty.clear()
+
+    let pushed = 0
+    try {
+      for (const relPath of batch) {
+        try {
+          if (await this.pushIfChanged(relPath)) pushed++
+        } catch (err) {
+          console.error(`[s3] failed to push ${relPath}:`, err)
+          this.dirty.add(relPath) // retry next flush
+        }
+      }
+      if (pushed > 0) console.log(`[s3] flushed ${pushed} changed files`)
+    } finally {
+      this.flushing = false
+      // If new dirty paths arrived during the flush, schedule another round.
+      if (this.dirty.size > 0) this.scheduleFlush()
     }
   }
 
   /**
-   * Push access.json immediately after it's written.
+   * Optional periodic full sweep as safety net. Pass intervalSec <= 0 to disable.
+   * The sweep is differential — unchanged files are skipped.
    */
-  async pushAccess(): Promise<void> {
-    const relPath = `data/access.json`
-    const localPath = join(this.agentDir, relPath)
-    if (!existsSync(localPath)) return
-    try {
-      await this.s3Put(this.s3Key(relPath), readFileSync(localPath))
-    } catch (err) {
-      console.error(`[s3] failed to push access:`, err)
-    }
-  }
-
-  /**
-   * Start background periodic sync (push only).
-   */
-  startAutoSync(intervalSec = 60): void {
+  startAutoSync(intervalSec = 0): void {
     if (this.timer) return
-    const safeInterval = (Number.isFinite(intervalSec) && intervalSec > 0) ? intervalSec : 60
+    if (!Number.isFinite(intervalSec) || intervalSec <= 0) return
     this.timer = setInterval(() => {
       this.push().catch(err => console.error("[s3] auto-sync error:", err))
-    }, safeInterval * 1000)
-    console.log(`[s3] auto-sync every ${safeInterval}s`)
+    }, intervalSec * 1000)
+    console.log(`[s3] periodic full sweep every ${intervalSec}s (safety net)`)
   }
 
   stopAutoSync(): void {

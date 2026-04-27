@@ -23,7 +23,13 @@ export interface IAgentConfig {
   }
 
   s3: {
+    /**
+     * Optional periodic full-sweep backup. 0 disables it.
+     * Sync is event-driven by default (fs.watch + diff).
+     */
     syncIntervalSec: number
+    /** Debounce window for fs.watch flushes, in ms. Default: 30000. */
+    watcherDebounceMs?: number
   }
 
   tools: {
@@ -83,7 +89,8 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
   },
 
   s3: {
-    syncIntervalSec: 60,
+    syncIntervalSec: 0,
+    watcherDebounceMs: 30_000,
   },
 
   tools: {
