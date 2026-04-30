@@ -226,11 +226,12 @@ export class S3SyncService implements ISyncGateway {
   /**
    * Full sweep: walk the directory and push files whose mtime/size changed
    * since the last successful push. Used as periodic safety net and on shutdown.
+   * Returns the number of files actually pushed in this sweep.
    */
-  async push(): Promise<void> {
+  async push(): Promise<number> {
     if (this.pushing) {
       console.log("[s3] push already in progress, skipping")
-      return
+      return 0
     }
     this.pushing = true
     let pushed = 0
@@ -248,6 +249,7 @@ export class S3SyncService implements ISyncGateway {
     } finally {
       this.pushing = false
     }
+    return pushed
   }
 
   /** Start fs.watch-based event-driven sync. */

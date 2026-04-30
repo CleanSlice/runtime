@@ -156,6 +156,13 @@ export class AgentRuntime {
     } else if (process.env.S3_BUCKET) {
       this.s3sync = new S3SyncService({ bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX, watcherDebounceMs: debounceMs }, agentDir)
     }
+
+    // Allow the bridle hub to trigger an on-demand push of agent files to S3
+    // (e.g. admin clicks "Sync" in the file editor and wants to see fresh state).
+    if (this.s3sync) {
+      const s3sync = this.s3sync
+      this.channel.onBridleSync(async () => ({ pushed: await s3sync.push() }))
+    }
   }
 
   /** Boot the agent: restore state, connect channels, start background jobs. */

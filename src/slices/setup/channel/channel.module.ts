@@ -2,6 +2,9 @@ import type { Message, MessagePart } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
+import type { BridleSyncHandler } from "./data/repositories/bridle/bridle.repository"
+
+export type { BridleSyncHandler }
 
 export class ChannelModule {
   private service: ChannelService
@@ -10,6 +13,17 @@ export class ChannelModule {
     this.service = new ChannelService()
     for (const cfg of configs) {
       this.service.add(new ChannelGateway(cfg))
+    }
+  }
+
+  /**
+   * Register a handler that runs when the bridle hub asks the agent to sync
+   * its files to S3. No-op when the bridle channel isn't configured.
+   */
+  onBridleSync(handler: BridleSyncHandler): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.onSync(handler)
     }
   }
 

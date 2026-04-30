@@ -47,6 +47,9 @@ function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
   })
 }
 
+/** Callback invoked when the hub asks the agent to push its files to S3. */
+export type BridleSyncHandler = () => Promise<{ pushed: number }>
+
 /**
  * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
  * The hub relays messages between browser users and this agent.
@@ -61,11 +64,21 @@ export class BridleRepository implements IChannelGateway {
   readonly name = "bridle"
 
   private handler?: (msg: Message) => Promise<void>
+  private syncHandler?: BridleSyncHandler
   private socket: Socket | null = null
   private apiUrl: string
 
   constructor(apiUrl: string) {
     this.apiUrl = apiUrl
+  }
+
+  /**
+   * Register a handler to run when the hub sends a `sync` command.
+   * The handler should push the agent's local files to S3 and return the
+   * number of files actually pushed.
+   */
+  onSync(handler: BridleSyncHandler): void {
+    this.syncHandler = handler
   }
 
   async start(): Promise<void> {
@@ -188,6 +201,30 @@ export class BridleRepository implements IChannelGateway {
         ...(files ? { files } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => console.error("[bridle] handler error:", err))
+    })
+
+    this.socket.on("sync", async (data: unknown) => {
+      const msg = data as { requestId?: string }
+      const requestId = msg?.requestId
+      if (!requestId) return
+      if (!this.syncHandler) {
+        this.socket?.emit("sync_done", {
+          requestId,
+          pushed: 0,
+          error: "Sync handler not registered on agent",
+        })
+        return
+      }
+      try {
+        const { pushed } = await this.syncHandler()
+        this.socket?.emit("sync_done", { requestId, pushed })
+      } catch (err) {
+        this.socket?.emit("sync_done", {
+          requestId,
+          pushed: 0,
+          error: (err as Error)?.message ?? "Unknown sync error",
+        })
+      }
     })
 
     this.socket.on("connect_error", (err) => {
