@@ -183,7 +183,12 @@ export class AgentRuntime {
     if (this.s3sync) {
       this.s3sync.stopWatcher()
       this.s3sync.stopAutoSync()
-      await this.s3sync.push()
+      try {
+        await this.s3sync.push()
+      } catch (err) {
+        // S3 may be temporarily unreachable on shutdown — don't block exit.
+        console.warn(`[s3] final push on shutdown failed: ${(err as Error).message}`)
+      }
     }
   }
 
@@ -222,10 +227,25 @@ export class AgentRuntime {
 
   // ── Private lifecycle steps ────────────────────────────────────
 
-  /** Pull persisted state from S3 before loading anything. */
+  /**
+   * Pull persisted state from S3 before loading anything.
+   *
+   * S3 reachability is best-effort: if the bucket / endpoint is misconfigured
+   * or temporarily down, we log a warning and start the agent anyway with
+   * whatever is on disk (init.gateway already seeded `.agent/` from
+   * `.agent.example` on first run, so the agent has a coherent local state).
+   * Once S3 comes back, the watcher will push subsequent changes.
+   */
   private async restoreState(): Promise<void> {
     if (!this.s3sync) return
-    await this.s3sync.pull()
+    try {
+      await this.s3sync.pull()
+    } catch (err) {
+      console.warn(
+        `[s3] pull failed on startup — continuing with local state. ` +
+        `Subsequent changes will be pushed when S3 is reachable. Error: ${(err as Error).message}`,
+      )
+    }
     // AccessModule was constructed before the S3 pull (disk was empty / stale),
     // so its in-memory strategy may not match the just-pulled access.json.
     this.access.reload()
