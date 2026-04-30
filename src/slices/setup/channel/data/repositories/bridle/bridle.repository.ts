@@ -110,15 +110,18 @@ export class BridleRepository implements IChannelGateway {
     const messageId = randomUUID()
 
     if (!this.socket?.connected) {
+      console.warn("[bridle] streamSend: socket not connected, falling back to non-streaming")
       await streamer(() => {})
       return
     }
 
+    console.log(`[bridle] stream start (clientId=${to} messageId=${messageId.slice(0, 8)})`)
     this.socket.emit("typing", { clientId: to, ts: Date.now() })
 
     let lastSent = ""
     let pendingText = ""
     let sending = false
+    let chunksEmitted = 0
 
     const flush = () => {
       if (sending || pendingText === lastSent) return
@@ -132,6 +135,7 @@ export class BridleRepository implements IChannelGateway {
         ts: Date.now(),
       })
       lastSent = toSend
+      chunksEmitted++
       sending = false
     }
 
@@ -151,6 +155,10 @@ export class BridleRepository implements IChannelGateway {
         messageId,
         ts: Date.now(),
       })
+      console.log(
+        `[bridle] stream end (messageId=${messageId.slice(0, 8)}, ` +
+        `chunks=${chunksEmitted}, length=${finalText.length})`,
+      )
     }
   }
 

@@ -188,7 +188,14 @@ export class LoopService {
 
   private async callLlm(ctx: ILoopContext) {
     const { channel, isInternal, systemPrompt, history, tools } = ctx
-    const canStream = canStreamOnChannel(channel, isInternal) && this.deps.llm.canStream()
+    const channelOk = canStreamOnChannel(channel, isInternal)
+    const llmOk = this.deps.llm.canStream()
+    const canStream = channelOk && llmOk
+    const tid = ctx.task.id.slice(0, 6)
+    console.log(
+      `[${tid}] llm call: channel=${channel} internal=${isInternal} ` +
+      `streamingChannel=${channelOk} llmStreams=${llmOk} → ${canStream ? "stream" : "complete"}`,
+    )
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       await ctx.streamSend(channel, ctx.from, async (onChunk) => {
