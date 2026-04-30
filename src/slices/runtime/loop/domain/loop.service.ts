@@ -19,6 +19,16 @@ interface LoopServiceDeps {
   tools: Tool[]
 }
 
+// Channels that support live token-by-token streaming. The channel repository
+// must implement `streamSend` (telegram edits the message; bridle emits stream
+// events to the browser). Internal/cron/heartbeat traffic is excluded — there's
+// no UI to update.
+const STREAMING_CHANNELS = new Set(["telegram", "bridle"])
+
+function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
+  return !isInternal && STREAMING_CHANNELS.has(channel)
+}
+
 export class LoopService {
   private config: ILoopConfig
 
@@ -178,7 +188,7 @@ export class LoopService {
 
   private async callLlm(ctx: ILoopContext) {
     const { channel, isInternal, systemPrompt, history, tools } = ctx
-    const canStream = channel === "telegram" && !isInternal && this.deps.llm.canStream()
+    const canStream = canStreamOnChannel(channel, isInternal) && this.deps.llm.canStream()
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       await ctx.streamSend(channel, ctx.from, async (onChunk) => {
@@ -281,7 +291,7 @@ export class LoopService {
     await this.deps.session.append(ctx.sessionId, assistantEvent)
 
     // If we streamed — message already sent via streamSend, skip re-send
-    const wasStreamed = ctx.channel === "telegram" && !ctx.isInternal && this.deps.llm.canStream()
+    const wasStreamed = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()
 
     if (!wasStreamed) {
       if (ctx.channel === "telegram" && this.deps.voice.isEnabled(ctx.from)) {
