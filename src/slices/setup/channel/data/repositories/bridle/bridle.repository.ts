@@ -51,6 +51,30 @@ function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
 export type BridleSyncHandler = () => Promise<{ pushed: number }>
 
 /**
+ * Snapshot of an LLM round-trip for the admin debug panel. Sent over the
+ * "debug" wire event; the hub only relays it to admin clients.
+ */
+export interface IBridleDebugPayload {
+  messageId?: string
+  model: string
+  provider: string
+  systemPrompt: string
+  history: unknown[]
+  response: {
+    text: string
+    toolCalls?: Array<{ name: string; params: unknown }>
+    stopReason?: string
+  }
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    credentialId?: string
+  }
+  latencyMs: number
+}
+
+/**
  * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
  * The hub relays messages between browser users and this agent.
  *
@@ -99,6 +123,20 @@ export class BridleRepository implements IChannelGateway {
       parts: wireParts,
       messageId: randomUUID(),
       ts: Date.now(),
+    })
+  }
+
+  /**
+   * Best-effort debug emission. Silent no-op if the socket is offline — debug
+   * traces are always disposable; we never want to block the chat path.
+   */
+  sendDebug(to: string, payload: IBridleDebugPayload): void {
+    if (!this.socket?.connected) return
+    this.socket.emit("debug", {
+      type: "debug",
+      clientId: to,
+      ts: Date.now(),
+      ...payload,
     })
   }
 

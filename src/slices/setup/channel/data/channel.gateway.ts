@@ -2,7 +2,7 @@ import type { IChannelGateway } from "../domain/channel.gateway"
 import type { ChannelConfig, Message, MessagePart } from "../domain/channel.types"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
-import { BridleRepository, type BridleSyncHandler } from "./repositories/bridle/bridle.repository"
+import { BridleRepository, type BridleSyncHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
@@ -53,6 +53,13 @@ export class ChannelGateway implements IChannelGateway {
   onSync(handler: BridleSyncHandler): void {
     if (this.repository instanceof BridleRepository) {
       this.repository.onSync(handler)
+    }
+  }
+
+  /** Emit a debug snapshot — only effective when this is a bridle channel. */
+  sendDebug(to: string, payload: IBridleDebugPayload): void {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.sendDebug(to, payload)
     }
   }
 }

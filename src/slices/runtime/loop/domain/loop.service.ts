@@ -29,6 +29,10 @@ function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
 }
 
+function isDebugEnabled(): boolean {
+  return process.env.BRIDLE_DEBUG === "true" || process.env.NODE_ENV === "development"
+}
+
 export class LoopService {
   private config: ILoopConfig
 
@@ -66,9 +70,11 @@ export class LoopService {
       }
 
       let response
+      const llmStartMs = Date.now()
       try {
         response = await this.callLlm(ctx)
         if (response.usage) this.deps.usage.add(response.usage)
+        this.maybeEmitDebug(ctx, response, Date.now() - llmStartMs)
       } catch (err: unknown) {
         const status = (err as { status?: number })?.status
         const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
@@ -281,6 +287,36 @@ export class LoopService {
     }
 
     return iterationHadError
+  }
+
+  private maybeEmitDebug(
+    ctx: ILoopContext,
+    response: import("../../../setup/llm/domain/llm.types").ModelResponse,
+    latencyMs: number,
+  ): void {
+    if (!ctx.sendDebug) return
+    if (ctx.channel !== "bridle") return
+    if (!isDebugEnabled()) return
+
+    try {
+      const llmCfg = ctx.agentConfig.llm as { provider?: string; model?: string } | undefined
+      ctx.sendDebug({
+        model: llmCfg?.model ?? "unknown",
+        provider: llmCfg?.provider ?? "unknown",
+        systemPrompt: ctx.systemPrompt,
+        history: ctx.history,
+        response: {
+          text: response.text ?? "",
+          toolCalls: response.toolCalls,
+          stopReason: response.stopReason,
+        },
+        usage: response.usage,
+        latencyMs,
+      })
+    } catch (err) {
+      // Debug must never break the chat path.
+      console.warn("[loop] failed to emit debug snapshot:", err)
+    }
   }
 
   private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number): Promise<void> {

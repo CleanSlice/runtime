@@ -2,9 +2,9 @@ import type { Message, MessagePart } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
-import type { BridleSyncHandler } from "./data/repositories/bridle/bridle.repository"
+import type { BridleSyncHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
 
-export type { BridleSyncHandler }
+export type { BridleSyncHandler, IBridleDebugPayload }
 
 export class ChannelModule {
   private service: ChannelService
@@ -24,6 +24,17 @@ export class ChannelModule {
     const bridle = this.service.get("bridle")
     if (bridle instanceof ChannelGateway) {
       bridle.onSync(handler)
+    }
+  }
+
+  /**
+   * Emit a debug snapshot to the bridle hub. No-op when bridle isn't
+   * configured. The hub fans this out only to admin browser clients.
+   */
+  sendBridleDebug(to: string, payload: IBridleDebugPayload): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.sendDebug(to, payload)
     }
   }
 
