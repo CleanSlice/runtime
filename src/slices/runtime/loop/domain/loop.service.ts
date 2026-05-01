@@ -299,10 +299,10 @@ export class LoopService {
     if (!isDebugEnabled()) return
 
     try {
-      const llmCfg = ctx.agentConfig.llm as { provider?: string; model?: string } | undefined
+      const { provider, model } = this.deps.llm.describe()
       ctx.sendDebug({
-        model: llmCfg?.model ?? "unknown",
-        provider: llmCfg?.provider ?? "unknown",
+        model,
+        provider,
         systemPrompt: ctx.systemPrompt,
         history: ctx.history,
         response: {

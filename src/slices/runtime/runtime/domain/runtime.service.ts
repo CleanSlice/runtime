@@ -50,6 +50,15 @@ export class RuntimeService {
       }
     }
 
+    // Bridle debug snapshots target the same browser client that sent the
+    // user message. Non-bridle channels skip this — the channel module
+    // no-ops if the channel isn't bridle anyway, but we avoid the call.
+    const sendDebug = msg.channel === "bridle"
+      ? (payload: import("../../../setup/channel").IBridleDebugPayload) => {
+          this.deps.channel.sendBridleDebug(msg.from, payload)
+        }
+      : undefined
+
     this.deps.tasks.start(sessionId, taskLabel, async (task: Task) => {
       try {
         const tid = task.id.slice(0, 6)
@@ -85,6 +94,7 @@ export class RuntimeService {
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
           access: this.deps.access,
           isAdmin,
+          sendDebug,
         })
 
         this.deps.session.touch(sessionId)

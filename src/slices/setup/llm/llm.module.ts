@@ -9,9 +9,22 @@ export { LlmConfig }
 
 export class LlmModule {
   private service: LlmService
+  private readonly config: LlmConfig
 
   constructor(config: LlmConfig) {
+    this.config = config
     this.service = new LlmService(new LlmGateway(config))
+  }
+
+  /**
+   * Provider + model identifiers used to dispatch the current LLM. Useful
+   * for telemetry / debug panels — not for routing logic.
+   */
+  describe(): { provider: string; model: string } {
+    return {
+      provider: this.config.provider,
+      model: ("model" in this.config && this.config.model) || "default",
+    }
   }
 
   complete(systemPrompt: string, history: Event[], tools: Tool[]): Promise<ModelResponse> {
