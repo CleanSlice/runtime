@@ -5,6 +5,7 @@ import { S3SyncService, type S3SyncConfig } from "../../bot/sync/s3-sync.service
 import { ChannelModule } from "../../setup/channel/channel.module"
 import { SessionModule } from "../../agent/session/session.module"
 import { AgentModule } from "../../agent/agent/agent.module"
+import { isEmptyMessage, EMPTY_MESSAGE_RESPONSE } from "../../agent/agent/domain/agent.service"
 import { MemoryModule } from "../../agent/memory/memory.module"
 import { CronModule } from "../../agent/cron/cron.module"
 import { HeartbeatModule } from "../../agent/heartbeat/heartbeat.module"
@@ -199,8 +200,8 @@ export class AgentRuntime {
    * Flow: validate → route (bot) → execute (runtime service)
    */
   async handleMessage(msg: Message): Promise<void> {
-    if (!msg.text?.trim()) {
-      if (msg.channel !== "internal") await this.channel.send(msg.channel, msg.from, "What can I help you with?")
+    if (isEmptyMessage(msg.text ?? "")) {
+      if (msg.channel !== "internal") await this.channel.send(msg.channel, msg.from, EMPTY_MESSAGE_RESPONSE)
       return
     }
 

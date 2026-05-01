@@ -8,6 +8,14 @@ export interface BuildPromptOpts {
   secretKeys?: string[]
   dailyMemory?: string
   skills?: SkillSummary[]
+  isAdmin?: boolean
+}
+
+const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
+
+function stripAdminBlocks(text: string | undefined): string | undefined {
+  if (!text) return text
+  return text.replace(ADMIN_BLOCK_RE, "").replace(/\n{3,}/g, "\n\n").trim()
 }
 
 /**
@@ -33,11 +41,19 @@ export class AgentService {
 
   buildSystemPrompt(config: AgentConfig, opts?: BuildPromptOpts): string {
     const parts: string[] = []
-    if (config.soul)      parts.push(`# Soul\n\n${config.soul}`)
+    const isAdmin = opts?.isAdmin ?? false
+    const gate = (text: string | undefined) => isAdmin ? text : stripAdminBlocks(text)
+
+    const soul = gate(config.soul)
+    const agents = gate(config.agents)
+    const user = gate(config.user)
+    const memory = gate(config.memory)
+
+    if (soul)              parts.push(`# Soul\n\n${soul}`)
     if (opts?.toolingPrompt) parts.push(opts.toolingPrompt)
-    if (config.agents)    parts.push(`# Agent Instructions\n\n${config.agents}`)
-    if (config.user)      parts.push(`# User Context\n\n${config.user}`)
-    if (config.memory)    parts.push(`# Memory\n\n${config.memory}`)
+    if (agents)            parts.push(`# Agent Instructions\n\n${agents}`)
+    if (user)              parts.push(`# User Context\n\n${user}`)
+    if (memory)            parts.push(`# Memory\n\n${memory}`)
 
     if (opts?.dailyMemory) {
       parts.push(`## Recent Notes\n\n${opts.dailyMemory}`)
@@ -73,20 +89,10 @@ export class AgentService {
       )
     }
 
-    parts.push(`# Context Recall Rules
-
-When the user says "I sent you earlier", "see above", "you already know", "I gave you that" — DO NOT ask them to repeat.
-Instead:
-1. Search [ARCHIVED CONTEXT] blocks in the conversation history for the relevant value
-2. Check memory/secrets if applicable
-3. Only ask once, specifically, if the value is truly not found anywhere: "Could not find <X>, please send it again"
-
-NEVER say "you mentioned earlier but I don't have access to that" if there's an [ARCHIVED CONTEXT] block — search it first.`)
-
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[] }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -95,6 +101,13 @@ NEVER say "you mentioned earlier but I don't have access to that" if there's an 
       if (userContext?.trim()) config.user = userContext
     }
 
-    return this.buildSystemPrompt(config, { agentDir, toolingPrompt: opts?.toolingPrompt, secretKeys: opts?.secretKeys, dailyMemory: opts?.dailyMemory, skills: opts?.skills })
+    return this.buildSystemPrompt(config, {
+      agentDir,
+      toolingPrompt: opts?.toolingPrompt,
+      secretKeys: opts?.secretKeys,
+      dailyMemory: opts?.dailyMemory,
+      skills: opts?.skills,
+      isAdmin: opts?.isAdmin,
+    })
   }
 }

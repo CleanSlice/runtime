@@ -76,7 +76,7 @@ export class RuntimeService {
 
         const history = await this.buildHistory(msg, sessionId, task.id)
         const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools)
-        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt)
+        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin)
 
         await this.deps.loop.service.run({
           task,
