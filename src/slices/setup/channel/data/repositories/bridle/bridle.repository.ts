@@ -91,6 +91,12 @@ export class BridleRepository implements IChannelGateway {
   private syncHandler?: BridleSyncHandler
   private socket: Socket | null = null
   private apiUrl: string
+  /**
+   * Server-pushed debug flag. Updated via "debug_set" WS event from the
+   * hub. Defaults to false so a fresh agent doesn't leak prompts before
+   * the hub has had a chance to rehydrate the value from DB.
+   */
+  private debugEnabled = false
 
   constructor(apiUrl: string) {
     this.apiUrl = apiUrl
@@ -138,6 +144,11 @@ export class BridleRepository implements IChannelGateway {
       ts: Date.now(),
       ...payload,
     })
+  }
+
+  /** Whether the hub has told us debug is on for this bot. */
+  isDebugEnabled(): boolean {
+    return this.debugEnabled
   }
 
   onMessage(handler: (msg: Message) => Promise<void>): void {
@@ -247,6 +258,15 @@ export class BridleRepository implements IChannelGateway {
         ...(files ? { files } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => console.error("[bridle] handler error:", err))
+    })
+
+    this.socket.on("debug_set", (data: unknown) => {
+      const msg = data as { enabled?: boolean }
+      const next = !!msg?.enabled
+      if (this.debugEnabled !== next) {
+        console.log(`[bridle] debug ${next ? "enabled" : "disabled"} by hub`)
+      }
+      this.debugEnabled = next
     })
 
     this.socket.on("sync", async (data: unknown) => {

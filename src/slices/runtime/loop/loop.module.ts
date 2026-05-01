@@ -5,6 +5,7 @@ import type { SessionModule } from "../../agent/session/session.module"
 import type { ActivityService } from "../../bot/activity/domain/activity.service"
 import type { UsageModule } from "../../bot/usage/usage.module"
 import type { VoiceModule } from "../../bot/voice/voice.module"
+import type { ChannelModule } from "../../setup/channel/channel.module"
 import type { Tool } from "../../agent/tool"
 
 export { LoopService }
@@ -16,6 +17,7 @@ interface LoopModuleDeps {
   activity: ActivityService
   usage: UsageModule
   voice: VoiceModule
+  channel: ChannelModule
   tools: Tool[]
 }
 

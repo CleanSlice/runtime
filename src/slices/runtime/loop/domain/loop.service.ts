@@ -4,6 +4,7 @@ import type { SessionModule } from "../../../agent/session/session.module"
 import type { ActivityService } from "../../../bot/activity/domain/activity.service"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { VoiceModule } from "../../../bot/voice/voice.module"
+import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
 import type { ILoopContext, ILoopConfig, ILoopResult } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
@@ -16,6 +17,7 @@ interface LoopServiceDeps {
   activity: ActivityService
   usage: UsageModule
   voice: VoiceModule
+  channel: ChannelModule
   tools: Tool[]
 }
 
@@ -29,8 +31,13 @@ function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
 }
 
-function isDebugEnabled(): boolean {
-  return process.env.BRIDLE_DEBUG === "true" || process.env.NODE_ENV === "development"
+function isDebugEnabled(deps: LoopServiceDeps): boolean {
+  // Order: explicit env override > NODE_ENV=development > runtime hub-pushed flag.
+  // Env is checked first so a developer running locally can force debug on
+  // without depending on the API/hub round-trip.
+  if (process.env.BRIDLE_DEBUG === "true") return true
+  if (process.env.NODE_ENV === "development") return true
+  return deps.channel.isBridleDebugEnabled()
 }
 
 export class LoopService {
@@ -296,7 +303,7 @@ export class LoopService {
   ): void {
     if (!ctx.sendDebug) return
     if (ctx.channel !== "bridle") return
-    if (!isDebugEnabled()) return
+    if (!isDebugEnabled(this.deps)) return
 
     try {
       const { provider, model } = this.deps.llm.describe()

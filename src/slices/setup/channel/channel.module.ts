@@ -38,6 +38,15 @@ export class ChannelModule {
     }
   }
 
+  /**
+   * Whether the hub has pushed debug=true to this agent. Drives the loop's
+   * emission gate alongside the BRIDLE_DEBUG env override.
+   */
+  isBridleDebugEnabled(): boolean {
+    const bridle = this.service.get("bridle")
+    return bridle instanceof ChannelGateway ? bridle.isDebugEnabled() : false
+  }
+
   onMessage(handler: (msg: Message) => Promise<void>): void {
     this.service.onMessage(handler)
   }

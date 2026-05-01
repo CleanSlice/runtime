@@ -62,4 +62,11 @@ export class ChannelGateway implements IChannelGateway {
       this.repository.sendDebug(to, payload)
     }
   }
+
+  /** Hub-pushed debug flag — false unless this is a bridle channel and hub set it. */
+  isDebugEnabled(): boolean {
+    return this.repository instanceof BridleRepository
+      ? this.repository.isDebugEnabled()
+      : false
+  }
 }

@@ -129,7 +129,7 @@ export class AgentRuntime {
 
     // LLM ↔ tools execution loop
     const loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, tools },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools },
       { maxIterations: this.config.maxIterations },
     )
 
