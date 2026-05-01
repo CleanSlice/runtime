@@ -1,6 +1,16 @@
 import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 
+const DAILY_NOISE_RE = /^\s*(HEARTBEAT_OK|HEARTBEAT_FAIL.*|\[heartbeat\].*)\s*$/i
+
+function stripDailyNoise(text: string): string {
+  return text
+    .split("\n")
+    .filter(line => !DAILY_NOISE_RE.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+}
+
 export class FileRepository {
   private agentDir: string
 
@@ -24,7 +34,8 @@ export class FileRepository {
       const path = this.dailyPath(date)
       if (!existsSync(path)) continue
       try {
-        const content = readFileSync(path, "utf-8").trim()
+        const raw = readFileSync(path, "utf-8")
+        const content = stripDailyNoise(raw).trim()
         if (content) {
           parts.push(`### ${this.dateStr(date)}\n${content}`)
         }

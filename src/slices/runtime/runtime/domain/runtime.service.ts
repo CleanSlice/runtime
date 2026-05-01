@@ -149,7 +149,7 @@ export class RuntimeService {
     return history
   }
 
-  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string): Promise<string> {
+  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean): Promise<string> {
     const secretKeys = await this.deps.secrets.list(msg.from).catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
@@ -167,6 +167,7 @@ export class RuntimeService {
       secretKeys,
       dailyMemory,
       skills: skillSummaries,
+      isAdmin,
     })
 
     // Inject full content for always-on skills
