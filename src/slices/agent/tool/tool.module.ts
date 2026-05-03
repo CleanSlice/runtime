@@ -24,7 +24,9 @@ export class ToolRegistry {
     return this.getAll().map(tool => ({
       name: tool.name,
       description: tool.description,
-      input_schema: zodToJsonSchema(tool.schema) as Record<string, unknown>,
+      input_schema:
+        tool.inputSchema ??
+        (zodToJsonSchema(tool.schema) as Record<string, unknown>),
     }))
   }
 }

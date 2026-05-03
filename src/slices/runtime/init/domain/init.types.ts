@@ -62,6 +62,54 @@ export interface IAgentConfig {
    * Default: true
    */
   syncSkills: boolean
+
+  /**
+   * MCP servers to connect to at runtime. Loaded by the McpModule on boot:
+   * each entry becomes a connected MCP client whose tools are merged into
+   * the global ToolGateway, so the LLM sees them alongside built-in tools.
+   *
+   * Sources, in priority order:
+   *  1. `MCP_SERVERS` env — JSON array, populated by the deploy pipeline of
+   *     whatever orchestrator hosts the runtime (managed source of truth).
+   *  2. This `mcps` field — used standalone, or merged with the env list
+   *     (env entries override file entries with the same `name`).
+   *
+   * Disabled servers can be filtered out by setting `enabled: false`.
+   */
+  mcps?: IMcpServerConfig[]
+}
+
+/**
+ * Connection config for a single MCP server. Same shape is used for both
+ * `agent.config.json#mcps` and `MCP_SERVERS` env values.
+ */
+export interface IMcpServerConfig {
+  /** Unique key. MCP tools are namespaced as `${name}__${toolName}`. */
+  name: string
+  /**
+   * Transport protocol. `streamableHttp` is the modern MCP HTTP transport,
+   * `sse` is the legacy server-sent-events variant. `stdio` spawns a
+   * subprocess — useful for local dev / unmanaged MCPs in standalone mode.
+   */
+  transport: "streamableHttp" | "sse" | "stdio"
+
+  /** Endpoint URL (for streamableHttp / sse). */
+  url?: string
+
+  /** Command + args (for stdio transport only). */
+  command?: string
+  args?: string[]
+
+  /**
+   * How to authenticate the connection. `bearer` adds an `Authorization:
+   * Bearer <authValue>` header. `header` interprets `authValue` as a literal
+   * `Header-Name: value` line. `none` sends no auth header.
+   */
+  authType?: "none" | "bearer" | "header"
+  authValue?: string | null
+
+  /** Default true. Set to false to keep the entry registered but skip connect. */
+  enabled?: boolean
 }
 
 /** Required subdirectories inside the agent directory */

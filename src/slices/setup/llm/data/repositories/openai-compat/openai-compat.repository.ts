@@ -286,7 +286,7 @@ export class OpenAiCompatRepository implements ILlmGateway {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: zodToJsonSchema(tool.schema) as Record<string, unknown>,
+        parameters: (tool.inputSchema ?? zodToJsonSchema(tool.schema)) as Record<string, unknown>,
       },
     }))
   }

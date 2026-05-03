@@ -258,7 +258,7 @@ export class ClaudeRepository implements ILlmGateway {
     const anthropicTools = tools.map(tool => ({
       name: tool.name,
       description: tool.description,
-      input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
+      input_schema: (tool.inputSchema ?? zodToJsonSchema(tool.schema)) as Anthropic.Tool["input_schema"],
     }))
 
     const modelsToTry = this.getModelsToTry()
@@ -379,7 +379,7 @@ export class ClaudeRepository implements ILlmGateway {
     const anthropicTools = tools.map(tool => ({
       name: tool.name,
       description: tool.description,
-      input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool["input_schema"],
+      input_schema: (tool.inputSchema ?? zodToJsonSchema(tool.schema)) as Anthropic.Tool["input_schema"],
     }))
 
     const modelsToTry = this.getModelsToTry()

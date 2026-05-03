@@ -34,6 +34,8 @@ const knownEnv = [
   // Storage / secrets
   "SECRET_PROVIDER", "S3_BUCKET", "S3_PREFIX", "S3_ENDPOINT",
   "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX",
+  // MCP — JSON array of IMcpServerConfig populated by the deploy pipeline
+  "MCP_SERVERS",
   // Misc
   "ELEVENLABS_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT",
 ]
@@ -49,6 +51,7 @@ import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
+import { McpModule } from "./slices/setup/mcp"
 
 const init = new InitModule(
   process.env.CLEANSLICE_AGENT_DIR ?? ".agent",
@@ -56,6 +59,18 @@ const init = new InitModule(
 )
 
 const toolGateway = new ToolGateway()
+
+// MCP loader — connects to MCP servers from two sources:
+//   1. agent.config.json `mcps` — local / dev-time entries
+//   2. MCP_SERVERS env var (JSON array) — populated by the deploy pipeline
+//      of whatever platform hosts the runtime (Ranch, custom k8s, compose…)
+// The runtime never talks to a specific platform's API directly. Tools are
+// merged into the global list passed to AgentRuntime below.
+const mcp = new McpModule()
+const mcpTools = await mcp.loadAll({
+  fromConfig: init.config.mcps ?? [],
+  fromEnv: process.env.MCP_SERVERS,
+})
 
 const runtime = new AgentRuntime({
   init,
@@ -117,7 +132,7 @@ const runtime = new AgentRuntime({
       apiUrl: process.env.BRIDLE_URL,
     }] : []),
   ],
-  tools: toolGateway.getAll(),
+  tools: [...toolGateway.getAll(), ...mcpTools],
 })
 
 await runtime.start()
@@ -131,6 +146,7 @@ async function shutdown(signal: string) {
   console.log(`[shutdown] received ${signal}, stopping runtime...`)
   try {
     await runtime.stop()
+    await mcp.shutdown()
     console.log("[shutdown] clean exit")
   } catch (err) {
     console.error("[shutdown] error during stop:", err)
