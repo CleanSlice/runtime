@@ -250,6 +250,14 @@ export class AgentRuntime {
     // AccessModule was constructed before the S3 pull (disk was empty / stale),
     // so its in-memory strategy may not match the just-pulled access.json.
     this.access.reload()
+    // Initial sweep: push any local files that aren't in S3 yet (e.g. freshly
+    // scaffolded SOUL.md / skills / agent.config.json on first run). The diff
+    // manifest populated by pull() ensures we don't re-upload what we just pulled.
+    try {
+      await this.s3sync.push()
+    } catch (err) {
+      console.warn(`[s3] initial push failed — watcher will retry on changes. Error: ${(err as Error).message}`)
+    }
     this.s3sync.startWatcher()
     // Periodic full sweep is opt-in (0 = off); watcher handles changes in real time.
     this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 0)

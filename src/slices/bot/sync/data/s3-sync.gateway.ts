@@ -189,8 +189,10 @@ export class S3SyncService implements ISyncGateway {
   // ── Public API ────────────────────────────────────────────────────────────────
 
   /**
-   * Pull entire .agent/ from S3 on startup. Populates the manifest with the
-   * mtime/size of just-downloaded files so they aren't immediately re-pushed.
+   * Pull entire .agent/ from S3 on startup. Populates the manifest only with
+   * files that actually exist in S3 — local-only files (e.g. freshly scaffolded
+   * from .agent.example on first run) are intentionally left out so the next
+   * push() sweep uploads them.
    */
   async pull(): Promise<void> {
     let count = 0
@@ -209,15 +211,6 @@ export class S3SyncService implements ISyncGateway {
         this.manifest.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size })
         count++
       }
-    }
-
-    // Seed manifest with any local-only files that already match S3 (so we
-    // don't re-push them on first sweep). We can't know S3 mtime cheaply, so
-    // just record their current stat — diff logic kicks in on the next change.
-    for (const rel of this.walkDir(this.agentDir)) {
-      if (this.manifest.has(rel)) continue
-      const stat = statSync(join(this.agentDir, rel))
-      this.manifest.set(rel, { mtimeMs: stat.mtimeMs, size: stat.size })
     }
 
     console.log(`[s3] pulled ${count} files`)
