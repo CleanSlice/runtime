@@ -78,9 +78,9 @@ export interface IBridleDebugPayload {
  * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
  * The hub relays messages between browser users and this agent.
  *
- * Flow:  Browser ↔ /ws/chat ↔ Bridle Hub ↔ /ws/agent ↔ Agent (this)
+ * Flow:  Browser ↔ /ws/client ↔ Bridle Hub ↔ /ws/agent ↔ Agent (this)
  *
- * Auth: BRIDLE_API_KEY + BRIDLE_BOT_ID in Socket.IO handshake.
+ * Auth: BRIDLE_API_KEY + BRIDLE_AGENT_ID in Socket.IO handshake.
  *
  * Wire protocol carries `parts: BridlePart[]` for rich content (text, images, files).
  */
@@ -222,7 +222,7 @@ export class BridleRepository implements IChannelGateway {
       reconnectionAttempts: Infinity,
       auth: {
         apiKey: process.env.BRIDLE_API_KEY ?? "",
-        botId: process.env.BRIDLE_BOT_ID ?? "",
+        agentId: process.env.BRIDLE_AGENT_ID ?? "",
       },
     })
 
