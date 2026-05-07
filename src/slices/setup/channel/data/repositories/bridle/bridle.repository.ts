@@ -222,7 +222,10 @@ export class BridleRepository implements IChannelGateway {
       reconnectionAttempts: Infinity,
       auth: {
         apiKey: process.env.BRIDLE_API_KEY ?? "",
-        agentId: process.env.BRIDLE_AGENT_ID ?? "",
+        // Prefer BRIDLE_AGENT_ID; fall back to BRIDLE_BOT_ID so older
+        // workflow templates / .env files keep working through the rename.
+        agentId:
+          process.env.BRIDLE_AGENT_ID ?? process.env.BRIDLE_BOT_ID ?? "",
       },
     })
 
