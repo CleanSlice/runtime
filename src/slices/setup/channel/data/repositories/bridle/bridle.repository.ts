@@ -197,13 +197,18 @@ export class BridleRepository implements IChannelGateway {
       })
     } finally {
       clearInterval(interval)
-      this.socket?.emit("stream_end", {
-        clientId: to,
-        text: finalText,
-        parts: [{ type: "text", text: finalText }],
-        messageId,
-        ts: Date.now(),
-      })
+      // Tool-only LLM iterations stream no text and return ""; emitting
+      // stream_end here would create an empty bubble in the UI. Skip when
+      // we never streamed anything and have nothing to finalize.
+      if (chunksEmitted > 0 || finalText.length > 0) {
+        this.socket?.emit("stream_end", {
+          clientId: to,
+          text: finalText,
+          parts: [{ type: "text", text: finalText }],
+          messageId,
+          ts: Date.now(),
+        })
+      }
       console.log(
         `[bridle] stream end (messageId=${messageId.slice(0, 8)}, ` +
         `chunks=${chunksEmitted}, length=${finalText.length})`,
