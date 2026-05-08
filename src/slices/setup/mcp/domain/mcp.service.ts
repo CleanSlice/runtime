@@ -5,7 +5,7 @@ import { McpFetcher } from "./mcp.fetcher"
 
 /**
  * Orchestrates the boot-time MCP load:
- *  1. parses the platform-managed list from the MCP_SERVERS env (if set)
+ *  1. parses the platform-managed list (decoded from MCP_SERVERS_B64 env)
  *  2. merges with config-file entries (env wins on `name` collision)
  *  3. opens a client for each enabled entry
  *  4. returns the combined Tool[] for ToolGateway to register

@@ -16,12 +16,15 @@ export class McpFetcher {
     try {
       parsed = JSON.parse(json)
     } catch (err) {
-      console.warn("[mcp] MCP_SERVERS env is not valid JSON — ignoring:", err)
+      console.warn(
+        "[mcp] MCP_SERVERS_B64 env is not valid JSON — ignoring:",
+        err,
+      )
       return []
     }
     if (!Array.isArray(parsed)) {
       console.warn(
-        `[mcp] MCP_SERVERS env: expected array, got ${typeof parsed} — ignoring`,
+        `[mcp] MCP_SERVERS_B64 env: expected array, got ${typeof parsed} — ignoring`,
       )
       return []
     }

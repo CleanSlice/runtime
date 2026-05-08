@@ -69,8 +69,9 @@ export interface IAgentConfig {
    * the global ToolGateway, so the LLM sees them alongside built-in tools.
    *
    * Sources, in priority order:
-   *  1. `MCP_SERVERS` env — JSON array, populated by the deploy pipeline of
-   *     whatever orchestrator hosts the runtime (managed source of truth).
+   *  1. `MCP_SERVERS_B64` env — base64(JSON array), populated by the deploy
+   *     pipeline of whatever orchestrator hosts the runtime (managed source
+   *     of truth). Base64 because the value is injected into a YAML manifest.
    *  2. This `mcps` field — used standalone, or merged with the env list
    *     (env entries override file entries with the same `name`).
    *
@@ -81,7 +82,7 @@ export interface IAgentConfig {
 
 /**
  * Connection config for a single MCP server. Same shape is used for both
- * `agent.config.json#mcps` and `MCP_SERVERS` env values.
+ * `agent.config.json#mcps` and `MCP_SERVERS_B64` env values.
  */
 export interface IMcpServerConfig {
   /** Unique key. MCP tools are namespaced as `${name}__${toolName}`. */

@@ -34,8 +34,9 @@ const knownEnv = [
   // Storage / secrets
   "SECRET_PROVIDER", "S3_BUCKET", "S3_PREFIX", "S3_ENDPOINT",
   "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SECRET_PREFIX",
-  // MCP — JSON array of IMcpServerConfig populated by the deploy pipeline
-  "MCP_SERVERS",
+  // MCP — base64(JSON array of IMcpServerConfig) populated by the deploy pipeline.
+  // Base64 because the deploy pipeline injects this into a YAML manifest.
+  "MCP_SERVERS_B64",
   // Misc
   "ELEVENLABS_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT",
 ]
@@ -62,14 +63,19 @@ const toolGateway = new ToolGateway()
 
 // MCP loader — connects to MCP servers from two sources:
 //   1. agent.config.json `mcps` — local / dev-time entries
-//   2. MCP_SERVERS env var (JSON array) — populated by the deploy pipeline
-//      of whatever platform hosts the runtime (Ranch, custom k8s, compose…)
+//   2. MCP_SERVERS_B64 env var (base64 of a JSON array) — populated by the
+//      deploy pipeline of whatever platform hosts the runtime (Ranch, custom
+//      k8s, compose…). Base64 because that pipeline injects the value into a
+//      YAML manifest (see ranch/k8s/templates/agent-workflow.yaml).
 // The runtime never talks to a specific platform's API directly. Tools are
 // merged into the global list passed to AgentRuntime below.
 const mcp = new McpModule()
+const mcpServersJson = process.env.MCP_SERVERS_B64
+  ? Buffer.from(process.env.MCP_SERVERS_B64, "base64").toString("utf8")
+  : undefined
 const mcpTools = await mcp.loadAll({
   fromConfig: init.config.mcps ?? [],
-  fromEnv: process.env.MCP_SERVERS,
+  fromEnv: mcpServersJson,
 })
 
 const runtime = new AgentRuntime({
