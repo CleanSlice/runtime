@@ -16,6 +16,6 @@ bot → agent, setup
 | **command** | Command processing and dispatch. Parses bot commands (e.g., `/cancel`, `/status`) and routes them to the appropriate handler. |
 | **access** | User access control. Pluggable strategies: open (everyone), allowlist, approval-based, and code-based. Determines whether a user can interact with the bot. |
 | **voice** | Voice/audio toggle per user. Manages whether responses should include TTS audio output. |
-| **activity** | Task activity tracking and crash recovery. Records the currently running task to a file. On restart, detects interrupted tasks and notifies the user with a recovery message. |
+| **activity** | Task activity tracking and crash recovery. Records the currently running task to a file. On restart, detects interrupted tasks and silently injects a system-role instruction so the agent reviews state and finishes the task autonomously — no user-facing "I restarted" message. |
 | **usage** | Daily LLM token usage tracking and reporting. Aggregates input/output tokens per credential, persists daily stats, and reports to an external API on a daily cron. |
 | **sync** | S3 sync service. Periodically backs up the agent's working directory (memory, sessions, config) to S3 for durability. |

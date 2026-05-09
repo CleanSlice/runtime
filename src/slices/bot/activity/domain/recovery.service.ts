@@ -1,14 +1,16 @@
 import type { IActivityGateway } from "./activity.gateway"
-import type { IRecoveryMessage } from "./activity.types"
+import type { IRecoveryContext } from "./activity.types"
 
 /**
- * Checks for interrupted tasks on startup and builds a notification message.
+ * Detects tasks interrupted by a restart and builds a system-role
+ * instruction that lets the agent silently decide whether to resume —
+ * no user-facing "I restarted" message is emitted.
  */
 export class RecoveryService {
   constructor(private gateway: IActivityGateway) {}
 
-  /** Returns a recovery message if there was an interrupted task, or null. */
-  check(): IRecoveryMessage | null {
+  /** Returns recovery context if there was an interrupted task, or null. */
+  check(): IRecoveryContext | null {
     const interrupted = this.gateway.get()
     if (!interrupted) return null
 
@@ -26,11 +28,13 @@ export class RecoveryService {
     return {
       channel: interrupted.channel,
       userId: interrupted.userId,
-      message:
-        `⚠️ I restarted. Was previously working on:\n\n` +
-        `"${interrupted.text}"\n\n` +
-        `Last step: ${interrupted.lastStep} (${elapsedStr} ago)\n\n` +
-        `Want to continue?`,
+      instruction:
+        `[recovery] The previous task was interrupted by a restart and was not completed.\n` +
+        `Original request: "${interrupted.text}"\n` +
+        `Last step before interruption: ${interrupted.lastStep} (${elapsedStr} ago).\n\n` +
+        `Review the recent conversation and any pending state. ` +
+        `If the goal is already achieved, do nothing and stay silent. ` +
+        `Otherwise, finish the task autonomously without announcing the restart to the user.`,
     }
   }
 

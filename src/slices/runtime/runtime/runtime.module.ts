@@ -278,13 +278,28 @@ export class AgentRuntime {
     await this.channel.start()
   }
 
-  /** Detect tasks interrupted by a crash and notify the user. */
+  /**
+   * Detect tasks interrupted by a crash and silently resume them.
+   * Injects a system-role message into the runtime pipeline (bypassing
+   * the user-facing channel) so the agent can review chat/task state and
+   * either continue the work or stay silent if the goal was already met.
+   */
   private checkRecovery(): void {
     const recovery = this.activityModule.recovery.check()
     if (!recovery) return
-    this.channel.send(recovery.channel, recovery.userId, recovery.message)
-      .then(() => this.activityModule.recovery.clear())
-      .catch(err => { console.error("[recovery] failed:", err); this.activityModule.recovery.clear() })
+
+    this.activityModule.recovery.clear()
+
+    const sessionId = this.session.getOrCreate(recovery.channel, recovery.userId).id
+    const msg = buildMessage({
+      id: randomUUID(),
+      text: recovery.instruction,
+      from: recovery.userId,
+      channel: recovery.channel,
+      ts: Date.now(),
+      role: MessageRoleTypes.System,
+    })
+    this.runtimeService.execute(msg, sessionId, true)
   }
 
   /** Wire cron and heartbeat — both emit synthetic internal messages. */

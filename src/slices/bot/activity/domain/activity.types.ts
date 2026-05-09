@@ -8,8 +8,9 @@ export interface IActivity {
   lastStep: string
 }
 
-export interface IRecoveryMessage {
+export interface IRecoveryContext {
   channel: string
   userId: string
-  message: string
+  /** System-role instruction injected back into the agent so it silently resumes the interrupted task. */
+  instruction: string
 }
