@@ -86,6 +86,13 @@ function buildLlmConfig(
         fallbackModel,
         apiKey: apiKey ?? process.env.MISTRAL_API_KEY,
       }
+    case "openai":
+      return {
+        provider: "openai",
+        model: model ?? "gpt-4o-mini",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.OPENAI_API_KEY,
+      }
     case "openrouter":
       return {
         provider: "openrouter",

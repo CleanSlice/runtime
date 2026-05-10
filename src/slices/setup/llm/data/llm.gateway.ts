@@ -4,6 +4,7 @@ import { ClaudeRepository } from "./repositories/claude/claude.repository"
 import { ClaudeCliRepository } from "./repositories/claudecli/claudecli.repository"
 import { DeepSeekRepository } from "./repositories/deepseek/deepseek.repository"
 import { MistralRepository } from "./repositories/mistral/mistral.repository"
+import { OpenAiRepository } from "./repositories/openai/openai.repository"
 import { OpenRouterRepository } from "./repositories/openrouter/openrouter.repository"
 
 export class LlmGateway implements ILlmGateway {
@@ -43,6 +44,13 @@ export class LlmGateway implements ILlmGateway {
         return new MistralRepository({
           apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.MISTRAL_API_KEY ?? "",
           model: config.model ?? "mistral-medium-latest",
+          baseUrl: config.baseUrl,
+          maxTokens: config.maxTokens,
+        })
+      case "openai":
+        return new OpenAiRepository({
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+          model: config.model ?? "gpt-4o-mini",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })
