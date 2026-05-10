@@ -53,6 +53,47 @@ function isOverloadedError(err: unknown): boolean {
   return msg.includes("overloaded_error") || msg.includes("Overloaded")
 }
 
+/** Detect HTTP 429 rate-limit. Per-token problem (cooldown), not per-model. */
+function isRateLimitError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as Record<string, unknown>
+  if (e.status === 429) return true
+  const msg = String(e.message ?? e.error ?? "")
+  return msg.includes("rate_limit") || msg.includes("Rate limit")
+}
+
+/**
+ * Parse Retry-After header from a rate-limit error if present. Returns ms or
+ * undefined. Anthropic sets either seconds (number) or HTTP-date.
+ */
+function parseRetryAfter(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined
+  const headers = (err as { headers?: Record<string, string> }).headers
+  const raw = headers?.["retry-after"] ?? headers?.["Retry-After"]
+  if (!raw) return undefined
+  const n = Number(raw)
+  if (!isNaN(n) && n > 0) return n * 1000
+  const date = Date.parse(raw)
+  if (!isNaN(date)) return Math.max(0, date - Date.now())
+  return undefined
+}
+
+/**
+ * Per-token rate-limit state. We keep one entry per OAuth token; a token in
+ * cooldown is skipped by selectClientIndex() until its window expires.
+ *
+ * Why per-token, not per-credential: a credential is a *config* concept, but
+ * Anthropic enforces limits per OAuth subject. Two tokens from the same user
+ * share a quota in practice, but the SDK gives us no way to know that — we
+ * track each token independently and let the server tell us via 429.
+ */
+interface TokenState {
+  /** Epoch ms; 0 means available. */
+  cooldownUntil: number
+  /** For exponential cooldown when 429s repeat without recovery. */
+  consecutive429s: number
+}
+
 /**
  * Retry a LLM call up to maxAttempts times with exponential backoff.
  * Returns true if succeeded (result via out param), false if all attempts failed with overload.
@@ -103,6 +144,7 @@ export class ClaudeRepository implements ILlmGateway {
   private clients: Anthropic[] = []   // OAuth pool (index 0 = primary, 1,2... = fallbacks)
   private apiKeyClient: Anthropic | undefined  // API key client (last resort)
   private currentClientIndex = 0
+  private tokenStates: TokenState[] = []  // per-client rate-limit state, parallel to clients
   private model: string
   private fallbackModel: string | undefined
   private apiKey: string | undefined
@@ -191,8 +233,62 @@ export class ClaudeRepository implements ILlmGateway {
       this.apiKeyClient = undefined
     }
 
+    // Parallel state array. Always rebuild on init; switchToNextClient may
+    // also extend this when promoting the apiKeyClient into the pool.
+    this.tokenStates = this.clients.map(() => ({ cooldownUntil: 0, consecutive429s: 0 }))
+
     console.log(`[llm] claude initialized — oauth=${oauthClients.length}, apiKeyFallback=${apiKeyClient ? "yes" : "no"}`)
     this.initialized = true
+  }
+
+  /**
+   * Pick the best client index for the next call. Prefers any client not in
+   * cooldown; if every client is currently cooled-down, returns the one whose
+   * cooldown expires soonest so the next retry has the best chance.
+   */
+  private selectClientIndex(): number {
+    const now = Date.now()
+    for (let i = 0; i < this.clients.length; i++) {
+      if (this.tokenStates[i] && this.tokenStates[i].cooldownUntil <= now) return i
+    }
+    // All in cooldown — return the one closest to expiry. Caller will likely
+    // hit 429 again; that's OK, the cooldown re-extends.
+    let best = 0
+    let bestUntil = this.tokenStates[0]?.cooldownUntil ?? 0
+    for (let i = 1; i < this.clients.length; i++) {
+      const until = this.tokenStates[i]?.cooldownUntil ?? 0
+      if (until < bestUntil) {
+        best = i
+        bestUntil = until
+      }
+    }
+    return best
+  }
+
+  /**
+   * Mark a client as rate-limited. Uses Anthropic's Retry-After when present;
+   * otherwise an exponential backoff capped at 10 minutes — Anthropic OAuth
+   * limits typically reset within minutes, so longer waits are pointless.
+   */
+  private markRateLimited(index: number, retryAfterMs?: number): void {
+    const state = this.tokenStates[index]
+    if (!state) return
+    state.consecutive429s++
+    const cooldown = retryAfterMs ?? Math.min(60_000 * Math.pow(2, state.consecutive429s - 1), 600_000)
+    state.cooldownUntil = Date.now() + cooldown
+    const available = this.tokenStates.filter(s => s.cooldownUntil <= Date.now()).length
+    console.warn(
+      `[llm] token[${index}] rate-limited, cooldown ${Math.round(cooldown / 1000)}s ` +
+      `(consecutive=${state.consecutive429s}, available=${available}/${this.clients.length})`,
+    )
+  }
+
+  /** Reset 429 counter on success — token is healthy again. */
+  private markHealthy(index: number): void {
+    const state = this.tokenStates[index]
+    if (state && state.consecutive429s > 0) {
+      state.consecutive429s = 0
+    }
   }
 
   /** Get current active client. Throws if init never populated any clients. */
@@ -221,6 +317,8 @@ export class ClaudeRepository implements ILlmGateway {
       void sendAdminAlert(`🚨 All OAuth tokens exhausted!\n\nUsing API key fallback. Update tokens in .env`)
       // Replace current with apiKeyClient
       this.clients[this.currentClientIndex] = this.apiKeyClient
+      // Reset state for the slot — apiKeyClient is fresh, no prior 429s.
+      this.tokenStates[this.currentClientIndex] = { cooldownUntil: 0, consecutive429s: 0 }
       this.apiKeyClient = undefined
       return true
     }
@@ -272,58 +370,74 @@ export class ClaudeRepository implements ILlmGateway {
 
       const result = await withRetry(
         async () => {
+          // Re-select per attempt so 429-marked tokens are avoided on retry.
+          this.currentClientIndex = this.selectClientIndex()
+          const attemptIndex = this.currentClientIndex
           let accumulated = ""
           const toolCalls: Array<{ name: string; params: unknown }> = []
           const pendingTools = new Map<number, { id: string; name: string; jsonStr: string }>()
           let streamUsage: { input_tokens: number; output_tokens: number } | undefined
           let stopReason: string | undefined
 
-          const streamResponse = await this.getClient().messages.stream({
-            model,
-            max_tokens: this.maxTokens,
-            system: systemPrompt,
-            messages,
-            ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-          })
-
-          for await (const event of streamResponse) {
-            if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-              pendingTools.set(event.index, {
-                id: event.content_block.id,
-                name: event.content_block.name,
-                jsonStr: "",
-              })
-            } else if (event.type === "content_block_delta") {
-              if (event.delta.type === "text_delta") {
-                accumulated += event.delta.text
-                // While inside <thinking> block, show indicator instead of raw content
-                if (accumulated.includes("<thinking>") && !accumulated.includes("</thinking>")) {
-                  onChunk("💭")
-                } else {
-                  onChunk(stripThinking(accumulated))
-                }
-              } else if (event.delta.type === "input_json_delta") {
-                const pending = pendingTools.get(event.index)
-                if (pending) pending.jsonStr += event.delta.partial_json
-              }
-            } else if (event.type === "content_block_stop") {
-              const pending = pendingTools.get(event.index)
-              if (pending) {
-                try {
-                  toolCalls.push({ name: pending.name, params: JSON.parse(pending.jsonStr || "{}") })
-                } catch {
-                  toolCalls.push({ name: pending.name, params: {} })
-                }
-                pendingTools.delete(event.index)
-              }
-            } else if (event.type === "message_delta") {
-              if ((event as any).usage) streamUsage = (event as any).usage
-              if ((event as any).delta?.stop_reason) stopReason = (event as any).delta.stop_reason
-            } else if (event.type === "message_start" && (event as any).message?.usage) {
-              streamUsage = (event as any).message.usage
-            }
+          let streamResponse
+          try {
+            streamResponse = await this.getClient().messages.stream({
+              model,
+              max_tokens: this.maxTokens,
+              system: systemPrompt,
+              messages,
+              ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
+            })
+          } catch (err) {
+            if (isRateLimitError(err)) this.markRateLimited(attemptIndex, parseRetryAfter(err))
+            throw err
           }
 
+          try {
+            for await (const event of streamResponse) {
+              if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+                pendingTools.set(event.index, {
+                  id: event.content_block.id,
+                  name: event.content_block.name,
+                  jsonStr: "",
+                })
+              } else if (event.type === "content_block_delta") {
+                if (event.delta.type === "text_delta") {
+                  accumulated += event.delta.text
+                  // While inside <thinking> block, show indicator instead of raw content
+                  if (accumulated.includes("<thinking>") && !accumulated.includes("</thinking>")) {
+                    onChunk("💭")
+                  } else {
+                    onChunk(stripThinking(accumulated))
+                  }
+                } else if (event.delta.type === "input_json_delta") {
+                  const pending = pendingTools.get(event.index)
+                  if (pending) pending.jsonStr += event.delta.partial_json
+                }
+              } else if (event.type === "content_block_stop") {
+                const pending = pendingTools.get(event.index)
+                if (pending) {
+                  try {
+                    toolCalls.push({ name: pending.name, params: JSON.parse(pending.jsonStr || "{}") })
+                  } catch {
+                    toolCalls.push({ name: pending.name, params: {} })
+                  }
+                  pendingTools.delete(event.index)
+                }
+              } else if (event.type === "message_delta") {
+                if ((event as any).usage) streamUsage = (event as any).usage
+                if ((event as any).delta?.stop_reason) stopReason = (event as any).delta.stop_reason
+              } else if (event.type === "message_start" && (event as any).message?.usage) {
+                streamUsage = (event as any).message.usage
+              }
+            }
+          } catch (err) {
+            if (isRateLimitError(err)) this.markRateLimited(attemptIndex, parseRetryAfter(err))
+            throw err
+          }
+
+          // Success — clear any prior 429 streak on this token.
+          this.markHealthy(attemptIndex)
           return {
             text: stripThinking(accumulated),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -332,7 +446,7 @@ export class ClaudeRepository implements ILlmGateway {
               inputTokens: streamUsage.input_tokens,
               outputTokens: streamUsage.output_tokens,
               totalTokens: streamUsage.input_tokens + streamUsage.output_tokens,
-              credentialId: `oauth-${this.currentClientIndex}`,
+              credentialId: `oauth-${attemptIndex}`,
             } : undefined,
           } as ModelResponse
         },
@@ -393,13 +507,22 @@ export class ClaudeRepository implements ILlmGateway {
 
       const result = await withRetry(
         async () => {
-          const response = await this.getClient().messages.create({
-            model,
-            max_tokens: this.maxTokens,
-            system: systemPrompt,
-            messages,
-            ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
-          })
+          // Re-select per attempt so 429-marked tokens are avoided on retry.
+          this.currentClientIndex = this.selectClientIndex()
+          const attemptIndex = this.currentClientIndex
+          let response
+          try {
+            response = await this.getClient().messages.create({
+              model,
+              max_tokens: this.maxTokens,
+              system: systemPrompt,
+              messages,
+              ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
+            })
+          } catch (err) {
+            if (isRateLimitError(err)) this.markRateLimited(attemptIndex, parseRetryAfter(err))
+            throw err
+          }
 
           const text = response.content
             .filter(b => b.type === "text")
@@ -413,6 +536,7 @@ export class ClaudeRepository implements ILlmGateway {
               return { name: block.name, params: block.input }
             })
 
+          this.markHealthy(attemptIndex)
           return {
             text: stripThinking(text),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -421,7 +545,7 @@ export class ClaudeRepository implements ILlmGateway {
               inputTokens: response.usage.input_tokens,
               outputTokens: response.usage.output_tokens,
               totalTokens: response.usage.input_tokens + response.usage.output_tokens,
-              credentialId: `oauth-${this.currentClientIndex}`,
+              credentialId: `oauth-${attemptIndex}`,
             } : undefined,
           } as ModelResponse
         },
