@@ -33,6 +33,7 @@ export type LlmConfig =
   | { provider: "claude"; apiKey?: string; model?: string; fallbackModel?: string; proxyUrl?: string; maxTokens?: number }
   | { provider: "claude-cli"; cliBin?: string; model?: string }
   | { provider: "deepseek"; apiKey?: string; model?: string; fallbackModel?: string; baseUrl?: string; maxTokens?: number }
+  | { provider: "google"; apiKey?: string; model?: string; fallbackModel?: string; baseUrl?: string; maxTokens?: number }
   | { provider: "mistral"; apiKey?: string; model?: string; fallbackModel?: string; baseUrl?: string; maxTokens?: number }
   | { provider: "openai"; apiKey?: string; model?: string; fallbackModel?: string; baseUrl?: string; maxTokens?: number }
   | { provider: "openrouter"; apiKey?: string; model?: string; fallbackModel?: string; baseUrl?: string; maxTokens?: number }

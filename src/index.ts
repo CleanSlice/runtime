@@ -79,6 +79,13 @@ function buildLlmConfig(
         fallbackModel,
         apiKey: apiKey ?? process.env.DEEPSEEK_API_KEY,
       }
+    case "google":
+      return {
+        provider: "google",
+        model: model ?? "gemini-2.0-flash",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.GOOGLE_API_KEY,
+      }
     case "mistral":
       return {
         provider: "mistral",

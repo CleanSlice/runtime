@@ -3,6 +3,7 @@ import type { LlmConfig } from "../domain/llm.types"
 import { ClaudeRepository } from "./repositories/claude/claude.repository"
 import { ClaudeCliRepository } from "./repositories/claudecli/claudecli.repository"
 import { DeepSeekRepository } from "./repositories/deepseek/deepseek.repository"
+import { GoogleRepository } from "./repositories/google/google.repository"
 import { MistralRepository } from "./repositories/mistral/mistral.repository"
 import { OpenAiRepository } from "./repositories/openai/openai.repository"
 import { OpenRouterRepository } from "./repositories/openrouter/openrouter.repository"
@@ -37,6 +38,13 @@ export class LlmGateway implements ILlmGateway {
         return new DeepSeekRepository({
           apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? "",
           model: config.model ?? "deepseek-chat",
+          baseUrl: config.baseUrl,
+          maxTokens: config.maxTokens,
+        })
+      case "google":
+        return new GoogleRepository({
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.GOOGLE_API_KEY ?? "",
+          model: config.model ?? "gemini-2.0-flash",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })
