@@ -1,0 +1,40 @@
+name: Release
+
+# Creates a GitHub Release whenever a vX.Y.Z tag is pushed.
+# The release notes are auto-generated from commits since the previous tag
+# (configured via .github/release.yml if present, otherwise GitHub defaults).
+# Pre-releases (e.g. v0.4.0-rc.1) are flagged accordingly.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Pre-release detection — anything after the patch version (e.g. -rc.1, -beta).
+          if [[ "$TAG" =~ -[a-zA-Z] ]]; then
+            PRERELEASE="--prerelease"
+          else
+            PRERELEASE=""
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            $PRERELEASE
