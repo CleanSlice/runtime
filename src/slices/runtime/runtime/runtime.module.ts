@@ -28,6 +28,12 @@ import { RuntimeService } from "./domain/runtime.service"
 export interface RuntimeConfig {
   init: InitModule
   llm: LlmConfig
+  /**
+   * Optional auxiliary LLM for background work (compaction, summarization).
+   * When omitted, aux calls fall back to the main LLM. Routing aux work to a
+   * cheaper/smaller model keeps the main session's prompt cache hot.
+   */
+  llmAuxiliary?: LlmConfig
   channels: ChannelConfig[]
   tools?: Tool[]
   s3?: S3SyncConfig
@@ -71,7 +77,12 @@ export class AgentRuntime {
     const llmConfig = config.llm.provider === "claude"
       ? { ...config.llm, maxTokens: this.config.maxTokens }
       : config.llm
-    this.llm = new LlmModule(llmConfig)
+    const auxConfig = config.llmAuxiliary
+      ? (config.llmAuxiliary.provider === "claude"
+        ? { ...config.llmAuxiliary, maxTokens: this.config.maxTokens }
+        : config.llmAuxiliary)
+      : undefined
+    this.llm = new LlmModule(llmConfig, auxConfig)
 
     // Message transport (Telegram, Slack, etc.)
     this.channel = new ChannelModule(config.channels)

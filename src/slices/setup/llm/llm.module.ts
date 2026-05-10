@@ -9,11 +9,25 @@ export { LlmConfig }
 
 export class LlmModule {
   private service: LlmService
+  private auxService?: LlmService
   private readonly config: LlmConfig
+  private readonly auxConfig?: LlmConfig
 
-  constructor(config: LlmConfig) {
+  /**
+   * @param config       Main LLM used for the agent's reasoning loop.
+   * @param auxConfig    Optional auxiliary LLM used for background work
+   *                     (compaction, summarization, future curator/insights).
+   *                     When omitted, aux calls fall back to the main LLM.
+   *                     Routing aux work to a cheaper/smaller model keeps
+   *                     the main session's prompt cache hot and reduces cost.
+   */
+  constructor(config: LlmConfig, auxConfig?: LlmConfig) {
     this.config = config
     this.service = new LlmService(new LlmGateway(config))
+    if (auxConfig) {
+      this.auxConfig = auxConfig
+      this.auxService = new LlmService(new LlmGateway(auxConfig))
+    }
   }
 
   /**
@@ -27,8 +41,31 @@ export class LlmModule {
     }
   }
 
+  /** Same shape as describe(), for the aux LLM. Returns main if no aux. */
+  describeAux(): { provider: string; model: string } {
+    const cfg = this.auxConfig ?? this.config
+    return {
+      provider: cfg.provider,
+      model: ("model" in cfg && cfg.model) || "default",
+    }
+  }
+
+  /** Whether a distinct auxiliary LLM is configured. */
+  hasAux(): boolean {
+    return this.auxService !== undefined
+  }
+
   complete(systemPrompt: string, history: Event[], tools: Tool[]): Promise<ModelResponse> {
     return this.service.complete(systemPrompt, history, tools)
+  }
+
+  /**
+   * Run a completion on the aux LLM. Falls back to the main LLM when no
+   * aux is configured. Use for background tasks that should not contend
+   * with the main session for cache / rate limits.
+   */
+  auxComplete(systemPrompt: string, history: Event[], tools: Tool[]): Promise<ModelResponse> {
+    return (this.auxService ?? this.service).complete(systemPrompt, history, tools)
   }
 
   canStream(): boolean {
@@ -47,5 +84,14 @@ export class LlmModule {
   // Expose gateway for compaction (needs ILlmGateway interface)
   getGateway(): import("./domain/llm.gateway").ILlmGateway {
     return (this.service as unknown as { gateway: import("./domain/llm.gateway").ILlmGateway }).gateway
+  }
+
+  /**
+   * Aux gateway for callers that need the raw ILlmGateway interface
+   * (e.g. CompactionService). Falls back to main gateway when no aux configured.
+   */
+  getAuxGateway(): import("./domain/llm.gateway").ILlmGateway {
+    const svc = this.auxService ?? this.service
+    return (svc as unknown as { gateway: import("./domain/llm.gateway").ILlmGateway }).gateway
   }
 }

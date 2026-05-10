@@ -83,7 +83,10 @@ export class MemoryService {
     console.log(`[memory-flush] flushing session ${sessionId} before compaction`)
     try {
       const existing = this.readRecentDaily() ?? ""
-      const response = await llm.complete(buildMemoryFlushPrompt(existing), events, [])
+      // Memory flush + compaction are background summarization tasks — route
+      // through the auxiliary LLM (cheaper model, no contention with the
+      // main session's prompt cache). Falls back to main when no aux is set.
+      const response = await llm.auxComplete(buildMemoryFlushPrompt(existing), events, [])
 
       const text = response.text?.trim()
       if (text && text !== "NOTHING") {
@@ -94,6 +97,6 @@ export class MemoryService {
       console.error("[memory-flush] failed:", err)
     }
 
-    session.compactAsync(sessionId, llm.getGateway())
+    session.compactAsync(sessionId, llm.getAuxGateway())
   }
 }

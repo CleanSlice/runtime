@@ -24,6 +24,10 @@ process.on("unhandledRejection", (reason) => {
 const knownEnv = [
   // LLM (canonical)
   "LLM_PROVIDER", "LLM_MODEL", "LLM_FALLBACK_MODEL", "LLM_API_KEY",
+  // LLM auxiliary (background work: compaction, summarization). When unset,
+  // aux falls back to the main LLM. Set LLM_AUX_MODEL alone to use a smaller
+  // model on the same provider/key.
+  "LLM_AUX_PROVIDER", "LLM_AUX_MODEL", "LLM_AUX_FALLBACK_MODEL", "LLM_AUX_API_KEY",
   // LLM (legacy — flag if present)
   "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY",
   "CLAUDE_CODE_OAUTH_TOKEN",
@@ -50,9 +54,56 @@ if (!hasLlmCred) console.warn("[env] ⚠ LLM_API_KEY not set")
 
 import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
+import type { LlmConfig } from "./slices/setup/llm/llm.module"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
 import { McpModule } from "./slices/setup/mcp"
+
+/**
+ * Build an LlmConfig from a (provider, model, fallbackModel, apiKey) tuple.
+ * Shared by main LLM and auxiliary LLM resolution so behavior stays consistent.
+ * Defaults to "claude" when provider is missing.
+ */
+function buildLlmConfig(
+  provider: string | undefined,
+  model: string | undefined,
+  fallbackModel: string | undefined,
+  apiKey: string | undefined,
+): LlmConfig {
+  const p = provider ?? "claude"
+  switch (p) {
+    case "deepseek":
+      return {
+        provider: "deepseek",
+        model: model ?? "deepseek-chat",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.DEEPSEEK_API_KEY,
+      }
+    case "mistral":
+      return {
+        provider: "mistral",
+        model: model ?? "mistral-medium-latest",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.MISTRAL_API_KEY,
+      }
+    case "openrouter":
+      return {
+        provider: "openrouter",
+        model: model ?? "anthropic/claude-sonnet-4",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
+      }
+    case "anthropic":
+    case "claude":
+    default:
+      return {
+        provider: "claude",
+        model,
+        fallbackModel,
+        apiKey,
+      }
+  }
+}
 
 const init = new InitModule(
   process.env.CLEANSLICE_AGENT_DIR ?? ".agent",
@@ -78,54 +129,42 @@ const mcpTools = await mcp.loadAll({
   fromEnv: mcpServersJson,
 })
 
+// Canonical agent-facing contract:
+//   LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODEL, LLM_API_KEY
+// For Anthropic, LLM_API_KEY accepts comma-separated OAuth tokens and/or
+// a mixed OAuth+apiKey list — each token is auto-classified by its
+// "sk-ant-oat" prefix inside ClaudeRepository.
+// Provider-specific env vars (ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, ...,
+// CLAUDE_CODE_OAUTH_TOKEN) remain as legacy fallbacks.
+const llm = buildLlmConfig(
+  process.env.LLM_PROVIDER,
+  process.env.LLM_MODEL,
+  process.env.LLM_FALLBACK_MODEL,
+  process.env.LLM_API_KEY,
+)
+// Auxiliary LLM for background work (compaction, summarization, future
+// curator/insights). Resolution rules:
+//   - If LLM_AUX_* env vars are set, build a standalone aux config.
+//   - If only LLM_AUX_MODEL is set, inherit provider/key from main but use
+//     the smaller model.
+//   - Otherwise no aux is configured and aux calls fall back to main.
+const llmAuxiliary = (process.env.LLM_AUX_PROVIDER || process.env.LLM_AUX_MODEL || process.env.LLM_AUX_API_KEY)
+  ? buildLlmConfig(
+    process.env.LLM_AUX_PROVIDER ?? process.env.LLM_PROVIDER,
+    process.env.LLM_AUX_MODEL,
+    process.env.LLM_AUX_FALLBACK_MODEL,
+    process.env.LLM_AUX_API_KEY ?? process.env.LLM_API_KEY,
+  )
+  : undefined
+if (llmAuxiliary) {
+  console.log(`[llm] auxiliary: ${llmAuxiliary.provider}/${"model" in llmAuxiliary ? llmAuxiliary.model ?? "default" : "default"}`)
+}
+
 const runtime = new AgentRuntime({
   init,
   agentDir: ".agent",
-  llm: (() => {
-    // Canonical agent-facing contract:
-    //   LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODEL, LLM_API_KEY
-    // For Anthropic, LLM_API_KEY accepts comma-separated OAuth tokens and/or
-    // a mixed OAuth+apiKey list — each token is auto-classified by its
-    // "sk-ant-oat" prefix inside ClaudeRepository.
-    // Provider-specific env vars (ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, ...,
-    // CLAUDE_CODE_OAUTH_TOKEN) remain as legacy fallbacks.
-    const provider = process.env.LLM_PROVIDER ?? "claude"
-    const model = process.env.LLM_MODEL
-    const fallbackModel = process.env.LLM_FALLBACK_MODEL
-    const apiKey = process.env.LLM_API_KEY
-    switch (provider) {
-      case "deepseek":
-        return {
-          provider: "deepseek" as const,
-          model: model ?? "deepseek-chat",
-          fallbackModel,
-          apiKey: apiKey ?? process.env.DEEPSEEK_API_KEY,
-        }
-      case "mistral":
-        return {
-          provider: "mistral" as const,
-          model: model ?? "mistral-medium-latest",
-          fallbackModel,
-          apiKey: apiKey ?? process.env.MISTRAL_API_KEY,
-        }
-      case "openrouter":
-        return {
-          provider: "openrouter" as const,
-          model: model ?? "anthropic/claude-sonnet-4",
-          fallbackModel,
-          apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
-        }
-      case "anthropic":
-      case "claude":
-      default:
-        return {
-          provider: "claude" as const,
-          model,
-          fallbackModel,
-          apiKey,
-        }
-    }
-  })(),
+  llm,
+  llmAuxiliary,
   channels: [
     { type: "telegram", token: process.env.TELEGRAM_BOT_TOKEN ?? "" },
     ...(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN ? [{

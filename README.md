@@ -40,6 +40,10 @@ Fill in the required values:
 | `CLAUDE_CODE_OAUTH_TOKEN` | yes | Anthropic OAuth token (supports comma-separated list for rotation) |
 | `LLM_MODEL` | no | Model to use (default: `claude-sonnet-4-6`) |
 | `LLM_FALLBACK_MODEL` | no | Fallback model (default: `claude-haiku-4-5`) |
+| `LLM_AUX_MODEL` | no | Auxiliary model for background work (compaction, memory flush). Defaults to main LLM when unset. |
+| `LLM_AUX_PROVIDER` | no | Auxiliary provider — defaults to main provider. |
+| `LLM_AUX_API_KEY` | no | Auxiliary API key — defaults to main key. |
+| `LLM_AUX_FALLBACK_MODEL` | no | Auxiliary fallback model. |
 | `SLACK_BOT_TOKEN` | no | Slack bot token |
 | `SLACK_APP_TOKEN` | no | Slack app token |
 | `SECRET_PROVIDER` | no | `file` (dev) or `aws` (prod) |
