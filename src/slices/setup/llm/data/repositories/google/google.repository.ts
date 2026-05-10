@@ -56,6 +56,51 @@ export interface GoogleConfig {
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
 
+// Gemini's tool/function parameter schema is a tightly constrained subset of
+// OpenAPI 3.0 — anything outside this allow-list is rejected with 400. The
+// most common offenders from zod-to-json-schema: `additionalProperties`,
+// `$schema`, `$ref`, `$defs`, `oneOf`/`allOf`/`not`, `const`. Strip them all.
+const GEMINI_SCHEMA_KEYS = new Set([
+  "type",
+  "format",
+  "description",
+  "nullable",
+  "enum",
+  "properties",
+  "required",
+  "items",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "minimum",
+  "maximum",
+  "minItems",
+  "maxItems",
+  "title",
+])
+
+function sanitizeSchemaForGemini(schema: unknown): unknown {
+  if (schema === null || typeof schema !== "object") return schema
+  if (Array.isArray(schema)) return schema.map(sanitizeSchemaForGemini)
+
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(schema)) {
+    if (!GEMINI_SCHEMA_KEYS.has(key)) continue
+    if (key === "properties" && value && typeof value === "object") {
+      const props: Record<string, unknown> = {}
+      for (const [pk, pv] of Object.entries(value as Record<string, unknown>)) {
+        props[pk] = sanitizeSchemaForGemini(pv)
+      }
+      out[key] = props
+    } else if (key === "items") {
+      out[key] = sanitizeSchemaForGemini(value)
+    } else {
+      out[key] = value
+    }
+  }
+  return out
+}
+
 export class GoogleRepository implements ILlmGateway {
   private config: Required<GoogleConfig>
 
@@ -254,11 +299,18 @@ export class GoogleRepository implements ILlmGateway {
     if (tools.length === 0) return []
     return [
       {
-        functionDeclarations: tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: (tool.inputSchema ?? zodToJsonSchema(tool.schema)) as Record<string, unknown>,
-        })),
+        functionDeclarations: tools.map((tool) => {
+          // $refStrategy:"none" inlines $ref/$defs — Gemini's schema doesn't
+          // support refs. The sanitizer then drops everything Gemini doesn't
+          // recognize (additionalProperties, $schema, oneOf, etc.) which
+          // would otherwise return 400 "Invalid JSON payload: Unknown name".
+          const raw = tool.inputSchema ?? zodToJsonSchema(tool.schema, { $refStrategy: "none" })
+          return {
+            name: tool.name,
+            description: tool.description,
+            parameters: sanitizeSchemaForGemini(raw) as Record<string, unknown>,
+          }
+        }),
       },
     ]
   }
