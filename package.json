@@ -1,6 +1,6 @@
 {
   "name": "@cleanslice/runtime",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -12,6 +12,7 @@
     "multi": "bun run --smol src/multi.ts",
     "cli": "bun run src/cli.ts",
     "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun",
+    "test": "bun test",
     "monitor": "bash scripts/monitor.sh"
   },
   "dependencies": {

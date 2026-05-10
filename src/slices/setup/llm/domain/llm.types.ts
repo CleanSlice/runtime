@@ -6,6 +6,12 @@ export interface ModelUsage {
   outputTokens: number
   totalTokens: number
   credentialId?: string  // e.g. "oauth-0", "oauth-1", "apikey"
+  /**
+   * Canonical model name that produced this response (e.g. "claude-sonnet-4-6").
+   * Set by the repository — UsageService aggregates by this so the upstream
+   * (e.g. ranch) can show per-model spend, not just per-credential.
+   */
+  model?: string
 }
 
 export interface ModelResponse {

@@ -5,12 +5,18 @@ export class UsageModule {
   private service: UsageService
 
   constructor(agentDir: string) {
-    const botId = process.env.BOT_ID ?? ""
-    this.service = new UsageService(new UsageGateway(agentDir), botId)
+    // Prefer ranch convention; fall back to BRIDLE_BOT_ID then BOT_ID for
+    // pre-ranch / OpenClaw-era deployments still in flight.
+    const agentId =
+      process.env.BRIDLE_AGENT_ID ??
+      process.env.BRIDLE_BOT_ID ??
+      process.env.BOT_ID ??
+      ""
+    this.service = new UsageService(new UsageGateway(agentDir), agentId)
   }
 
   start(): void {
-    this.service.startDailyCron()
+    this.service.startReportCron()
   }
 
   add(usage: Parameters<UsageService["add"]>[0]): void {
@@ -18,7 +24,7 @@ export class UsageModule {
   }
 
   async flush(): Promise<void> {
-    this.service.stopDailyCron()
+    this.service.stopReportCron()
     await this.service.report()
   }
 }

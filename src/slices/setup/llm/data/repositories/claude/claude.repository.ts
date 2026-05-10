@@ -447,6 +447,7 @@ export class ClaudeRepository implements ILlmGateway {
               outputTokens: streamUsage.output_tokens,
               totalTokens: streamUsage.input_tokens + streamUsage.output_tokens,
               credentialId: `oauth-${attemptIndex}`,
+              model,
             } : undefined,
           } as ModelResponse
         },
@@ -546,6 +547,7 @@ export class ClaudeRepository implements ILlmGateway {
               outputTokens: response.usage.output_tokens,
               totalTokens: response.usage.input_tokens + response.usage.output_tokens,
               credentialId: `oauth-${attemptIndex}`,
+              model,
             } : undefined,
           } as ModelResponse
         },

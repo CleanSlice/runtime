@@ -26,6 +26,7 @@ export class UsageService {
       totalOutputTokens: 0,
       totalCallCount: 0,
       byCredential: {},
+      byModel: {},
       reportedAt: null,
     }
   }
@@ -49,6 +50,7 @@ export class UsageService {
     }
 
     const credId = usage.credentialId ?? "unknown"
+    const modelName = usage.model ?? "unknown"
     this.current.totalInputTokens += usage.inputTokens
     this.current.totalOutputTokens += usage.outputTokens
     this.current.totalCallCount += 1
@@ -59,6 +61,21 @@ export class UsageService {
     this.current.byCredential[credId].inputTokens += usage.inputTokens
     this.current.byCredential[credId].outputTokens += usage.outputTokens
     this.current.byCredential[credId].callCount += 1
+
+    // Per-model rollup — fed to ranch's POST /agents/:id/usage. Backfill the
+    // map for legacy usage.json files that pre-date this field.
+    if (!this.current.byModel) this.current.byModel = {}
+    if (!this.current.byModel[modelName]) {
+      this.current.byModel[modelName] = { inputTokens: 0, outputTokens: 0, callCount: 0 }
+    }
+    this.current.byModel[modelName].inputTokens += usage.inputTokens
+    this.current.byModel[modelName].outputTokens += usage.outputTokens
+    this.current.byModel[modelName].callCount += 1
+    // Track which credential billed for this model — last write wins, which
+    // is fine since aux + main usually share a credential.
+    if (usage.credentialId) {
+      this.current.byModel[modelName].llmCredentialId = usage.credentialId
+    }
 
     // Persist to file (S3 sync will pick it up)
     this.gateway.save(this.current)
@@ -78,19 +95,30 @@ export class UsageService {
     }
   }
 
-  /** Start daily cron: report at 23:50 UTC */
-  startDailyCron(): void {
-    const MS_PER_MIN = 60_000
-    const checkInterval = setInterval(() => {
-      const now = new Date()
-      if (now.getUTCHours() === 23 && now.getUTCMinutes() === 50) {
-        this.report().catch(() => {})
-      }
-    }, MS_PER_MIN)
-    this.timer = checkInterval
+  /**
+   * Start the periodic reporter. Default interval = 5 minutes — small enough
+   * for the dashboard to feel near-realtime, large enough to coalesce
+   * many LLM calls into one POST. Set to 0 to disable scheduled reporting
+   * (the agent will still report on graceful shutdown via flush()).
+   */
+  startReportCron(intervalMs = 5 * 60_000): void {
+    if (intervalMs <= 0) return
+    this.timer = setInterval(() => {
+      this.report().catch(() => {})
+    }, intervalMs)
   }
 
-  stopDailyCron(): void {
+  stopReportCron(): void {
     if (this.timer) clearInterval(this.timer)
+  }
+
+  /** @deprecated kept for callers that haven't migrated. Use startReportCron(). */
+  startDailyCron(): void {
+    this.startReportCron()
+  }
+
+  /** @deprecated kept for callers that haven't migrated. Use stopReportCron(). */
+  stopDailyCron(): void {
+    this.stopReportCron()
   }
 }

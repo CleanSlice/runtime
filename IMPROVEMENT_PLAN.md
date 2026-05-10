@@ -167,7 +167,7 @@ Currently `src/slices/bot/voice/` only does TTS. Add Whisper-based STT for inbou
 |---|---|---|
 | 1 | Auxiliary LLM client | shipped — v0.4.0 |
 | 1b | Per-token rate-limit pool (Phase A of credential-pool feature) | shipped — v0.5.0 |
-| 1c | Usage reporter to ranch (Phase C of credential-pool feature) | planned — v0.6.0 |
+| 1c | Usage reporter to ranch (Phase C of credential-pool feature) | shipped — v0.6.0 |
 | 2 | Cross-session FTS5 search | planned |
 | 3 | Provider plugin pattern | planned |
 | 4 | Curator | planned |

@@ -3,6 +3,17 @@ import { join } from "path"
 import { IUsageGateway } from "../domain/usage.gateway"
 import type { IDailyUsage } from "../domain/usage.types"
 
+/**
+ * UsageGateway — local persistence + remote reporting.
+ *
+ * Local: data/usage.json is rewritten on every LLM call so a crashed pod
+ *        leaves a recoverable snapshot. The S3 sync watcher uploads it.
+ *
+ * Remote: posts {date, byModel} to ranch's POST /agents/:id/usage endpoint.
+ *         Ranch authenticates with `x-bridle-api-key` (BRIDLE_API_KEY env).
+ *         Defaults to ranch's URL contract — set RANCH_API_URL or fall back
+ *         to legacy API_URL if you're still on the old deployment shape.
+ */
 export class UsageGateway extends IUsageGateway {
   private filePath: string
   private apiUrl: string
@@ -13,8 +24,9 @@ export class UsageGateway extends IUsageGateway {
     const dataDir = join(agentDir, "data")
     mkdirSync(dataDir, { recursive: true })
     this.filePath = join(dataDir, "usage.json")
-    this.apiUrl = process.env.API_URL ?? ""
-    this.apiKey = process.env.INTERNAL_API_KEY ?? ""
+    // Prefer ranch convention, fall back to legacy OpenClaw env names.
+    this.apiUrl = process.env.RANCH_API_URL ?? process.env.API_URL ?? ""
+    this.apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY ?? ""
   }
 
   load(): IDailyUsage | null {
@@ -34,32 +46,31 @@ export class UsageGateway extends IUsageGateway {
     }
   }
 
-  async report(botId: string, usage: IDailyUsage): Promise<void> {
-    if (!this.apiUrl || !botId) {
-      console.warn("[usage] API_URL or BOT_ID not set, skipping report")
+  async report(agentId: string, usage: IDailyUsage): Promise<void> {
+    if (!this.apiUrl || !agentId) {
+      console.warn("[usage] RANCH_API_URL/BRIDLE_AGENT_ID not set, skipping report")
       return
     }
 
-    const url = `${this.apiUrl}/internal/bots/${botId}/usage`
+    const url = `${this.apiUrl}/agents/${agentId}/usage`
+    // ranch expects { date, byModel: { <modelName>: { inputTokens, outputTokens, callCount, llmCredentialId? } } }
+    // (see ReportUsageDto in ranch/api/src/slices/usage/dtos/reportUsage.dto.ts)
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
+        "x-bridle-api-key": this.apiKey,
       },
       body: JSON.stringify({
         date: usage.date,
-        totalInputTokens: usage.totalInputTokens,
-        totalOutputTokens: usage.totalOutputTokens,
-        totalCallCount: usage.totalCallCount,
-        byCredential: usage.byCredential,
+        byModel: usage.byModel ?? {},
       }),
       signal: AbortSignal.timeout(15_000),
     })
 
     if (!res.ok) {
       const text = await res.text()
-      throw new Error(`API error ${res.status}: ${text.slice(0, 200)}`)
+      throw new Error(`ranch usage report ${res.status}: ${text.slice(0, 200)}`)
     }
   }
 }
