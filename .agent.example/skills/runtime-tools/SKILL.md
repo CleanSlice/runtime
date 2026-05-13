@@ -1,7 +1,7 @@
 ---
 name: runtime-tools
 title: Built-in Runtime Tools
-description: Reference for every tool baked into the agent runtime. Read this when you need to pick a tool for a task or remember how to call one.
+description: Lookup table of bundled tooling (exec, http, browser, cron, secrets, telegram_send, tts, image_analyze, pdf_analyze, memory_search, memory_save, spawn_agent, skill_write). Consult before invoking an unknown command name.
 ---
 
 # Built-in Runtime Tools

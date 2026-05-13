@@ -146,7 +146,7 @@ export class S3SyncService implements ISyncGateway {
 
   private isSkipped(rel: string): boolean {
     const norm = rel.split(sep).join("/")
-    return S3SyncService.SKIP_PATTERNS.some(p => p.test(norm))
+    return S3SyncService.SKIP_PATTERNS.some((p) => p.test(norm))
   }
 
   private walkDir(dir: string, result: string[] = []): string[] {
