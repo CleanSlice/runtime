@@ -1,7 +1,8 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
-import { mkdirSync } from "fs"
+import { mkdirSync, existsSync } from "fs"
+import { dirname } from "path"
 import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 
 const actionSchema = z.discriminatedUnion("kind", [
@@ -23,7 +24,7 @@ const schema = z.object({
 
 export const PlaywrightTool: Tool = {
   name: "browser_play",
-  description: `Full Playwright browser control with persistent sessions (cookies, localStorage saved between calls).
+  description: `Full Playwright browser control with persistent sessions (cookies, localStorage saved between calls and across container restarts).
 Use this to: log into websites, automate web tasks, scrape authenticated pages, interact with web apps.
 Supports: navigate, click, fill, press, wait, waitForSelector, evaluate (JS), screenshot, getText.
 Each 'profile' has its own persistent session — login once, reuse forever.
@@ -32,31 +33,42 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { profile, actions } = schema.parse(params)
 
-    const home = process.env.HOME ?? "/home/dmitriyzhuk"
+    const home = process.env.HOME ?? "/tmp"
 
     // Isolate browser profile per user — each user gets their own cookies/session
     // Profile "instagram" for user 55212224 → "55212224-instagram"
     // This prevents session leaks between users
-    const safeUserId = ctx.from.replace(/[^a-zA-Z0-9_\-.]/g, "_")
+    const safeUserId = ctx.from?.replace(/[^a-zA-Z0-9_\-.]/g, "_") ?? ""
     const isolatedProfile = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat"
       ? `${safeUserId}-${profile}`
       : profile
 
-    const profileDir = `${home}/.cleanslice-browser-profiles/${isolatedProfile}`
-    mkdirSync(profileDir, { recursive: true })
-    console.log(`[browser_play] profile=${isolatedProfile} user=${ctx.from}`)
+    // Persist cookies + localStorage as JSON under .agent/ so it ships to S3
+    // via the existing S3SyncService and survives container restarts.
+    const stateFile = `${ctx.agentDir}/browser-state/${isolatedProfile}.json`
+    mkdirSync(dirname(stateFile), { recursive: true })
+    console.log(`[browser_play] profile=${isolatedProfile} user=${ctx.from} state=${stateFile} exists=${existsSync(stateFile)}`)
 
     const { chromium } = await ensurePlaywright()
 
-    const browser = await chromium.launchPersistentContext(profileDir, {
+    const browser = await chromium.launch({
       headless: true,
       executablePath: chromiumPath(),
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
-      viewport: { width: 1280, height: 900 },
     })
 
-    const page = browser.pages()[0] ?? await browser.newPage()
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      storageState: existsSync(stateFile) ? stateFile : undefined,
+    })
+
+    const page = await context.newPage()
     const results: unknown[] = []
+
+    const persistState = async () => {
+      try { await context.storageState({ path: stateFile }) }
+      catch (e) { console.warn(`[browser_play] failed to persist state: ${e}`) }
+    }
 
     try {
       for (const action of actions) {
@@ -171,9 +183,11 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
       const currentUrl = page.url()
       const title = await page.title()
+      await persistState()
       return { ok: true, profile: isolatedProfile, url: currentUrl, title, results }
 
     } catch (err) {
+      await persistState()
       return { ok: false, profile: isolatedProfile, error: String(err), results }
     } finally {
       await browser.close()
