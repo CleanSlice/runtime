@@ -4,9 +4,9 @@ import { readFile, writeFile } from "fs/promises"
 import { join } from "path"
 
 /**
- * File-based secret store. Each user gets their own JSON file.
- * Path: <agentDir>/data/secrets/<userId>.json
- * 
+ * File-based secret store. Each agent gets one JSON file.
+ * Path: <agentDir>/data/secrets/<agentId>.json
+ *
  * ⚠️ Dev only — values stored in plaintext. Use AWS for production.
  */
 export class FileSecretRepository implements ISecretGateway {
@@ -17,14 +17,14 @@ export class FileSecretRepository implements ISecretGateway {
     mkdirSync(this.dir, { recursive: true })
   }
 
-  private path(userId: string): string {
-    // Sanitize userId to prevent path traversal
-    const safe = userId.replace(/[^a-zA-Z0-9_\-:.]/g, "_")
+  private path(scope: string): string {
+    // Sanitize scope to prevent path traversal
+    const safe = scope.replace(/[^a-zA-Z0-9_\-:.]/g, "_")
     return join(this.dir, `${safe}.json`)
   }
 
-  private async load(userId: string): Promise<SecretStore> {
-    const path = this.path(userId)
+  private async load(scope: string): Promise<SecretStore> {
+    const path = this.path(scope)
     if (!existsSync(path)) return {}
     try {
       const text = await readFile(path, "utf-8")
@@ -34,29 +34,29 @@ export class FileSecretRepository implements ISecretGateway {
     }
   }
 
-  private async save(userId: string, store: SecretStore): Promise<void> {
-    await writeFile(this.path(userId), JSON.stringify(store, null, 2), "utf-8")
+  private async save(scope: string, store: SecretStore): Promise<void> {
+    await writeFile(this.path(scope), JSON.stringify(store, null, 2), "utf-8")
   }
 
-  async get(userId: string, key: string): Promise<string | undefined> {
-    const store = await this.load(userId)
+  async get(scope: string, key: string): Promise<string | undefined> {
+    const store = await this.load(scope)
     return store[key]
   }
 
-  async set(userId: string, key: string, value: string): Promise<void> {
-    const store = await this.load(userId)
+  async set(scope: string, key: string, value: string): Promise<void> {
+    const store = await this.load(scope)
     store[key] = value
-    await this.save(userId, store)
+    await this.save(scope, store)
   }
 
-  async delete(userId: string, key: string): Promise<void> {
-    const store = await this.load(userId)
+  async delete(scope: string, key: string): Promise<void> {
+    const store = await this.load(scope)
     delete store[key]
-    await this.save(userId, store)
+    await this.save(scope, store)
   }
 
-  async list(userId: string): Promise<string[]> {
-    const store = await this.load(userId)
+  async list(scope: string): Promise<string[]> {
+    const store = await this.load(scope)
     return Object.keys(store)
   }
 }

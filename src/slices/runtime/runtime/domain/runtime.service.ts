@@ -150,7 +150,7 @@ export class RuntimeService {
   }
 
   private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean): Promise<string> {
-    const secretKeys = await this.deps.secrets.list(msg.from).catch(() => [] as string[])
+    const secretKeys = await this.deps.secrets.list().catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
     // Get all loaded skills — pass summaries to system prompt catalog

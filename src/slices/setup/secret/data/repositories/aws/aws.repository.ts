@@ -2,8 +2,8 @@ import type { ISecretGateway, SecretStore } from "../../../domain/secret.types"
 
 /**
  * AWS Secrets Manager backend.
- * Each user = one secret: "cleanslice/users/<userId>"
- * Value: JSON object with all their keys.
+ * Each agent = one secret: "<prefix>/<agentId>"
+ * Value: JSON object with all of that agent's keys.
  *
  * Requires: AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or IAM role)
  */
@@ -22,16 +22,16 @@ export class AwsSecretRepository implements ISecretGateway {
     return this.client as import("@aws-sdk/client-secrets-manager").SecretsManagerClient
   }
 
-  private secretName(userId: string): string {
-    const safe = userId.replace(/[^a-zA-Z0-9_\-:.]/g, "_")
+  private secretName(scope: string): string {
+    const safe = scope.replace(/[^a-zA-Z0-9_\-:.]/g, "_")
     return `${this.prefix}/${safe}`
   }
 
-  private async load(userId: string): Promise<SecretStore> {
+  private async load(scope: string): Promise<SecretStore> {
     const { GetSecretValueCommand } = await import("@aws-sdk/client-secrets-manager")
     const client = await this.getClient()
     try {
-      const res = await client.send(new GetSecretValueCommand({ SecretId: this.secretName(userId) }))
+      const res = await client.send(new GetSecretValueCommand({ SecretId: this.secretName(scope) }))
       if (res.SecretString) return JSON.parse(res.SecretString) as SecretStore
       return {}
     } catch (err: unknown) {
@@ -40,10 +40,10 @@ export class AwsSecretRepository implements ISecretGateway {
     }
   }
 
-  private async save(userId: string, store: SecretStore): Promise<void> {
+  private async save(scope: string, store: SecretStore): Promise<void> {
     const { PutSecretValueCommand, CreateSecretCommand } = await import("@aws-sdk/client-secrets-manager")
     const client = await this.getClient()
-    const name = this.secretName(userId)
+    const name = this.secretName(scope)
     const value = JSON.stringify(store)
     const keyCount = Object.keys(store).length
     try {
@@ -67,25 +67,25 @@ export class AwsSecretRepository implements ISecretGateway {
     }
   }
 
-  async get(userId: string, key: string): Promise<string | undefined> {
-    const store = await this.load(userId)
+  async get(scope: string, key: string): Promise<string | undefined> {
+    const store = await this.load(scope)
     return store[key]
   }
 
-  async set(userId: string, key: string, value: string): Promise<void> {
-    const store = await this.load(userId)
+  async set(scope: string, key: string, value: string): Promise<void> {
+    const store = await this.load(scope)
     store[key] = value
-    await this.save(userId, store)
+    await this.save(scope, store)
   }
 
-  async delete(userId: string, key: string): Promise<void> {
-    const store = await this.load(userId)
+  async delete(scope: string, key: string): Promise<void> {
+    const store = await this.load(scope)
     delete store[key]
-    await this.save(userId, store)
+    await this.save(scope, store)
   }
 
-  async list(userId: string): Promise<string[]> {
-    const store = await this.load(userId)
+  async list(scope: string): Promise<string[]> {
+    const store = await this.load(scope)
     return Object.keys(store)
   }
 }
