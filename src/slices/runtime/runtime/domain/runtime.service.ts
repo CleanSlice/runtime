@@ -94,6 +94,7 @@ export class RuntimeService {
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
           access: this.deps.access,
           isAdmin,
+          channels: this.deps.channel,
           sendDebug,
         })
 

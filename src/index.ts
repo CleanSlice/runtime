@@ -54,6 +54,7 @@ if (!hasLlmCred) console.warn("[env] ⚠ LLM_API_KEY not set")
 
 import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
+import { ChannelModule } from "./slices/setup/channel"
 import type { LlmConfig } from "./slices/setup/llm/llm.module"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
@@ -179,18 +180,9 @@ const runtime = new AgentRuntime({
   agentDir: ".agent",
   llm,
   llmAuxiliary,
-  channels: [
-    { type: "telegram", token: process.env.TELEGRAM_BOT_TOKEN ?? "" },
-    ...(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN ? [{
-      type: "slack" as const,
-      botToken: process.env.SLACK_BOT_TOKEN,
-      appToken: process.env.SLACK_APP_TOKEN,
-    }] : []),
-    ...(process.env.BRIDLE_URL ? [{
-      type: "bridle" as const,
-      apiUrl: process.env.BRIDLE_URL,
-    }] : []),
-  ],
+  // channels.json wins per type; env is the fallback. Bridle stays
+  // env-only — it's the bootstrap channel the runtime can't reconfigure.
+  channels: await ChannelModule.resolveBootConfigs(".agent"),
   tools: [...toolGateway.getAll(), ...mcpTools],
 })
 

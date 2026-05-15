@@ -49,6 +49,7 @@ process.on("unhandledRejection", (reason) => {
 import { AgentRuntime } from "./runtime"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
+import { ChannelModule } from "./slices/setup/channel"
 
 interface AgentConfig {
   name: string
@@ -92,14 +93,10 @@ for (const agent of agents) {
     const runtime = new AgentRuntime({
       init,
       llm: { provider: "claude", model: agentEnv.CLAUDE_MODEL },
-      channels: [
-        { type: "telegram", token: agentEnv.TELEGRAM_BOT_TOKEN ?? "" },
-        ...(agentEnv.SLACK_BOT_TOKEN && agentEnv.SLACK_APP_TOKEN ? [{
-          type: "slack" as const,
-          botToken: agentEnv.SLACK_BOT_TOKEN,
-          appToken: agentEnv.SLACK_APP_TOKEN,
-        }] : []),
-      ],
+      // Resolves channels.json (per agentDir) with this agent's env scoped in
+      // via Object.assign(process.env, agentEnv) above. No bridle in multi —
+      // it doesn't set BRIDLE_URL.
+      channels: await ChannelModule.resolveBootConfigs(agentDir),
       tools: sharedTools,
     })
 

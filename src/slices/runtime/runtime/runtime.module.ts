@@ -84,8 +84,9 @@ export class AgentRuntime {
       : undefined
     this.llm = new LlmModule(llmConfig, auxConfig)
 
-    // Message transport (Telegram, Slack, etc.)
-    this.channel = new ChannelModule(config.channels)
+    // Message transport (Telegram, Slack, etc.) — agentDir enables the
+    // file-backed mutation path (channel_* tools, channels.json persistence).
+    this.channel = new ChannelModule(config.channels, agentDir)
 
     // Conversation history with automatic compaction
     this.session = new SessionModule(agentDir, {

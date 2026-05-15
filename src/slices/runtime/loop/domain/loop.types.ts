@@ -2,7 +2,7 @@ import type { Event } from "../../../setup/event"
 import type { Tool } from "../../../agent/tool"
 import type { Task } from "../../../agent/task/domain/task.service"
 import type { AccessModule } from "../../../bot/access/access.module"
-import type { IBridleDebugPayload } from "../../../setup/channel"
+import type { ChannelModule, IBridleDebugPayload } from "../../../setup/channel"
 
 export interface ILoopConfig {
   maxIterations: number
@@ -34,6 +34,11 @@ export interface ILoopContext {
   reloadSkills: () => Promise<void>
   access?: AccessModule
   isAdmin: boolean
+  /**
+   * Live channel registry — passed through to tools so channel_* tools can
+   * mutate the agent's own connections (e.g. configure Telegram in-chat).
+   */
+  channels?: ChannelModule
   /**
    * Best-effort debug-snapshot emitter. Wired from the runtime when the
    * active channel is bridle; otherwise undefined. The loop checks

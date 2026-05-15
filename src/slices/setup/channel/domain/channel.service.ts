@@ -30,6 +30,39 @@ export class ChannelService {
     await Promise.all(this.channels.map(ch => ch.stop()))
   }
 
+  /**
+   * Start a single channel and add it to the service. Hooks the registered
+   * message handler so messages flow through the same path as boot-time
+   * channels. Used by the runtime-mutating channel tools.
+   */
+  async addAndStart(channel: IChannelGateway): Promise<void> {
+    await channel.start()
+    this.channels.push(channel)
+    if (this.handler) channel.onMessage(this.handler)
+  }
+
+  /**
+   * Stop and remove a channel by name. No-op when the channel isn't
+   * registered. Returns true when something was removed.
+   */
+  async removeAndStop(name: string): Promise<boolean> {
+    const idx = this.channels.findIndex(c => c.name === name)
+    if (idx === -1) return false
+    const ch = this.channels[idx]
+    this.channels.splice(idx, 1)
+    try {
+      await ch.stop()
+    } catch (err) {
+      console.warn(`[channel] ${name} failed to stop cleanly:`, err)
+    }
+    return true
+  }
+
+  /** Names of currently registered channels — used by the channel_list tool. */
+  listNames(): string[] {
+    return this.channels.map(c => c.name)
+  }
+
   async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)

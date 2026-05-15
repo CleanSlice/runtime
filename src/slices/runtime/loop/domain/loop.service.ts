@@ -265,6 +265,7 @@ export class LoopService {
               reloadSkills: ctx.reloadSkills,
               access: ctx.access,
               isAdmin: ctx.isAdmin,
+              channels: ctx.channels,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)

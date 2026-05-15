@@ -1,6 +1,7 @@
 import type { ZodSchema } from "zod"
 import type { IAgentConfig } from "../../../runtime/init"
 import type { AccessModule } from "../../../bot/access/access.module"
+import type { ChannelModule } from "../../../setup/channel/channel.module"
 
 export interface ToolContext {
   sessionId: string
@@ -12,6 +13,7 @@ export interface ToolContext {
   reloadSkills?: () => Promise<void>  // hot-reload skills after skill_write
   access?: AccessModule
   isAdmin?: boolean
+  channels?: ChannelModule  // live channel registry — drives channel_* tools
 }
 
 export interface Tool {
