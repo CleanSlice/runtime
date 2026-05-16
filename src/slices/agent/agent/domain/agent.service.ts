@@ -1,6 +1,7 @@
 import type { IAgentGateway } from "./agent.gateway"
 import type { AgentConfig } from "./agent.types"
 import type { SkillSummary } from "../../skill/domain/skill.types"
+import { SILENT_REPLY_TOKEN } from "./silentReply"
 
 export interface BuildPromptOpts {
   agentDir?: string
@@ -88,6 +89,17 @@ export class AgentService {
         `To create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`
       )
     }
+
+    parts.push(
+      `# Staying Silent\n\n` +
+      `When you have genuinely nothing to say to the user — e.g. a recovery instruction told you to resume silently and the task was already complete, or a background event arrived after you already replied — respond with ONLY the literal token below and nothing else:\n\n` +
+      `\`${SILENT_REPLY_TOKEN}\`\n\n` +
+      `Rules:\n` +
+      `- Must be the entire reply. No prefix, no suffix, no quotes, no explanation.\n` +
+      `- Never append \`${SILENT_REPLY_TOKEN}\` to a real reply — pick one or the other.\n` +
+      `- Do not use it to dodge work. Use it only when sending any message would be noise.\n` +
+      `- The runtime suppresses this token: the user sees nothing.`
+    )
 
     return parts.join("\n\n---\n\n")
   }

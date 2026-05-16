@@ -1,4 +1,5 @@
 import { buildMessage, type Message } from "../../../domain/channel.types"
+import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 
 interface TelegramUpdate {
@@ -135,6 +136,7 @@ export class TelegramRepository {
     if (!messageId) {
       // Fallback: just get the full text and send
       const text = await streamer(() => {})
+      if (isSilentReply(text)) return
       await this.send(chatId, text)
       return
     }
@@ -143,9 +145,12 @@ export class TelegramRepository {
     let pendingText = ""
     let editing = false
 
-    // Throttled edit — at most once per 600ms to avoid Telegram rate limits (30 edits/min)
+    // Throttled edit — at most once per 600ms to avoid Telegram rate limits (30 edits/min).
+    // Holds when the accumulated text is still a prefix of the silent-reply sentinel — the
+    // user never sees "N" / "NO_REP" leak from a model that's about to emit NO_REPLY.
     const flushEdit = async () => {
       if (editing || pendingText === lastSent) return
+      if (isSilentReplyPrefix(pendingText)) return
       editing = true
       const toSend = pendingText
       try {
@@ -166,7 +171,10 @@ export class TelegramRepository {
       pendingText = finalText
     } finally {
       clearInterval(interval)
-      if (finalText && finalText !== lastSent) {
+      if (isSilentReply(finalText)) {
+        // Sentinel: model chose to stay silent — drop the placeholder.
+        await this.deleteMessage(chatId, messageId)
+      } else if (finalText && finalText !== lastSent) {
         // Final edit with complete text
         await this.editMessage(chatId, messageId, finalText)
       } else if (!finalText) {

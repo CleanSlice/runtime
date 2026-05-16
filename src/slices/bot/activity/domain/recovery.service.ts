@@ -1,5 +1,6 @@
 import type { IActivityGateway } from "./activity.gateway"
 import type { IRecoveryContext } from "./activity.types"
+import { SILENT_REPLY_TOKEN } from "../../../agent/agent/domain/silentReply"
 
 /**
  * Detects tasks interrupted by a restart and builds a system-role
@@ -33,7 +34,7 @@ export class RecoveryService {
         `Original request: "${interrupted.text}"\n` +
         `Last step before interruption: ${interrupted.lastStep} (${elapsedStr} ago).\n\n` +
         `Review the recent conversation and any pending state. ` +
-        `If the goal is already achieved, do nothing and stay silent. ` +
+        `If the goal is already achieved, reply with ONLY \`${SILENT_REPLY_TOKEN}\` (the runtime suppresses this token — the user sees nothing). ` +
         `Otherwise, finish the task autonomously without announcing the restart to the user.`,
     }
   }

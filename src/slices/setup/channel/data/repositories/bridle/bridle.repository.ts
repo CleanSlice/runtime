@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "../../../domain/channel.gateway"
 import { MessagePartTypes, buildMessage, type Message, type MessagePart } from "../../../domain/channel.types"
+import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
 
@@ -172,8 +173,12 @@ export class BridleRepository implements IChannelGateway {
     let sending = false
     let chunksEmitted = 0
 
+    // Hold chunk emission while accumulated text is still a prefix of the
+    // silent-reply sentinel, so the browser never sees "N" / "NO_REP" before
+    // we know the model is going to emit NO_REPLY.
     const flush = () => {
       if (sending || pendingText === lastSent) return
+      if (isSilentReplyPrefix(pendingText)) return
       sending = true
       const toSend = pendingText
       this.socket?.emit("stream", {
@@ -200,7 +205,9 @@ export class BridleRepository implements IChannelGateway {
       // Tool-only LLM iterations stream no text and return ""; emitting
       // stream_end here would create an empty bubble in the UI. Skip when
       // we never streamed anything and have nothing to finalize.
-      if (chunksEmitted > 0 || finalText.length > 0) {
+      // Silent-reply sentinel: even if chunks were never emitted (held by
+      // the prefix guard), don't emit stream_end with NO_REPLY content.
+      if ((chunksEmitted > 0 || finalText.length > 0) && !isSilentReply(finalText)) {
         this.socket?.emit("stream_end", {
           clientId: to,
           text: finalText,
@@ -211,7 +218,7 @@ export class BridleRepository implements IChannelGateway {
       }
       console.log(
         `[bridle] stream end (messageId=${messageId.slice(0, 8)}, ` +
-        `chunks=${chunksEmitted}, length=${finalText.length})`,
+        `chunks=${chunksEmitted}, length=${finalText.length}${isSilentReply(finalText) ? ", silent" : ""})`,
       )
     }
   }

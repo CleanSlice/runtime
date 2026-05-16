@@ -22,12 +22,76 @@ const schema = z.object({
   actions: z.array(actionSchema).describe("List of browser actions to execute in sequence"),
 })
 
+interface SessionRef {
+  id: string
+  cdpUrl: string
+  vncUrl: string | null
+}
+
+// Resolve the browser-pool session for this (userId, profile). Returns null
+// when no pool is configured — that's the dev/CLI path where we still want
+// `browser_play` to work via a local Chromium binary.
+async function openPoolSession(
+  userId: string,
+  accountKey: string,
+): Promise<SessionRef | null> {
+  const apiUrl = process.env.RANCH_API_URL ?? process.env.API_URL
+  const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
+  if (!apiUrl || !apiKey) return null
+  try {
+    const res = await fetch(`${apiUrl}/browser/internal/sessions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bridle-api-key": apiKey,
+      },
+      body: JSON.stringify({ userId, accountKey }),
+    })
+    if (!res.ok) {
+      console.warn(`[browser_play] pool refused session (${res.status}) — falling back to local`)
+      return null
+    }
+    const data = (await res.json()) as {
+      session: { id: string }
+      cdpUrl: string
+      vncUrl: string | null
+    }
+    return { id: data.session.id, cdpUrl: data.cdpUrl, vncUrl: data.vncUrl }
+  } catch (err) {
+    console.warn(`[browser_play] pool unreachable (${(err as Error).message}) — falling back to local`)
+    return null
+  }
+}
+
+async function reportSessionStatus(
+  userId: string,
+  sessionId: string,
+  status: "idle" | "needs_login" | "stuck",
+): Promise<void> {
+  const apiUrl = process.env.RANCH_API_URL ?? process.env.API_URL
+  const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
+  if (!apiUrl || !apiKey) return
+  try {
+    await fetch(`${apiUrl}/browser/internal/sessions/${sessionId}/status`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bridle-api-key": apiKey,
+      },
+      body: JSON.stringify({ userId, status }),
+    })
+  } catch (err) {
+    console.warn(`[browser_play] failed to report status: ${(err as Error).message}`)
+  }
+}
+
 export const PlaywrightTool: Tool = {
   name: "browser_play",
   description: `Full Playwright browser control with persistent sessions (cookies, localStorage saved between calls and across container restarts).
 Use this to: log into websites, automate web tasks, scrape authenticated pages, interact with web apps.
 Supports: navigate, click, fill, press, wait, waitForSelector, evaluate (JS), screenshot, getText.
 Each 'profile' has its own persistent session — login once, reuse forever.
+When this tool returns { needsLogin: true, vncUrl }, surface the vncUrl to the user (e.g. via Telegram) and ask them to finish the login manually before retrying.
 Example: log in to Instagram with profile="instagram", then future calls with same profile stay logged in.`,
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
@@ -35,39 +99,74 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
     const home = process.env.HOME ?? "/tmp"
 
-    // Isolate browser profile per user — each user gets their own cookies/session
-    // Profile "instagram" for user 55212224 → "55212224-instagram"
-    // This prevents session leaks between users
-    const safeUserId = ctx.from?.replace(/[^a-zA-Z0-9_\-.]/g, "_") ?? ""
-    const isolatedProfile = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat"
-      ? `${safeUserId}-${profile}`
-      : profile
-
-    // Persist cookies + localStorage as JSON under .agent/ so it ships to S3
-    // via the existing S3SyncService and survives container restarts.
-    const stateFile = `${ctx.agentDir}/browser-state/${isolatedProfile}.json`
-    mkdirSync(dirname(stateFile), { recursive: true })
-    console.log(`[browser_play] profile=${isolatedProfile} user=${ctx.from} state=${stateFile} exists=${existsSync(stateFile)}`)
+    // ctx.from is the chat user id (e.g. Telegram userId) — already isolated
+    // by the runtime, never trusted as raw input from the LLM. We forward it
+    // to ranch-api which builds the profile path /profiles/<userId>/<profile>
+    // on the shared pool PVC.
+    const userId = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat" ? ctx.from : ""
+    const session = userId ? await openPoolSession(userId, profile) : null
 
     const { chromium } = await ensurePlaywright()
 
-    const browser = await chromium.launch({
-      headless: true,
-      executablePath: chromiumPath(),
-      args: ["--no-sandbox", "--disable-dev-shm-usage"],
-    })
+    let browser: import("playwright").Browser
+    let context: import("playwright").BrowserContext
+    let isPooled = false
+    let localStateFile: string | null = null
 
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 900 },
-      storageState: existsSync(stateFile) ? stateFile : undefined,
-    })
+    if (session) {
+      // Pool path — the profile lives on the pool PVC, no local state file.
+      // Chrome inside the pool persists cookies to --user-data-dir, so
+      // re-connecting next time picks up where we left off automatically.
+      //
+      // We use `chromium.connect()` (Playwright WS protocol), NOT
+      // `connectOverCDP()` — the latter ignores the `launch` query param
+      // that carries our per-tenant --user-data-dir.
+      isPooled = true
+      browser = await chromium.connect(session.cdpUrl)
+      const existingContexts = browser.contexts()
+      context = existingContexts[0] ?? (await browser.newContext({
+        viewport: { width: 1280, height: 900 },
+      }))
+    } else {
+      // Local path (dev / CLI / no pool configured). Persist cookies to a
+      // JSON file under .agent/ so it ships to S3 via S3SyncService.
+      const safeUserId = userId.replace(/[^a-zA-Z0-9_\-.]/g, "_")
+      const isolatedProfile = userId ? `${safeUserId}-${profile}` : profile
+      localStateFile = `${ctx.agentDir}/browser-state/${isolatedProfile}.json`
+      mkdirSync(dirname(localStateFile), { recursive: true })
+      console.log(`[browser_play] local fallback profile=${isolatedProfile} state=${localStateFile} exists=${existsSync(localStateFile)}`)
+      browser = await chromium.launch({
+        headless: true,
+        executablePath: chromiumPath(),
+        args: ["--no-sandbox", "--disable-dev-shm-usage"],
+      })
+      context = await browser.newContext({
+        viewport: { width: 1280, height: 900 },
+        storageState: existsSync(localStateFile) ? localStateFile : undefined,
+      })
+    }
 
-    const page = await context.newPage()
+    const page = context.pages()[0] ?? (await context.newPage())
     const results: unknown[] = []
 
-    const persistState = async () => {
-      try { await context.storageState({ path: stateFile }) }
+    const persistLocalState = async () => {
+      if (!localStateFile) return
+      try { await context.storageState({ path: localStateFile }) }
       catch (e) { console.warn(`[browser_play] failed to persist state: ${e}`) }
+    }
+
+    const close = async () => {
+      try {
+        if (isPooled) {
+          // Pooled — disconnect, browser stays alive in the pool for the
+          // next call. Don't close the browser object itself.
+          await browser.close().catch(() => {})
+        } else {
+          await browser.close()
+        }
+      } catch (e) {
+        console.warn(`[browser_play] close failed: ${e}`)
+      }
     }
 
     try {
@@ -79,14 +178,12 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
             break
           }
           case "click": {
-            // Try exact selector first, fallback to role=button with text
             const el = await page.$(action.selector)
             if (el) {
               await el.click({ timeout: 10000 })
             } else if (action.selector.includes(":has-text(") || action.selector.includes("text=")) {
               await page.click(action.selector, { timeout: 10000 })
             } else {
-              // Last resort: try as text match on div[role=button]
               await page.click(action.selector, { timeout: 10000 })
             }
             results.push({ action: "click", selector: action.selector })
@@ -122,7 +219,6 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
             const outPath = `${home}/${filename}`
             await page.screenshot({ path: outPath, fullPage: action.fullPage !== false })
 
-            // Analyze the screenshot with Claude vision so bot knows what's on screen
             let visionDescription: string | undefined
             const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
             if (oauthToken) {
@@ -183,14 +279,40 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
       const currentUrl = page.url()
       const title = await page.title()
-      await persistState()
-      return { ok: true, profile: isolatedProfile, url: currentUrl, title, results }
+      await persistLocalState()
 
+      // Heuristic: a redirect to a /login or /accounts/login path during the
+      // action sequence means the profile lost its session — flag it so the
+      // admin UI surfaces "needs_login" and the agent forwards vncUrl.
+      const needsLogin = /\/(login|accounts\/login|signin)(\?|$|\/)/i.test(currentUrl)
+      if (session) {
+        await reportSessionStatus(userId, session.id, needsLogin ? "needs_login" : "idle")
+      }
+
+      return {
+        ok: true,
+        profile,
+        url: currentUrl,
+        title,
+        results,
+        ...(needsLogin && session
+          ? { needsLogin: true, vncUrl: session.vncUrl, sessionId: session.id }
+          : {}),
+      }
     } catch (err) {
-      await persistState()
-      return { ok: false, profile: isolatedProfile, error: String(err), results }
+      await persistLocalState()
+      if (session) {
+        await reportSessionStatus(userId, session.id, "stuck")
+      }
+      return {
+        ok: false,
+        profile,
+        error: String(err),
+        results,
+        ...(session ? { vncUrl: session.vncUrl, sessionId: session.id } : {}),
+      }
     } finally {
-      await browser.close()
+      await close()
     }
   },
 }

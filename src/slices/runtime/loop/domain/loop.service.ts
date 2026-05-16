@@ -9,6 +9,7 @@ import type { Tool } from "../../../agent/tool"
 import type { ILoopContext, ILoopConfig, ILoopResult } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
+import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 
 interface LoopServiceDeps {
@@ -329,8 +330,19 @@ export class LoopService {
 
   private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number): Promise<void> {
     const tid = ctx.task.id.slice(0, 6)
-    const preview = fullText.slice(0, 50).replace(/\n/g, " ")
     const iterTag = iterations > 1 ? ` #${iterations}` : ""
+
+    // Silent reply: the model chose to stay quiet (e.g. recovery resumed a
+    // completed task). Drop the message entirely — don't persist it as an
+    // assistant event (would poison next-turn context) and don't ship to
+    // the channel. For streaming channels the placeholder/stream_end is
+    // already suppressed inside the repository.
+    if (isSilentReply(fullText)) {
+      console.log(`[${tid}]${iterTag} llm → NO_REPLY (suppressed)`)
+      return
+    }
+
+    const preview = fullText.slice(0, 50).replace(/\n/g, " ")
     console.log(`[${tid}]${iterTag} llm → "${preview}…" (${fullText.length})`)
 
     const assistantEvent: Event = {
