@@ -28,6 +28,25 @@ interface SessionRef {
   vncUrl: string | null
 }
 
+// ranch-api wraps every response as { success, data: ... } via FlatResponse
+// interceptor — unwrap once and treat the envelope absence as a hard error
+// rather than letting `undefined.session` blow up later.
+function unwrapEnvelope<T>(body: unknown): T {
+  if (body && typeof body === "object" && "data" in (body as Record<string, unknown>)) {
+    return (body as { data: T }).data
+  }
+  return body as T
+}
+
+function ranchBaseUrl(): string | null {
+  const raw = process.env.RANCH_API_URL ?? process.env.API_URL
+  if (!raw) return null
+  // Strip trailing slashes so `${base}/browser/...` never produces a double-
+  // slashed path. ranch-api in prod is configured with a trailing slash in
+  // the agent env, which silently confused us once already.
+  return raw.replace(/\/+$/, "")
+}
+
 // Resolve the browser-pool session for this (userId, profile). Returns null
 // when no pool is configured — that's the dev/CLI path where we still want
 // `browser_play` to work via a local Chromium binary.
@@ -35,7 +54,7 @@ async function openPoolSession(
   userId: string,
   accountKey: string,
 ): Promise<SessionRef | null> {
-  const apiUrl = process.env.RANCH_API_URL ?? process.env.API_URL
+  const apiUrl = ranchBaseUrl()
   const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
   if (!apiUrl || !apiKey) return null
   try {
@@ -51,10 +70,14 @@ async function openPoolSession(
       console.warn(`[browser_play] pool refused session (${res.status}) — falling back to local`)
       return null
     }
-    const data = (await res.json()) as {
+    const data = unwrapEnvelope<{
       session: { id: string }
       cdpUrl: string
       vncUrl: string | null
+    }>(await res.json())
+    if (!data?.session?.id) {
+      console.warn(`[browser_play] pool returned malformed payload — falling back to local`)
+      return null
     }
     return { id: data.session.id, cdpUrl: data.cdpUrl, vncUrl: data.vncUrl }
   } catch (err) {
@@ -68,7 +91,7 @@ async function reportSessionStatus(
   sessionId: string,
   status: "idle" | "needs_login" | "stuck",
 ): Promise<void> {
-  const apiUrl = process.env.RANCH_API_URL ?? process.env.API_URL
+  const apiUrl = ranchBaseUrl()
   const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
   if (!apiUrl || !apiKey) return
   try {
