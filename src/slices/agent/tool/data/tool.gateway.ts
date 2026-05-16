@@ -8,6 +8,7 @@ import { BrowserTool } from "./repositories/browser/browser.repository"
 
 import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { PlaywrightTool } from "./repositories/browser/playwright.repository"
+import { BrowserLoginTool, BrowserLoginDoneTool } from "./repositories/browser/browserLogin.repository"
 import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
 import { WebSearchTool } from "./repositories/websearch/websearch.repository"
 import { WebFetchTool } from "./repositories/websearch/webfetch.repository"
@@ -36,6 +37,8 @@ export class ToolGateway implements IToolGateway {
     this.register(BrowserTool)
     this.register(BrowserScreenshotTool)
     this.register(PlaywrightTool)
+    this.register(BrowserLoginTool)
+    this.register(BrowserLoginDoneTool)
     this.register(CronListRepository as Tool)
     this.register(CronAddRepository as Tool)
     this.register(CronRemoveRepository as Tool)

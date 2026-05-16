@@ -4,6 +4,7 @@ import { randomUUID } from "crypto"
 import { mkdirSync, existsSync } from "fs"
 import { dirname } from "path"
 import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
+import { profileStatePath } from "./browserLogin.repository"
 
 const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), url: z.string() }),
@@ -18,177 +19,61 @@ const actionSchema = z.discriminatedUnion("kind", [
 ])
 
 const schema = z.object({
-  profile: z.string().default("default").describe("Browser profile name (separate persistent session per profile)"),
+  profile: z
+    .string()
+    .default("default")
+    .describe(
+      "Profile name — picks the persistent state file used for cookies/localStorage. Pair with browser_login to authenticate once, then reuse here.",
+    ),
   actions: z.array(actionSchema).describe("List of browser actions to execute in sequence"),
 })
 
-interface SessionRef {
-  id: string
-  cdpUrl: string
-  vncUrl: string | null
-}
-
-// ranch-api wraps every response as { success, data: ... } via FlatResponse
-// interceptor — unwrap once and treat the envelope absence as a hard error
-// rather than letting `undefined.session` blow up later.
-function unwrapEnvelope<T>(body: unknown): T {
-  if (body && typeof body === "object" && "data" in (body as Record<string, unknown>)) {
-    return (body as { data: T }).data
-  }
-  return body as T
-}
-
-function ranchBaseUrl(): string | null {
-  const raw = process.env.RANCH_API_URL ?? process.env.API_URL
-  if (!raw) return null
-  // Strip trailing slashes so `${base}/browser/...` never produces a double-
-  // slashed path. ranch-api in prod is configured with a trailing slash in
-  // the agent env, which silently confused us once already.
-  return raw.replace(/\/+$/, "")
-}
-
-// Resolve the browser-pool session for this (userId, profile). Returns null
-// when no pool is configured — that's the dev/CLI path where we still want
-// `browser_play` to work via a local Chromium binary.
-async function openPoolSession(
-  userId: string,
-  accountKey: string,
-): Promise<SessionRef | null> {
-  const apiUrl = ranchBaseUrl()
-  const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
-  if (!apiUrl || !apiKey) return null
-  try {
-    const res = await fetch(`${apiUrl}/browser/internal/sessions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-bridle-api-key": apiKey,
-      },
-      body: JSON.stringify({ userId, accountKey }),
-    })
-    if (!res.ok) {
-      console.warn(`[browser_play] pool refused session (${res.status}) — falling back to local`)
-      return null
-    }
-    const data = unwrapEnvelope<{
-      session: { id: string }
-      cdpUrl: string
-      vncUrl: string | null
-    }>(await res.json())
-    if (!data?.session?.id) {
-      console.warn(`[browser_play] pool returned malformed payload — falling back to local`)
-      return null
-    }
-    return { id: data.session.id, cdpUrl: data.cdpUrl, vncUrl: data.vncUrl }
-  } catch (err) {
-    console.warn(`[browser_play] pool unreachable (${(err as Error).message}) — falling back to local`)
-    return null
-  }
-}
-
-async function reportSessionStatus(
-  userId: string,
-  sessionId: string,
-  status: "idle" | "needs_login" | "stuck",
-): Promise<void> {
-  const apiUrl = ranchBaseUrl()
-  const apiKey = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
-  if (!apiUrl || !apiKey) return
-  try {
-    await fetch(`${apiUrl}/browser/internal/sessions/${sessionId}/status`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-bridle-api-key": apiKey,
-      },
-      body: JSON.stringify({ userId, status }),
-    })
-  } catch (err) {
-    console.warn(`[browser_play] failed to report status: ${(err as Error).message}`)
-  }
-}
-
 export const PlaywrightTool: Tool = {
   name: "browser_play",
-  description: `Full Playwright browser control with persistent sessions (cookies, localStorage saved between calls and across container restarts).
-Use this to: log into websites, automate web tasks, scrape authenticated pages, interact with web apps.
+  description: `Full Playwright browser control with persistent sessions. Cookies + localStorage are stored as JSON under .agent/browser-state/<user>-<profile>.json — they survive container restarts via the existing S3 sync.
+
 Supports: navigate, click, fill, press, wait, waitForSelector, evaluate (JS), screenshot, getText.
-Each 'profile' has its own persistent session — login once, reuse forever.
-When this tool returns { needsLogin: true, vncUrl }, surface the vncUrl to the user (e.g. via Telegram) and ask them to finish the login manually before retrying.
-Example: log in to Instagram with profile="instagram", then future calls with same profile stay logged in.`,
+
+Login flow for sites that need authentication (Instagram, Meta Ads, PayPal, etc.):
+
+1. Try browser_play. If the navigated URL ends up on a /login or /accounts/login path, the tool returns { needsLogin: true, hint }.
+2. Call browser_login with the SAME profile — it returns a vncUrl.
+3. Forward vncUrl to the user verbatim. Wait for them to confirm they finished signing in.
+4. Call browser_login_done with the same profile. Cookies are captured into the local state file.
+5. Retry browser_play. Now it runs logged in.
+
+Never tell the user to "open instagram.com and log in yourself" — the login MUST happen in the pool's browser via vncUrl, otherwise cookies don't land on the profile.`,
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { profile, actions } = schema.parse(params)
 
     const home = process.env.HOME ?? "/tmp"
-
-    // ctx.from is the chat user id (e.g. Telegram userId) — already isolated
-    // by the runtime, never trusted as raw input from the LLM. We forward it
-    // to ranch-api which builds the profile path /profiles/<userId>/<profile>
-    // on the shared pool PVC.
-    const userId = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat" ? ctx.from : ""
-    const session = userId ? await openPoolSession(userId, profile) : null
-
     const { chromium } = await ensurePlaywright()
 
-    let browser: import("playwright").Browser
-    let context: import("playwright").BrowserContext
-    let isPooled = false
-    let localStateFile: string | null = null
+    const stateFile = profileStatePath(ctx, profile)
+    mkdirSync(dirname(stateFile), { recursive: true })
+    const hadState = existsSync(stateFile)
+    console.log(`[browser_play] profile=${profile} user=${ctx.from} state=${stateFile} exists=${hadState}`)
 
-    if (session) {
-      // Pool path — the profile lives on the pool PVC, no local state file.
-      // Chrome inside the pool persists cookies to --user-data-dir, so
-      // re-connecting next time picks up where we left off automatically.
-      //
-      // We use `chromium.connect()` (Playwright WS protocol), NOT
-      // `connectOverCDP()` — the latter ignores the `launch` query param
-      // that carries our per-tenant --user-data-dir.
-      isPooled = true
-      browser = await chromium.connect(session.cdpUrl)
-      const existingContexts = browser.contexts()
-      context = existingContexts[0] ?? (await browser.newContext({
-        viewport: { width: 1280, height: 900 },
-      }))
-    } else {
-      // Local path (dev / CLI / no pool configured). Persist cookies to a
-      // JSON file under .agent/ so it ships to S3 via S3SyncService.
-      const safeUserId = userId.replace(/[^a-zA-Z0-9_\-.]/g, "_")
-      const isolatedProfile = userId ? `${safeUserId}-${profile}` : profile
-      localStateFile = `${ctx.agentDir}/browser-state/${isolatedProfile}.json`
-      mkdirSync(dirname(localStateFile), { recursive: true })
-      console.log(`[browser_play] local fallback profile=${isolatedProfile} state=${localStateFile} exists=${existsSync(localStateFile)}`)
-      browser = await chromium.launch({
-        headless: true,
-        executablePath: chromiumPath(),
-        args: ["--no-sandbox", "--disable-dev-shm-usage"],
-      })
-      context = await browser.newContext({
-        viewport: { width: 1280, height: 900 },
-        storageState: existsSync(localStateFile) ? localStateFile : undefined,
-      })
-    }
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: chromiumPath(),
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    })
 
-    const page = context.pages()[0] ?? (await context.newPage())
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      storageState: hadState ? stateFile : undefined,
+    })
+
+    const page = await context.newPage()
     const results: unknown[] = []
 
-    const persistLocalState = async () => {
-      if (!localStateFile) return
-      try { await context.storageState({ path: localStateFile }) }
-      catch (e) { console.warn(`[browser_play] failed to persist state: ${e}`) }
-    }
-
-    const close = async () => {
+    const persistState = async () => {
       try {
-        if (isPooled) {
-          // Pooled — disconnect, browser stays alive in the pool for the
-          // next call. Don't close the browser object itself.
-          await browser.close().catch(() => {})
-        } else {
-          await browser.close()
-        }
+        await context.storageState({ path: stateFile })
       } catch (e) {
-        console.warn(`[browser_play] close failed: ${e}`)
+        console.warn(`[browser_play] failed to persist state: ${e}`)
       }
     }
 
@@ -223,7 +108,7 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
             break
           }
           case "wait": {
-            await new Promise(r => setTimeout(r, action.ms))
+            await new Promise((r) => setTimeout(r, action.ms))
             results.push({ action: "wait", ms: action.ms })
             break
           }
@@ -253,7 +138,7 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${oauthToken}`,
+                    Authorization: `Bearer ${oauthToken}`,
                     "anthropic-version": "2023-06-01",
                     "anthropic-beta": "oauth-2025-04-20",
                   },
@@ -269,8 +154,8 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
                     }],
                   }),
                 })
-                const visionData = await visionRes.json() as { content?: Array<{ type: string; text?: string }> }
-                visionDescription = visionData?.content?.find(c => c.type === "text")?.text
+                const visionData = (await visionRes.json()) as { content?: Array<{ type: string; text?: string }> }
+                visionDescription = visionData?.content?.find((c) => c.type === "text")?.text
               } catch (_e) {
                 // vision failed, continue without it
               }
@@ -283,10 +168,17 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
               const form = new FormData()
               form.append("chat_id", chatId)
               form.append("caption", `📸 ${await page.url()}`)
-              form.append("photo", new Blob([await file.arrayBuffer()], { type: "image/png" }), "screenshot.png")
-              const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, { method: "POST", body: form })
+              form.append(
+                "photo",
+                new Blob([await file.arrayBuffer()], { type: "image/png" }),
+                "screenshot.png",
+              )
+              const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
+                method: "POST",
+                body: form,
+              })
               await Bun.spawn(["rm", "-f", outPath]).exited
-              results.push({ action: "screenshot", sent: (await res.json() as { ok: boolean }).ok, vision: visionDescription })
+              results.push({ action: "screenshot", sent: ((await res.json()) as { ok: boolean }).ok, vision: visionDescription })
             } else {
               results.push({ action: "screenshot", path: outPath, vision: visionDescription })
             }
@@ -302,40 +194,29 @@ Example: log in to Instagram with profile="instagram", then future calls with sa
 
       const currentUrl = page.url()
       const title = await page.title()
-      await persistLocalState()
+      await persistState()
 
-      // Heuristic: a redirect to a /login or /accounts/login path during the
-      // action sequence means the profile lost its session — flag it so the
-      // admin UI surfaces "needs_login" and the agent forwards vncUrl.
+      // Heuristic: redirect to /login indicates the profile lost its session.
+      // Surface this to the agent so it kicks off the browser_login flow.
       const needsLogin = /\/(login|accounts\/login|signin)(\?|$|\/)/i.test(currentUrl)
-      if (session) {
-        await reportSessionStatus(userId, session.id, needsLogin ? "needs_login" : "idle")
-      }
-
       return {
         ok: true,
         profile,
         url: currentUrl,
         title,
         results,
-        ...(needsLogin && session
-          ? { needsLogin: true, vncUrl: session.vncUrl, sessionId: session.id }
+        ...(needsLogin
+          ? {
+              needsLogin: true,
+              hint: `Profile "${profile}" needs authentication. Call browser_login with profile="${profile}" to get a vncUrl, forward it to the user, then call browser_login_done with the same profile to capture cookies.`,
+            }
           : {}),
       }
     } catch (err) {
-      await persistLocalState()
-      if (session) {
-        await reportSessionStatus(userId, session.id, "stuck")
-      }
-      return {
-        ok: false,
-        profile,
-        error: String(err),
-        results,
-        ...(session ? { vncUrl: session.vncUrl, sessionId: session.id } : {}),
-      }
+      await persistState()
+      return { ok: false, profile, error: String(err), results }
     } finally {
-      await close()
+      await browser.close()
     }
   },
 }
