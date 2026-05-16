@@ -3,6 +3,7 @@ import type { Message } from "../../../setup/channel"
 import type { AccessModule } from "../../access/access.module"
 import type { CommandService } from "../../command/domain/command.service"
 import type { TaskManager } from "../../../agent/task/domain/task.service"
+import type { RouterService } from "../../../agent/router/domain/router.service"
 import type { SessionModule } from "../../../agent/session/session.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Event } from "../../../setup/event"
@@ -12,6 +13,7 @@ interface BotDeps {
   access: AccessModule
   commands: CommandService
   tasks: TaskManager
+  router: RouterService
   session: SessionModule
   channel: ChannelModule
   stopPhrases: Set<string>
@@ -59,14 +61,19 @@ export class BotService {
     // Stop detection: cancel all running tasks
     if (this.isStopCommand(msg.text)) {
       const cancelled = this.deps.tasks.cancelAll(sessionId)
+      this.deps.router.clear(sessionId)
       if (cancelled > 0) {
         await send(`Stopped ${cancelled} task${cancelled > 1 ? "s" : ""}.`)
       }
       return { action: "handled" }
     }
 
-    // Dispatcher: decide what to do with this message
-    const decision = this.deps.tasks.dispatch(sessionId, msg.text)
+    // LLM-backed router: classify message as new / join existing / ambiguous-ask
+    const runningTasks = this.deps.tasks.getRunningBySessionId(sessionId).map(t => ({
+      id: t.id,
+      label: t.label,
+    }))
+    const decision = await this.deps.router.route(sessionId, msg.text, runningTasks)
 
     if (decision.kind === "ask") {
       await send(decision.question)
@@ -74,8 +81,12 @@ export class BotService {
     }
 
     if (decision.kind === "join") {
-      console.log(`[${decision.task.id.slice(0, 6)}] ← join: "${msg.text.slice(0, 40)}"`)
-      this.deps.tasks.inject(decision.task.id, msg.text)
+      const injected = this.deps.tasks.inject(decision.taskId, msg.text)
+      if (!injected) {
+        // Task finished between router decision and inject — treat as new
+        return { action: "new-task" }
+      }
+      console.log(`[${decision.taskId.slice(0, 6)}] ← join: "${msg.text.slice(0, 40)}"`)
       const userEvent: Event = {
         id: randomUUID(),
         type: "user",
@@ -83,7 +94,7 @@ export class BotService {
         data: { text: msg.text, from: msg.from },
       }
       await this.deps.session.append(sessionId, userEvent)
-      return { action: "join", taskId: decision.task.id }
+      return { action: "join", taskId: decision.taskId }
     }
 
     return { action: "new-task" }

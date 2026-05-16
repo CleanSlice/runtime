@@ -19,6 +19,7 @@ agent → setup (only)
 | **memory** | Persistent long-term memory with vector search. Stores markdown entries, supports search and compaction. Uses LLM for memory flush (extracting memories from conversation). |
 | **tool** | Tool registry and implementations. Defines the `Tool` interface (name, schema, execute). Concrete tools: browser, exec, file, HTTP, image, memory, message, PDF, secrets, skill, web search, and more. |
 | **skill** | Skill management system. Registry for dynamically loaded skills with hot-reload support. Skills extend agent capabilities at runtime. |
-| **task** | Background task manager with dispatcher. Tracks running tasks, supports cancellation and message injection. Dispatcher decides whether a new message creates a new task or joins an existing one. |
+| **task** | Background task manager. Tracks running tasks, supports cancellation and message injection into a task's inbox. |
+| **router** | LLM-backed message router. Given the active running tasks, classifies an incoming message as a new topic, continuation of an existing task, or ambiguous (in which case it asks the user to choose). |
 | **cron** | Cron job scheduling. Registers and executes recurring tasks on configurable schedules. |
 | **heartbeat** | Periodic heartbeat trigger. Fires at intervals to keep the agent alive or trigger scheduled behaviors. |

@@ -1,6 +1,6 @@
-import type { ITaskGateway, Task, DispatchDecision } from "./task.gateway"
+import type { ITaskGateway, Task } from "./task.gateway"
 
-export type { Task, DispatchDecision }
+export type { Task }
 
 export class TaskManager {
   constructor(private gateway: ITaskGateway) {}
@@ -35,13 +35,8 @@ export class TaskManager {
     return this.gateway.getTasksBySessionId(sessionId)
   }
 
-  /** Currently running tasks for a session. Used by dispatch to decide join vs new. */
+  /** Currently running tasks for a session. Used by router to classify incoming messages. */
   getRunningBySessionId(sessionId: string): Task[] {
     return this.gateway.getRunningBySessionId(sessionId)
-  }
-
-  /** Route an incoming message: new task, join existing, or ask user. Used by BotService. */
-  dispatch(sessionId: string, text: string): DispatchDecision {
-    return this.gateway.dispatch(sessionId, text)
   }
 }

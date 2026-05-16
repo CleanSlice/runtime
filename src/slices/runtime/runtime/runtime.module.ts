@@ -15,6 +15,7 @@ import { SkillModule } from "../../agent/skill/skill.module"
 import { VoiceModule } from "../../bot/voice/voice.module"
 import { UsageModule } from "../../bot/usage/usage.module"
 import { TaskModule } from "../../agent/task/task.module"
+import { RouterModule } from "../../agent/router/router.module"
 import { randomUUID } from "crypto"
 import { InitModule, type IAgentConfig } from "../init"
 import { SecretModule } from "../../setup/secret/secret.module"
@@ -120,9 +121,13 @@ export class AgentRuntime {
     // Daily token usage tracking and reporting
     this.usage = new UsageModule(agentDir)
 
-    // Background task manager (start, cancel, dispatch)
+    // Background task manager (start, cancel, inject)
     const taskModule = new TaskModule()
     const tasks = taskModule.manager
+
+    // LLM-backed router — classifies incoming messages as new / join / ambiguous
+    const routerModule = new RouterModule(this.llm)
+    const router = routerModule.service
 
     // Crash recovery — detects interrupted tasks on restart
     this.activityModule = new ActivityModule(agentDir)
@@ -148,7 +153,7 @@ export class AgentRuntime {
 
     // Message intake router — access check → commands → dispatch
     this.router = new BotService({
-      access, commands, tasks,
+      access, commands, tasks, router,
       session: this.session, channel: this.channel,
       stopPhrases: new Set(this.config.stopPhrases.map(p => p.toLowerCase())),
     })
