@@ -55,6 +55,32 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
     const hadState = existsSync(stateFile)
     console.log(`[browser_play] profile=${profile} user=${ctx.from} state=${stateFile} exists=${hadState}`)
 
+    // The extension may have written the file in the wrapper format
+    // `{ userAgent, storageState: { cookies, origins } }` — replay the
+    // captured UA on the Playwright context so sites that bind cookies
+    // to a fingerprint (Instagram, Meta) accept the session. Legacy
+    // files without the wrapper still parse as plain storageState.
+    let storageState: unknown | undefined
+    let importedUserAgent: string | undefined
+    if (hadState) {
+      try {
+        const raw = JSON.parse(await Bun.file(stateFile).text()) as {
+          userAgent?: string
+          storageState?: unknown
+          cookies?: unknown
+          origins?: unknown
+        }
+        if (raw.storageState) {
+          storageState = raw.storageState
+          importedUserAgent = raw.userAgent
+        } else {
+          storageState = raw
+        }
+      } catch (e) {
+        console.warn(`[browser_play] state file parse failed (${e}), launching fresh`)
+      }
+    }
+
     const browser = await chromium.launch({
       headless: true,
       executablePath: chromiumPath(),
@@ -63,7 +89,8 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
 
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
-      storageState: hadState ? stateFile : undefined,
+      storageState: storageState as never,
+      ...(importedUserAgent ? { userAgent: importedUserAgent } : {}),
     })
 
     const page = await context.newPage()
@@ -71,7 +98,15 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
 
     const persistState = async () => {
       try {
-        await context.storageState({ path: stateFile })
+        // context.storageState() returns the raw cookies/origins shape.
+        // Re-wrap with the importedUserAgent so the field survives the
+        // round-trip — otherwise the next browser_play falls back to the
+        // pod's Linux Chromium UA and Instagram invalidates the session.
+        const fresh = await context.storageState()
+        const payload = importedUserAgent
+          ? { userAgent: importedUserAgent, storageState: fresh }
+          : fresh
+        await Bun.write(stateFile, JSON.stringify(payload, null, 2))
       } catch (e) {
         console.warn(`[browser_play] failed to persist state: ${e}`)
       }
