@@ -9,6 +9,7 @@ export class TaskGateway implements ITaskGateway {
     sessionId: string,
     label: string,
     fn: (task: Task) => Promise<void>,
+    options?: { internal?: boolean },
   ): Task {
     const id = randomUUID()
     const taskSessionId = `${sessionId}:task:${id}`
@@ -23,6 +24,7 @@ export class TaskGateway implements ITaskGateway {
       status: "running",
       controller,
       inbox: [],
+      internal: options?.internal ?? false,
     }
 
     this.tasks.set(id, task)

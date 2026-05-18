@@ -109,7 +109,7 @@ export class RuntimeService {
           if (!isInternal) await this.deps.channel.send(msg.channel, msg.from, "⚠️ Something went wrong. Please try again.")
         } catch { /* ignore */ }
       }
-    })
+    }, { internal: isInternal })
   }
 
   private async buildHistory(msg: Message, sessionId: string, taskId: string): Promise<Event[]> {

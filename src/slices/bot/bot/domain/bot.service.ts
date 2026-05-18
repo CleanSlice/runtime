@@ -68,11 +68,15 @@ export class BotService {
       return { action: "handled" }
     }
 
-    // LLM-backed router: classify message as new / join existing / ambiguous-ask
-    const runningTasks = this.deps.tasks.getRunningBySessionId(sessionId).map(t => ({
-      id: t.id,
-      label: t.label,
-    }))
+    // LLM-backed router: classify message as new / join existing / ambiguous-ask.
+    // Internal tasks (crash recovery, cron, heartbeat) are hidden — they run silently
+    // and must never appear in user-facing disambiguation prompts.
+    const runningTasks = this.deps.tasks.getRunningBySessionId(sessionId)
+      .filter(t => !t.internal)
+      .map(t => ({
+        id: t.id,
+        label: t.label,
+      }))
     const decision = await this.deps.router.route(sessionId, msg.text, runningTasks)
 
     if (decision.kind === "ask") {

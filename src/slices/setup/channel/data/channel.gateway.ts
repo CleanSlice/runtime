@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
 import type { ChannelConfig, Message, MessagePart } from "../domain/channel.types"
+import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
 import { BridleRepository, type BridleSyncHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
@@ -35,6 +36,7 @@ export class ChannelGateway implements IChannelGateway {
   }
 
   send(to: string, text: string, parts?: MessagePart[]): Promise<void> {
+    if (isSilentReply(text)) return Promise.resolve()
     return this.repository.send(to, text, parts)
   }
 
@@ -46,7 +48,10 @@ export class ChannelGateway implements IChannelGateway {
     if ('streamSend' in this.repository && typeof this.repository.streamSend === 'function') {
       return this.repository.streamSend(to, streamer)
     }
-    return streamer(() => {}).then(text => this.repository.send(to, text))
+    return streamer(() => {}).then(text => {
+      if (isSilentReply(text)) return
+      return this.repository.send(to, text)
+    })
   }
 
   /** Register a sync handler — only effective when this is a bridle channel. */

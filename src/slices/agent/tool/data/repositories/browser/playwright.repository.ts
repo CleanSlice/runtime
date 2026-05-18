@@ -6,6 +6,23 @@ import { dirname } from "path"
 import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 import { profileStatePath } from "./browserLogin.repository"
 
+// playwright-extra wraps Playwright and lets us register puppeteer-style
+// plugins. The stealth plugin patches a long list of fingerprint
+// surfaces — navigator.webdriver, plugins[], permissions API, chrome
+// runtime, WebGL vendor, screen, etc. — that Instagram / Meta / Cloudflare
+// check before serving a logged-in response. Without this, even with
+// matching cookies + UA, Instagram drops the session and renders the
+// logged-out landing page.
+import { chromium as chromiumExtra } from "playwright-extra"
+import StealthPlugin from "puppeteer-extra-plugin-stealth"
+
+let stealthRegistered = false
+function ensureStealth() {
+  if (stealthRegistered) return
+  chromiumExtra.use(StealthPlugin())
+  stealthRegistered = true
+}
+
 const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), url: z.string() }),
   z.object({ kind: z.literal("click"), selector: z.string() }),
@@ -81,7 +98,13 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
       }
     }
 
-    const browser = await chromium.launch({
+    // playwright-extra exposes the same `chromium.launch` signature as
+    // playwright proper; once StealthPlugin is registered, every launch
+    // (including this one) gets the stealth init script applied to every
+    // new page. We keep the same executablePath / args so the container
+    // chromium binary is still used.
+    ensureStealth()
+    const browser = await chromiumExtra.launch({
       headless: true,
       executablePath: chromiumPath(),
       args: ["--no-sandbox", "--disable-dev-shm-usage"],

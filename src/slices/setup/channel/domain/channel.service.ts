@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "./channel.gateway"
 import type { Message, MessagePart } from "./channel.types"
+import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 
 export class ChannelService {
   private channels: IChannelGateway[] = []
@@ -64,6 +65,10 @@ export class ChannelService {
   }
 
   async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
+    if (isSilentReply(text)) {
+      console.warn(`[channel] dropping NO_REPLY sentinel on ${channel}`)
+      return
+    }
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)
     await ch.send(to, text, parts)
@@ -76,6 +81,7 @@ export class ChannelService {
       await ch.streamSend(to, streamer)
     } else {
       const text = await streamer(() => {})
+      if (isSilentReply(text)) return
       await ch.send(to, text)
     }
   }

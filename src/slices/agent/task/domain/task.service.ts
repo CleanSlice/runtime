@@ -6,8 +6,8 @@ export class TaskManager {
   constructor(private gateway: ITaskGateway) {}
 
   /** Register and fire a background task. Used by RuntimeService to execute each user message. */
-  start(sessionId: string, label: string, fn: (task: Task) => Promise<void>): Task {
-    return this.gateway.start(sessionId, label, fn)
+  start(sessionId: string, label: string, fn: (task: Task) => Promise<void>, options?: { internal?: boolean }): Task {
+    return this.gateway.start(sessionId, label, fn, options)
   }
 
   /** Push a follow-up message into a running task's inbox. Used by BotService on "join" dispatch. */

@@ -9,4 +9,6 @@ export interface ITask {
   status: TaskStatus
   controller: AbortController
   inbox: string[]
+  /** System-initiated task (crash recovery, cron, heartbeat) — hidden from the user-facing router. */
+  internal: boolean
 }
