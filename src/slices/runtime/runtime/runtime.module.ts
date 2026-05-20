@@ -24,6 +24,10 @@ import { CommandService } from "../../bot/command/domain/command.service"
 import { LoopModule } from "../loop/loop.module"
 import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
+import { createLogger } from "../../setup/logger"
+
+const s3Log = createLogger("s3")
+const msgLog = createLogger("msg")
 
 /** External config passed by the entrypoint (index.ts / multi.ts) */
 export interface RuntimeConfig {
@@ -103,8 +107,8 @@ export class AgentRuntime {
     // System prompt builder (SOUL.md, USER.md, MEMORY.md, etc.)
     const agent = new AgentModule(agentDir)
 
-    // Long-term memory with search and daily flush
-    this.memory = new MemoryModule(agentDir)
+    // Long-term memory with search, daily flush, and background review
+    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review)
 
     // Scheduled jobs (user-defined via cron tool)
     this.cron = new CronModule(agentDir)
@@ -205,7 +209,7 @@ export class AgentRuntime {
         await this.s3sync.push()
       } catch (err) {
         // S3 may be temporarily unreachable on shutdown — don't block exit.
-        console.warn(`[s3] final push on shutdown failed: ${(err as Error).message}`)
+        s3Log.warn(`final push on shutdown failed: ${(err as Error).message}`)
       }
     }
   }
@@ -223,7 +227,7 @@ export class AgentRuntime {
     }
 
     const isInternal = msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
-    if (!isInternal) console.log(`[msg] from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
+    if (!isInternal) msgLog.info(`from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
 
     const sessionId = this.session.getOrCreate(msg.channel, msg.from).id
 
@@ -259,8 +263,8 @@ export class AgentRuntime {
     try {
       await this.s3sync.pull()
     } catch (err) {
-      console.warn(
-        `[s3] pull failed on startup — continuing with local state. ` +
+      s3Log.warn(
+        `pull failed on startup — continuing with local state. ` +
         `Subsequent changes will be pushed when S3 is reachable. Error: ${(err as Error).message}`,
       )
     }
@@ -273,7 +277,7 @@ export class AgentRuntime {
     try {
       await this.s3sync.push()
     } catch (err) {
-      console.warn(`[s3] initial push failed — watcher will retry on changes. Error: ${(err as Error).message}`)
+      s3Log.warn(`initial push failed — watcher will retry on changes. Error: ${(err as Error).message}`)
     }
     this.s3sync.startWatcher()
     // Periodic full sweep is opt-in (0 = off); watcher handles changes in real time.

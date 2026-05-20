@@ -1,3 +1,6 @@
+import type { MemoryLimits, MemoryReviewConfig } from "../../../agent/memory/domain/memory.types"
+import { DEFAULT_MEMORY_LIMITS, DEFAULT_MEMORY_REVIEW } from "../../../agent/memory/domain/memory.types"
+
 /** Runtime configuration loaded from agent.config.json */
 export interface IAgentConfig {
   maxIterations: number
@@ -20,6 +23,18 @@ export interface IAgentConfig {
   session: {
     compactionThreshold: number
     recentKeep: number
+  }
+
+  /**
+   * Memory subsystem configuration.
+   * - `limits`: per-file character limits; oldest content is truncated from
+   *   the top when a file exceeds its limit. Bounds system-prompt size.
+   * - `review`: background self-improvement review — every N turns, promote
+   *   durable facts from the conversation into MEMORY.md.
+   */
+  memory: {
+    limits: MemoryLimits
+    review: MemoryReviewConfig
   }
 
   s3: {
@@ -135,6 +150,11 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
   session: {
     compactionThreshold: 60,
     recentKeep: 20,
+  },
+
+  memory: {
+    limits: { ...DEFAULT_MEMORY_LIMITS },
+    review: { ...DEFAULT_MEMORY_REVIEW },
   },
 
   s3: {

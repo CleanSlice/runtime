@@ -8,6 +8,10 @@ import type { SessionModule } from "../../../agent/session/session.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Event } from "../../../setup/event"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../setup/logger"
+
+const accessLog = createLogger("access")
+const log = createLogger("bot")
 
 interface BotDeps {
   access: AccessModule
@@ -31,7 +35,7 @@ export class BotService {
       if (codeMatch) {
         const user = this.deps.access.approve(codeMatch[1])
         if (user) {
-          console.log(`[access] admin approved user ${user.userId} with code ${codeMatch[1]}`)
+          accessLog.info(`admin approved user ${user.userId} with code ${codeMatch[1]}`)
           await this.deps.channel.send(msg.channel, user.userId, `🎉 Access granted! Send me a message.`)
           await send(`✅ User ${user.userId} approved.`)
           return { action: "handled" }
@@ -90,7 +94,7 @@ export class BotService {
         // Task finished between router decision and inject — treat as new
         return { action: "new-task" }
       }
-      console.log(`[${decision.taskId.slice(0, 6)}] ← join: "${msg.text.slice(0, 40)}"`)
+      log.child(decision.taskId.slice(0, 6)).info(`← join: "${msg.text.slice(0, 40)}"`)
       const userEvent: Event = {
         id: randomUUID(),
         type: "user",

@@ -1,6 +1,9 @@
 import type { IUsageGateway } from "./usage.gateway"
 import type { IDailyUsage } from "./usage.types"
 import type { ModelUsage } from "../../../setup/llm/domain/llm.types"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("usage")
 
 export class UsageService {
   private current: IDailyUsage
@@ -34,7 +37,7 @@ export class UsageService {
   private loadOrInit(): IDailyUsage {
     const saved = this.gateway.load()
     if (saved && saved.date === this.today()) {
-      console.log(`[usage] resumed daily stats: ${saved.totalCallCount} calls, ${saved.totalInputTokens} input tokens`)
+      log.info(`resumed daily stats: ${saved.totalCallCount} calls, ${saved.totalInputTokens} input tokens`)
       return saved
     }
     return this.empty()
@@ -88,10 +91,10 @@ export class UsageService {
       await this.gateway.report(this.botId, this.current)
       this.current.reportedAt = new Date().toISOString()
       this.gateway.save(this.current)
-      console.log(`[usage] reported: ${this.current.totalCallCount} calls, ${this.current.totalInputTokens} in / ${this.current.totalOutputTokens} out`)
+      log.info(`reported: ${this.current.totalCallCount} calls, ${this.current.totalInputTokens} in / ${this.current.totalOutputTokens} out`)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[usage] report failed: ${msg}`)
+      log.error(`report failed: ${msg}`)
     }
   }
 

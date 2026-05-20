@@ -3,8 +3,11 @@ import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { Event } from "../../../setup/event"
 import type { IRouterGateway } from "../domain/router.gateway"
 import type { IPendingDisambiguation, IRouterTask, RouterDecision } from "../domain/router.types"
+import { createLogger } from "../../../setup/logger"
 
 const PENDING_TTL_MS = 5 * 60 * 1000
+
+const log = createLogger("router")
 
 export class RouterGateway implements IRouterGateway {
   private pending = new Map<string, IPendingDisambiguation>()
@@ -105,7 +108,7 @@ export class RouterGateway implements IRouterGateway {
       const response = await this.llm.auxComplete(systemPrompt, [event], [])
       return this.parseClassification(response.text, tasks.length)
     } catch (err) {
-      console.error("[router] classification failed, defaulting to ambiguous:", err)
+      log.error("classification failed, defaulting to ambiguous", err)
       return "ambiguous"
     }
   }

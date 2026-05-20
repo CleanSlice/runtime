@@ -1,7 +1,10 @@
 import type { IAccessGateway } from "./access.gateway"
 import type { IAccessStrategy, StrategyOverride, UserRecord } from "./access.types"
+import { createLogger } from "../../../setup/logger"
 
 export type StrategyBuilder = (override: StrategyOverride) => IAccessStrategy
+
+const log = createLogger("access")
 
 export class AccessService {
   constructor(
@@ -31,7 +34,7 @@ export class AccessService {
     this.gateway.load()
     this.syncStrategyFromDisk()
     const result = this.strategy.check(userId, this.gateway, this.adminIds)
-    if (!result.allowed) console.log(`[access] denied: ${userId}`)
+    if (!result.allowed) log.info(`denied: ${userId}`)
     return result.allowed
   }
 
@@ -106,6 +109,6 @@ export class AccessService {
     const override = this.gateway.getStrategyOverride()
     if (!override || override.name === this.strategy.name) return
     this.strategy = this.rebuildStrategy(override)
-    console.log(`[access] strategy reloaded from disk → "${override.name}"`)
+    log.info(`strategy reloaded from disk → "${override.name}"`)
   }
 }

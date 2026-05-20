@@ -12,4 +12,7 @@ export interface IMemoryGateway {
   // MEMORY.md
   readMemoryFile(): string | undefined
   writeMemoryFile(content: string): void
+
+  // Limits — truncate oversized curated files (SOUL/USER/MEMORY/HEARTBEAT) on disk
+  enforceMdLimits(): void
 }

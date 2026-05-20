@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { IUsageGateway } from "../domain/usage.gateway"
 import type { IDailyUsage } from "../domain/usage.types"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("usage")
 
 /**
  * UsageGateway — local persistence + remote reporting.
@@ -42,13 +45,13 @@ export class UsageGateway extends IUsageGateway {
     try {
       writeFileSync(this.filePath, JSON.stringify(usage, null, 2))
     } catch (err) {
-      console.error("[usage] failed to save usage.json:", err)
+      log.error("failed to save usage.json", err)
     }
   }
 
   async report(agentId: string, usage: IDailyUsage): Promise<void> {
     if (!this.apiUrl || !agentId) {
-      console.warn("[usage] RANCH_API_URL/BRIDLE_AGENT_ID not set, skipping report")
+      log.warn("RANCH_API_URL/BRIDLE_AGENT_ID not set, skipping report")
       return
     }
 

@@ -22,7 +22,7 @@ export const MemorySaveTool: Tool = {
   adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { text } = schema.parse(params)
-    const gateway = new MemoryGateway(ctx.agentDir)
+    const gateway = new MemoryGateway(ctx.agentDir, ctx.agentConfig?.memory?.limits)
     gateway.appendDaily(text)
     return { ok: true }
   },

@@ -20,6 +20,21 @@
     "recentKeep": 20
   },
 
+  "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded. review: background self-improvement pass — every everyTurns turns, durable facts from the conversation are promoted into MEMORY.md via the auxiliary LLM. Set review.enabled false or everyTurns 0 to disable.",
+  "memory": {
+    "limits": {
+      "soul": 6000,
+      "user": 1375,
+      "memory": 2200,
+      "heartbeat": 1000,
+      "daily": 4000
+    },
+    "review": {
+      "enabled": true,
+      "everyTurns": 10
+    }
+  },
+
   "_comment_s3": "Sync is event-driven (fs.watch + diff). syncIntervalSec is an optional periodic full-sweep safety net — set 0 to disable, or e.g. 21600 (6h) for paranoid backup.",
   "s3": {
     "syncIntervalSec": 0,

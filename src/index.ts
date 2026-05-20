@@ -1,5 +1,13 @@
 // Load .env file
 import { readFileSync, existsSync } from "fs"
+import { createLogger } from "./slices/setup/logger"
+
+const log = createLogger("runtime")
+const envLog = createLogger("env")
+const llmLog = createLogger("llm")
+const bridleLog = createLogger("bridle")
+const shutdownLog = createLogger("shutdown")
+
 if (existsSync(".env")) {
   const lines = readFileSync(".env", "utf-8").split("\n")
   for (const line of lines) {
@@ -10,7 +18,7 @@ if (existsSync(".env")) {
 
 // Prevent unhandled promise rejections from crashing the bot
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection] caught:", reason)
+  log.error("unhandled rejection", reason)
 })
 
 
@@ -45,12 +53,12 @@ const knownEnv = [
   "ELEVENLABS_API_KEY", "CLEANSLICE_AGENT_DIR", "PORT",
 ]
 const setEnv = knownEnv.filter(k => process.env[k])
-if (setEnv.length) console.log(`[env] ok: ${setEnv.join(", ")}`)
+if (setEnv.length) envLog.ok(`ok: ${setEnv.join(", ")}`)
 
 const hasChannel = !!(process.env.BRIDLE_URL || process.env.TELEGRAM_BOT_TOKEN || (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN))
 const hasLlmCred = !!process.env.LLM_API_KEY
-if (!hasChannel) console.warn("[env] ⚠ no channel configured (set BRIDLE_URL, TELEGRAM_BOT_TOKEN, or SLACK_BOT_TOKEN+SLACK_APP_TOKEN)")
-if (!hasLlmCred) console.warn("[env] ⚠ LLM_API_KEY not set")
+if (!hasChannel) envLog.warn("no channel configured (set BRIDLE_URL, TELEGRAM_BOT_TOKEN, or SLACK_BOT_TOKEN+SLACK_APP_TOKEN)")
+if (!hasLlmCred) envLog.warn("LLM_API_KEY not set")
 
 import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
@@ -172,7 +180,7 @@ const llmAuxiliary = (process.env.LLM_AUX_PROVIDER || process.env.LLM_AUX_MODEL 
   )
   : undefined
 if (llmAuxiliary) {
-  console.log(`[llm] auxiliary: ${llmAuxiliary.provider}/${"model" in llmAuxiliary ? llmAuxiliary.model ?? "default" : "default"}`)
+  llmLog.info(`auxiliary: ${llmAuxiliary.provider}/${"model" in llmAuxiliary ? llmAuxiliary.model ?? "default" : "default"}`)
 }
 
 const runtime = new AgentRuntime({
@@ -187,20 +195,20 @@ const runtime = new AgentRuntime({
 })
 
 await runtime.start()
-console.log(`🤖 Agent runtime v${pkg.version} started`)
-if (process.env.BRIDLE_URL) console.log(`[bridle] enabled → ${process.env.BRIDLE_URL}`)
-else console.log("[bridle] disabled (BRIDLE_URL not set)")
+log.ok(`🤖 agent runtime v${pkg.version} started`)
+if (process.env.BRIDLE_URL) bridleLog.info(`enabled → ${process.env.BRIDLE_URL}`)
+else bridleLog.info("disabled (BRIDLE_URL not set)")
 
 // Graceful shutdown on SIGTERM (docker stop) and SIGINT (ctrl+c)
 // Gives runtime time to push final S3 sync before exit
 async function shutdown(signal: string) {
-  console.log(`[shutdown] received ${signal}, stopping runtime...`)
+  shutdownLog.info(`received ${signal}, stopping runtime...`)
   try {
     await runtime.stop()
     await mcp.shutdown()
-    console.log("[shutdown] clean exit")
+    shutdownLog.ok("clean exit")
   } catch (err) {
-    console.error("[shutdown] error during stop:", err)
+    shutdownLog.error("error during stop", err)
   }
   process.exit(0)
 }
@@ -235,4 +243,4 @@ Bun.serve({
     )
   },
 })
-console.log(`🌐 HTTP server listening on port ${process.env.PORT ?? 3000}`)
+log.info(`🌐 HTTP server listening on port ${process.env.PORT ?? 3000}`)

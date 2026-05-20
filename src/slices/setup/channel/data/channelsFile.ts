@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync } from "fs"
 import { readFile, writeFile, rename, unlink } from "fs/promises"
 import { join, dirname } from "path"
+import { createLogger } from "../../logger"
+
+const log = createLogger("channels")
 
 // `channels.json` — single source of truth for runtime-managed channels.
 // Bridle is bootstrap-only (env) and not tracked here.
@@ -39,7 +42,7 @@ export async function loadChannelsFile(agentDir: string): Promise<IChannelsFile>
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
     return parsed as IChannelsFile
   } catch (err) {
-    console.warn(`[channels] failed to parse ${path}:`, err)
+    log.warn(`failed to parse ${path}`, err)
     return {}
   }
 }

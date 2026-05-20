@@ -4,6 +4,9 @@ import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("llm")
 
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
 function stripThinking(text: string): string {
@@ -36,9 +39,9 @@ async function sendAdminAlert(message: string): Promise<void> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: adminId, text: `🚨 Bot LLM Alert\n\n${message}`, parse_mode: "Markdown" }),
     })
-    console.warn(`[llm] admin alert sent: ${message}`)
+    log.warn(`admin alert sent: ${message}`)
   } catch (e) {
-    console.error("[llm] failed to send admin alert:", e)
+    log.error("failed to send admin alert", e)
   }
 }
 
@@ -115,21 +118,21 @@ async function withRetry<T>(
       // Local JS errors (TypeError, ReferenceError, SyntaxError) are bugs, not network —
       // no point retrying; surface them immediately so the real cause is visible in logs.
       if (err instanceof TypeError || err instanceof ReferenceError || err instanceof SyntaxError) {
-        console.error(`[llm] ${label} non-retryable JS error:`, err)
+        log.error(`${label} non-retryable JS error`, err)
         throw err
       }
       const status = (err as { status?: number })?.status
       if (status === 401 || status === 403) throw err
       // 400 = model not available or bad request — stop retrying, let caller try fallback
       if (status === 400) {
-        console.warn(`[llm] ${label} got 400 (model unavailable?), will try fallback`)
+        log.warn(`${label} got 400 (model unavailable?), will try fallback`)
         return { ok: false, lastError: err, wasOverloaded: false, wasBadRequest: true }
       }
       const overloaded = isOverloadedError(err)
       if (overloaded) wasOverloaded = true
       if (attempt < maxAttempts) {
         const delay = overloaded ? Math.min(5000 * attempt, 60000) : attempt * 2000
-        console.warn(`[llm] ${label} attempt ${attempt}/${maxAttempts} failed (${overloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
+        log.warn(`${label} attempt ${attempt}/${maxAttempts} failed (${overloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
         await new Promise(r => setTimeout(r, delay))
       }
     }
@@ -237,7 +240,7 @@ export class ClaudeRepository implements ILlmGateway {
     // also extend this when promoting the apiKeyClient into the pool.
     this.tokenStates = this.clients.map(() => ({ cooldownUntil: 0, consecutive429s: 0 }))
 
-    console.log(`[llm] claude initialized — oauth=${oauthClients.length}, apiKeyFallback=${apiKeyClient ? "yes" : "no"}`)
+    log.ok(`claude initialized — oauth=${oauthClients.length}, apiKeyFallback=${apiKeyClient ? "yes" : "no"}`)
     this.initialized = true
   }
 
@@ -277,8 +280,8 @@ export class ClaudeRepository implements ILlmGateway {
     const cooldown = retryAfterMs ?? Math.min(60_000 * Math.pow(2, state.consecutive429s - 1), 600_000)
     state.cooldownUntil = Date.now() + cooldown
     const available = this.tokenStates.filter(s => s.cooldownUntil <= Date.now()).length
-    console.warn(
-      `[llm] token[${index}] rate-limited, cooldown ${Math.round(cooldown / 1000)}s ` +
+    log.warn(
+      `token[${index}] rate-limited, cooldown ${Math.round(cooldown / 1000)}s ` +
       `(consecutive=${state.consecutive429s}, available=${available}/${this.clients.length})`,
     )
   }
@@ -307,13 +310,13 @@ export class ClaudeRepository implements ILlmGateway {
   private switchToNextClient(failedStatus: number): boolean {
     const nextIndex = this.currentClientIndex + 1
     if (nextIndex < this.clients.length) {
-      console.warn(`[llm] OAuth token[${this.currentClientIndex}] failed (${failedStatus}), switching to token[${nextIndex}]`)
+      log.warn(`OAuth token[${this.currentClientIndex}] failed (${failedStatus}), switching to token[${nextIndex}]`)
       void sendAdminAlert(`⚠️ OAuth token #${this.currentClientIndex + 1} failed (${failedStatus})\n\nSwitched to token #${nextIndex + 1}. Remaining tokens: ${this.clients.length - nextIndex}`)
       this.currentClientIndex = nextIndex
       return true
     }
     if (this.apiKeyClient) {
-      console.warn(`[llm] all OAuth tokens exhausted, switching to API key fallback`)
+      log.warn(`all OAuth tokens exhausted, switching to API key fallback`)
       void sendAdminAlert(`🚨 All OAuth tokens exhausted!\n\nUsing API key fallback. Update tokens in .env`)
       // Replace current with apiKeyClient
       this.clients[this.currentClientIndex] = this.apiKeyClient
@@ -333,11 +336,11 @@ export class ClaudeRepository implements ILlmGateway {
       const elapsed = now - this.primaryOverloadedAt
       if (elapsed < PRIMARY_RETRY_AFTER_MS) {
         // Primary still in cooldown — skip straight to fallback
-        console.warn(`[llm] primary overloaded ${Math.round(elapsed / 1000)}s ago, using fallback directly (retry in ${Math.round((PRIMARY_RETRY_AFTER_MS - elapsed) / 1000)}s)`)
+        log.warn(`primary overloaded ${Math.round(elapsed / 1000)}s ago, using fallback directly (retry in ${Math.round((PRIMARY_RETRY_AFTER_MS - elapsed) / 1000)}s)`)
         return [this.fallbackModel]
       } else {
         // Cooldown expired — try primary again
-        console.log(`[llm] primary cooldown expired, retrying primary model`)
+        log.info(`primary cooldown expired, retrying primary model`)
         this.primaryOverloadedAt = 0
       }
     }
@@ -365,7 +368,7 @@ export class ClaudeRepository implements ILlmGateway {
     for (const model of modelsToTry) {
       const isFallback = model !== this.model
       if (isFallback) {
-        console.warn(`[llm] stream switching to fallback model: ${model}`)
+        log.warn(`stream switching to fallback model: ${model}`)
       }
 
       const result = await withRetry(
@@ -457,7 +460,7 @@ export class ClaudeRepository implements ILlmGateway {
 
       if (result.ok) {
         if (model === this.model && this.primaryOverloadedAt > 0) {
-          console.log(`[llm] primary model recovered, resetting circuit breaker`)
+          log.info(`primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
         }
         return result.value
@@ -472,10 +475,10 @@ export class ClaudeRepository implements ILlmGateway {
       }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
-        console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+        log.warn(`primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (result.wasBadRequest) {
         // 400 = model unavailable — continue to fallback model
-        console.warn(`[llm] model ${model} unavailable (400), trying next`)
+        log.warn(`model ${model} unavailable (400), trying next`)
       } else if (!result.wasOverloaded) {
         break
       }
@@ -503,7 +506,7 @@ export class ClaudeRepository implements ILlmGateway {
     for (const model of modelsToTry) {
       const isFallback = model !== this.model
       if (isFallback) {
-        console.warn(`[llm] complete switching to fallback model: ${model}`)
+        log.warn(`complete switching to fallback model: ${model}`)
       }
 
       const result = await withRetry(
@@ -557,7 +560,7 @@ export class ClaudeRepository implements ILlmGateway {
 
       if (result.ok) {
         if (model === this.model && this.primaryOverloadedAt > 0) {
-          console.log(`[llm] primary model recovered, resetting circuit breaker`)
+          log.info(`primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
         }
         return result.value
@@ -572,10 +575,10 @@ export class ClaudeRepository implements ILlmGateway {
       }
       if (model === this.model && result.wasOverloaded) {
         this.primaryOverloadedAt = Date.now()
-        console.warn(`[llm] primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
+        log.warn(`primary overloaded, circuit breaker tripped (retry in ${PRIMARY_RETRY_AFTER_MS / 1000}s)`)
       } else if (result.wasBadRequest) {
         // 400 = model unavailable — continue to fallback model
-        console.warn(`[llm] model ${model} unavailable (400), trying next`)
+        log.warn(`model ${model} unavailable (400), trying next`)
       } else if (!result.wasOverloaded) {
         break
       }
@@ -655,7 +658,7 @@ export class ClaudeRepository implements ILlmGateway {
           const existing = resultIndex.get(b.id)
           if (existing) return existing
           // Synthetic fallback — tool result was lost (e.g. after session compaction)
-          console.warn(`[llm] ⚠ synthetic result for interrupted tool_use: ${(b as Anthropic.ToolUseBlock).name}`)
+          log.warn(`synthetic result for interrupted tool_use: ${(b as Anthropic.ToolUseBlock).name}`)
           return {
             type: "tool_result" as const,
             tool_use_id: b.id,

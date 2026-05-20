@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { harvestStorageState } from "./cookieHarvest"
+import { createLogger } from "../../../../../setup/logger"
+
+const log = createLogger("browser_login")
 
 function ranchBase(): string | null {
   const raw = process.env.RANCH_API_URL ?? process.env.API_URL
@@ -157,7 +160,7 @@ Do not ask the user to log in at the real site URL (instagram.com etc.) — the 
     } catch (err) {
       // Non-fatal: the VNC URL still works, just lands on a blank Xvfb.
       // Surface the reason so the agent can decide whether to retry.
-      console.error(`[browser_login] warm CDP failed for ${sessionRes.session.id}:`, (err as Error).message)
+      log.error(`warm CDP failed for ${sessionRes.session.id}`, (err as Error).message)
       warm = "failed"
     }
 

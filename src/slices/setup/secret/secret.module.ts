@@ -1,6 +1,9 @@
 import type { ISecretGateway } from "./domain/secret.types"
 import { FileSecretRepository } from "./data/repositories/file/file.repository"
 import { AwsSecretRepository } from "./data/repositories/aws/aws.repository"
+import { createLogger } from "../logger"
+
+const log = createLogger("secrets")
 
 export class SecretModule {
   private gateway: ISecretGateway
@@ -15,10 +18,10 @@ export class SecretModule {
       const prefix = process.env.AWS_SECRET_PREFIX ?? "cleanslice/users"
       const region = process.env.AWS_REGION ?? "us-east-1"
       this.gateway = new AwsSecretRepository(prefix)
-      console.log(`[secrets] using AWS Secrets Manager (region=${region}, prefix=${prefix}, scope=${this.scope})`)
+      log.info(`using AWS Secrets Manager (region=${region}, prefix=${prefix}, scope=${this.scope})`)
     } else {
       this.gateway = new FileSecretRepository(agentDir)
-      console.log(`[secrets] using file store (${agentDir}/data/secrets/, scope=${this.scope})`)
+      log.info(`using file store (${agentDir}/data/secrets/, scope=${this.scope})`)
     }
   }
 

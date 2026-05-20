@@ -1,6 +1,9 @@
 import type { ITaskGateway, Task } from "../domain/task.gateway"
 import type { ITask } from "../domain/task.types"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("task")
 
 export class TaskGateway implements ITaskGateway {
   private tasks = new Map<string, Task>()
@@ -38,7 +41,7 @@ export class TaskGateway implements ITaskGateway {
           task.status = "cancelled"
         } else {
           task.status = "error"
-          console.error(`[task:${id}] error:`, err)
+          log.error(`task ${id} error`, err)
         }
       })
       .finally(() => {

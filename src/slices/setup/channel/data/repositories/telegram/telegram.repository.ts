@@ -1,6 +1,9 @@
 import { buildMessage, type Message } from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("telegram")
 
 interface TelegramUpdate {
   update_id: number
@@ -53,9 +56,9 @@ export class TelegramRepository {
           ],
         }),
       })
-      console.log("[telegram] commands registered")
+      log.info("commands registered")
     } catch (err) {
-      console.error("[telegram] failed to register commands:", err)
+      log.error("failed to register commands", err)
     }
   }
 
@@ -185,7 +188,7 @@ export class TelegramRepository {
   }
 
   private async poll(): Promise<void> {
-    console.log("[telegram] polling started")
+    log.info("polling started")
     while (this.running) {
       try {
         const res = await fetch(`${this.baseUrl}/getUpdates?offset=${this.offset}&timeout=30`)
@@ -235,7 +238,7 @@ export class TelegramRepository {
                       images.push({ base64, mediaType })
                     }
                   } catch (err) {
-                    console.error("[telegram] failed to download photo for vision:", err)
+                    log.error("failed to download photo for vision", err)
                   }
 
                   const caption = msg!.caption ? msg!.caption : ""
@@ -270,7 +273,7 @@ export class TelegramRepository {
               } finally {
                 clearInterval(typingInterval)
               }
-            })().catch(err => console.error("[telegram] message handler error:", err))
+            })().catch(err => log.error("message handler error", err))
           }
         }
       } catch {

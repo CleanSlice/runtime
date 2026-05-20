@@ -11,6 +11,9 @@ import { LOOP_DEFAULTS } from "./loop.types"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("loop")
 
 interface LoopServiceDeps {
   llm: LlmModule
@@ -54,6 +57,7 @@ export class LoopService {
   async run(ctx: ILoopContext): Promise<ILoopResult> {
     const { task, sessionId, history, tools } = ctx
     const tid = task.id.slice(0, 6)
+    const rlog = log.child(tid)
 
     let continueLoop = true
     let iterations = 0
@@ -64,7 +68,7 @@ export class LoopService {
 
     while (continueLoop) {
       if (task.controller.signal.aborted) {
-        console.log(`[${tid}] cancelled`)
+        rlog.info(`cancelled`)
         break
       }
 
@@ -72,7 +76,7 @@ export class LoopService {
       await this.drainInbox(ctx)
 
       if (++iterations > this.config.maxIterations) {
-        console.error(`[${tid}] ✗ exceeded ${this.config.maxIterations} iterations`)
+        rlog.error(`exceeded ${this.config.maxIterations} iterations`)
         await ctx.send("⚠️ Reached max iterations. Please try again.")
         break
       }
@@ -87,7 +91,7 @@ export class LoopService {
         const status = (err as { status?: number })?.status
         const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
         const isOverloaded = errMsg.includes("overloaded_error") || errMsg.includes("Overloaded") || status === 529
-        console.error(`[${tid}] ✗ LLM error${status ? ` (${status})` : ""}:`, errMsg.slice(0, 120))
+        rlog.error(`LLM error${status ? ` (${status})` : ""}`, errMsg.slice(0, 120))
         if (!ctx.isInternal) {
           await ctx.send(isOverloaded
             ? "⚠️ AI server is overloaded. Wait a minute and try again."
@@ -106,13 +110,13 @@ export class LoopService {
 
         if (iterationHadError) {
           consecutiveErrors++
-          console.warn(`[${tid}] consecutive error iterations: ${consecutiveErrors}/${this.config.maxConsecutiveErrors}`)
+          rlog.warn(`consecutive error iterations: ${consecutiveErrors}/${this.config.maxConsecutiveErrors}`)
         } else {
           consecutiveErrors = 0
         }
 
         if (consecutiveErrors >= this.config.maxConsecutiveErrors && !errorLimitHit) {
-          console.error(`[${tid}] ✗ ${this.config.maxConsecutiveErrors} consecutive iterations with tool errors — requesting final summary`)
+          rlog.error(`${this.config.maxConsecutiveErrors} consecutive iterations with tool errors — requesting final summary`)
           errorLimitHit = true
           const hintEvent: Event = {
             id: randomUUID(),
@@ -125,7 +129,7 @@ export class LoopService {
 
         // If max_tokens hit during a tool call response, inject continuation
         if (response.stopReason === "max_tokens") {
-          console.log(`[${tid}] max_tokens hit during tool response, requesting continuation…`)
+          rlog.info(`max_tokens hit during tool response, requesting continuation…`)
           const continueEvent: Event = {
             id: randomUUID(),
             type: "user",
@@ -139,7 +143,7 @@ export class LoopService {
         // No tool calls — text-only response
         if (response.stopReason === "max_tokens" && response.text && continuationCount < this.config.maxContinuations) {
           continuationCount++
-          console.log(`[${tid}] max_tokens hit (${response.text.length} chars), continuation ${continuationCount}/${this.config.maxContinuations}…`)
+          rlog.info(`max_tokens hit (${response.text.length} chars), continuation ${continuationCount}/${this.config.maxContinuations}…`)
           accumulatedText += response.text
 
           const partialEvent: Event = {
@@ -185,9 +189,10 @@ export class LoopService {
   private async drainInbox(ctx: ILoopContext): Promise<void> {
     const { task, sessionId, history } = ctx
     const tid = task.id.slice(0, 6)
+    const rlog = log.child(tid)
     while (task.inbox.length > 0) {
       const inboxText = task.inbox.shift()!
-      console.log(`[${tid}] ← inbox: "${inboxText.slice(0, 40)}"`)
+      rlog.info(`← inbox: "${inboxText.slice(0, 40)}"`)
       const inboxEvent: Event = {
         id: randomUUID(),
         type: "user",
@@ -206,8 +211,8 @@ export class LoopService {
     const llmOk = this.deps.llm.canStream()
     const canStream = channelOk && llmOk
     const tid = ctx.task.id.slice(0, 6)
-    console.log(
-      `[${tid}] llm call: channel=${channel} internal=${isInternal} ` +
+    log.child(tid).info(
+      `llm call: channel=${channel} internal=${isInternal} ` +
       `streamingChannel=${channelOk} llmStreams=${llmOk} → ${canStream ? "stream" : "complete"}`,
     )
     if (canStream) {
@@ -228,12 +233,13 @@ export class LoopService {
   ): Promise<boolean> {
     const { task, sessionId, history } = ctx
     const tid = task.id.slice(0, 6)
+    const rlog = log.child(tid)
     let iterationHadError = false
 
     for (const call of response.toolCalls!) {
       if (task.controller.signal.aborted) break
       const iterTag = iterations > 1 ? ` #${iterations}` : ""
-      console.log(`[${tid}]${iterTag} llm → ${call.name}`)
+      rlog.info(`${iterTag} llm → ${call.name}`)
       this.deps.activity.updateStep(`tool_call: ${call.name}`)
 
       const toolUseId = randomUUID()
@@ -247,11 +253,11 @@ export class LoopService {
       history.push(callEvent)
 
       const tool = this.deps.tools.find(t => t.name === call.name)
-      if (!tool) console.warn(`[${tid}] ⚠ unknown tool: ${call.name}`)
+      if (!tool) rlog.warn(`unknown tool: ${call.name}`)
       let result: unknown
 
       if (tool && tool.adminOnly && !ctx.isAdmin) {
-        console.warn(`[${tid}] ⚠ admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
+        rlog.warn(`admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
         result = { error: `Tool "${call.name}" is admin-only and cannot be called by this user.` }
       } else if (tool) {
         try {
@@ -282,7 +288,7 @@ export class LoopService {
       const errorValue = result && typeof result === "object" ? (result as Record<string, unknown>).error : undefined
       if (errorValue) {
         iterationHadError = true
-        console.warn(`[${tid}] tool error: ${String(errorValue).slice(0, 80)}`)
+        rlog.warn(`tool error: ${String(errorValue).slice(0, 80)}`)
       }
 
       const resultEvent: Event = {
@@ -324,12 +330,13 @@ export class LoopService {
       })
     } catch (err) {
       // Debug must never break the chat path.
-      console.warn("[loop] failed to emit debug snapshot:", err)
+      log.warn("failed to emit debug snapshot", err)
     }
   }
 
   private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number): Promise<void> {
     const tid = ctx.task.id.slice(0, 6)
+    const rlog = log.child(tid)
     const iterTag = iterations > 1 ? ` #${iterations}` : ""
 
     // Silent reply: the model chose to stay quiet (e.g. recovery resumed a
@@ -338,12 +345,12 @@ export class LoopService {
     // the channel. For streaming channels the placeholder/stream_end is
     // already suppressed inside the repository.
     if (isSilentReply(fullText)) {
-      console.log(`[${tid}]${iterTag} llm → NO_REPLY (suppressed)`)
+      rlog.info(`${iterTag} llm → NO_REPLY (suppressed)`)
       return
     }
 
     const preview = fullText.slice(0, 50).replace(/\n/g, " ")
-    console.log(`[${tid}]${iterTag} llm → "${preview}…" (${fullText.length})`)
+    rlog.info(`${iterTag} llm → "${preview}…" (${fullText.length})`)
 
     const assistantEvent: Event = {
       id: randomUUID(),
@@ -366,7 +373,7 @@ export class LoopService {
               { sessionId: ctx.sessionId, agentDir: ctx.agentDir, from: ctx.from, channel: ctx.channel, send: ctx.send },
             )
           } catch (err) {
-            console.error(`[${tid}] ✗ TTS failed:`, err)
+            rlog.error(`TTS failed`, err)
             await ctx.send(fullText)
           }
         } else {

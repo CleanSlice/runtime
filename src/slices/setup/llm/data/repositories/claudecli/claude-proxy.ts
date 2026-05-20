@@ -4,6 +4,10 @@
  * Enables OAuth + native tool calling without direct API key.
  */
 
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("proxy")
+
 const PORT = 19876
 
 type ContentBlock = { type: string; text?: string; tool_use_id?: string; content?: string; name?: string; input?: unknown; id?: string }
@@ -116,4 +120,4 @@ If no tool is needed, respond normally.`
   },
 })
 
-console.log(`Claude proxy running on http://localhost:${PORT}`)
+log.info(`running on http://localhost:${PORT}`)

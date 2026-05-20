@@ -16,6 +16,9 @@ import { ToolService } from "../../../agent/tool/domain/tool.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("runtime")
 
 interface RuntimeDeps {
   session: SessionModule
@@ -62,7 +65,7 @@ export class RuntimeService {
     this.deps.tasks.start(sessionId, taskLabel, async (task: Task) => {
       try {
         const tid = task.id.slice(0, 6)
-        console.log(`[${tid}] ← "${taskLabel}"`)
+        log.child(tid).info(`← "${taskLabel}"`)
 
         this.deps.activity.set({
           taskId: task.id,
@@ -101,9 +104,10 @@ export class RuntimeService {
         this.deps.session.touch(sessionId)
         this.deps.activity.clear()
         this.deps.memory.flushAndCompact(sessionId, history, this.deps.llm, this.deps.session, this.deps.config.session.compactionThreshold)
+        this.deps.memory.reviewMemory(sessionId, this.deps.llm, this.deps.session)
 
       } catch (err) {
-        console.error(`[${task.id.slice(0, 6)}] ✗ unhandled:`, err)
+        log.child(task.id.slice(0, 6)).error("unhandled", err)
         this.deps.activity.clear()
         try {
           if (!isInternal) await this.deps.channel.send(msg.channel, msg.from, "⚠️ Something went wrong. Please try again.")
@@ -177,7 +181,7 @@ export class RuntimeService {
       if (skill.metadata?.always) {
         systemPrompt += `\n\n---\n\n## Skill: ${skill.name}\n\n${skill.content}`
         injected.add(skill.name)
-        console.log(`[${tid}] skill(always): ${skill.name}`)
+        log.child(tid).info(`skill(always): ${skill.name}`)
       }
     }
 
@@ -185,7 +189,7 @@ export class RuntimeService {
     const matched = this.deps.skills.select(msg.text)
     if (matched && !injected.has(matched.name)) {
       systemPrompt += `\n\n---\n\n## Active Skill: ${matched.name}\n\n${matched.content}`
-      console.log(`[${tid}] skill: ${matched.name}`)
+      log.child(tid).info(`skill: ${matched.name}`)
     }
 
     return systemPrompt

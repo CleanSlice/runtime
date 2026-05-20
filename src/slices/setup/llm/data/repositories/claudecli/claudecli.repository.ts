@@ -3,6 +3,9 @@ import type { ModelResponse } from "../../../domain/llm.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../event"
 import { spawn } from "child_process"
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("claude-cli")
 
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
 function stripThinking(text: string): string {
@@ -107,7 +110,7 @@ If no tool is needed, respond with exactly: NO_TOOL`
 
       proc.on("close", (code: number) => {
         clearTimeout(timer)
-        console.log(`[claude-cli] done code=${code} len=${stdout.length}`)
+        log.info(`done code=${code} len=${stdout.length}`)
         if (code !== 0) reject(new Error(`claude CLI exited ${code}`))
         else resolve(stdout.trim())
       })

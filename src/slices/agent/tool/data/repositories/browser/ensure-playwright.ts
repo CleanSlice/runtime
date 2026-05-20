@@ -4,6 +4,10 @@
  * otherwise falls back to auto-install.
  */
 
+import { createLogger } from "../../../../../setup/logger"
+
+const log = createLogger("playwright")
+
 let installed = false
 
 /** Resolve Chromium executable path — system or Playwright-managed */
@@ -39,7 +43,7 @@ export async function ensurePlaywright(): Promise<typeof import("playwright")> {
       throw new Error(`System Chromium not found at ${chromiumPath()}. Check PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.`)
     }
 
-    console.log(`[playwright] browsers not installed, running: bunx playwright install chromium`)
+    log.info(`browsers not installed, running: bunx playwright install chromium`)
 
     const proc = Bun.spawn(["bunx", "playwright", "install", "chromium"], {
       stdout: "pipe",
@@ -54,11 +58,11 @@ export async function ensurePlaywright(): Promise<typeof import("playwright")> {
     const exitCode = await proc.exited
 
     if (exitCode !== 0) {
-      console.error(`[playwright] install failed (exit ${exitCode}):`, stderr)
+      log.error(`install failed (exit ${exitCode})`, stderr)
       throw new Error(`Playwright install failed: ${stderr.slice(0, 500)}`)
     }
 
-    console.log(`[playwright] install complete`)
+    log.info(`install complete`)
     if (stdout.trim()) console.log(stdout.trim())
 
     installed = true

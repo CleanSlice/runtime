@@ -1,5 +1,8 @@
 import { buildMessage, type Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("slack")
 
 export class SlackRepository {
   private ws: WebSocket | null = null
@@ -24,7 +27,7 @@ export class SlackRepository {
 
     this.ws = new WebSocket(json.url)
 
-    this.ws.onopen = () => console.log("[slack] Socket Mode connected")
+    this.ws.onopen = () => log.info("Socket Mode connected")
 
     this.ws.onmessage = async (event: MessageEvent) => {
       let payload: Record<string, unknown>
@@ -59,13 +62,13 @@ export class SlackRepository {
               ts: Date.now(),
               metadata: { channel: event.channel, ts: event.ts },
             }))
-          })().catch(err => console.error("[slack] message handler error:", err))
+          })().catch(err => log.error("message handler error", err))
         }
       }
     }
 
-    this.ws.onerror = (err: Event) => console.error("[slack] WebSocket error", err)
-    this.ws.onclose = () => console.log("[slack] WebSocket closed")
+    this.ws.onerror = (err: Event) => log.error("WebSocket error", err)
+    this.ws.onclose = () => log.info("WebSocket closed")
   }
 
   stop(): Promise<void> {

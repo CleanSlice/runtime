@@ -1,4 +1,7 @@
 import type { IMcpServerConfig } from "./mcp.types"
+import { createLogger } from "../../logger"
+
+const log = createLogger("mcp")
 
 /**
  * Parses platform-managed MCP servers from a JSON env var. Pure parsing:
@@ -16,15 +19,15 @@ export class McpFetcher {
     try {
       parsed = JSON.parse(json)
     } catch (err) {
-      console.warn(
-        "[mcp] MCP_SERVERS_B64 env is not valid JSON — ignoring:",
+      log.warn(
+        "MCP_SERVERS_B64 env is not valid JSON — ignoring",
         err,
       )
       return []
     }
     if (!Array.isArray(parsed)) {
-      console.warn(
-        `[mcp] MCP_SERVERS_B64 env: expected array, got ${typeof parsed} — ignoring`,
+      log.warn(
+        `MCP_SERVERS_B64 env: expected array, got ${typeof parsed} — ignoring`,
       )
       return []
     }

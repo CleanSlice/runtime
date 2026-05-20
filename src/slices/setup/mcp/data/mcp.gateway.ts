@@ -7,6 +7,9 @@ import { z } from "zod"
 import type { Tool } from "../../../agent/tool"
 import { IMcpGateway } from "../domain/mcp.gateway"
 import type { IMcpServerConfig } from "../domain/mcp.types"
+import { createLogger } from "../../logger"
+
+const log = createLogger("mcp")
 
 const CLIENT_INFO = { name: "cleanslice-runtime", version: "1.0.0" }
 
@@ -20,14 +23,14 @@ export class McpGateway extends IMcpGateway {
 
   async connect(cfg: IMcpServerConfig): Promise<Tool[]> {
     if (cfg.enabled === false) {
-      console.log(`[mcp] ${cfg.name}: disabled, skipping`)
+      log.info(`${cfg.name}: disabled, skipping`)
       return []
     }
     let transport: Transport
     try {
       transport = this.buildTransport(cfg)
     } catch (err) {
-      console.warn(`[mcp] ${cfg.name}: bad transport config — ${(err as Error).message}`)
+      log.warn(`${cfg.name}: bad transport config — ${(err as Error).message}`)
       return []
     }
 
@@ -35,7 +38,7 @@ export class McpGateway extends IMcpGateway {
     try {
       await client.connect(transport)
     } catch (err) {
-      console.warn(`[mcp] ${cfg.name}: connect failed — ${(err as Error).message}`)
+      log.warn(`${cfg.name}: connect failed — ${(err as Error).message}`)
       return []
     }
     this.clients.set(cfg.name, client)
@@ -44,18 +47,18 @@ export class McpGateway extends IMcpGateway {
     try {
       listed = (await client.listTools()) as typeof listed
     } catch (err) {
-      console.warn(`[mcp] ${cfg.name}: tools/list failed — ${(err as Error).message}`)
+      log.warn(`${cfg.name}: tools/list failed — ${(err as Error).message}`)
       return []
     }
 
     const wrapped = listed.tools.map((t) => this.wrapTool(cfg.name, client, t))
-    console.log(`[mcp] ${cfg.name}: registered ${wrapped.length} tools`)
+    log.info(`${cfg.name}: registered ${wrapped.length} tools`)
     return wrapped
   }
 
   async closeAll(): Promise<void> {
     const closes = [...this.clients.values()].map((c) =>
-      c.close().catch((err) => console.warn("[mcp] close error:", err)),
+      c.close().catch((err) => log.warn("close error", err)),
     )
     await Promise.all(closes)
     this.clients.clear()

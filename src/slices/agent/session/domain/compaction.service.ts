@@ -2,6 +2,9 @@ import type { Event } from "../../../setup/event"
 import type { ILlmGateway } from "../../../setup/llm/domain/llm.gateway"
 import type { SessionService } from "./session.service"
 import { randomUUID } from "crypto"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("session")
 
 export class CompactionService {
   private compacting = new Set<string>()
@@ -14,14 +17,14 @@ export class CompactionService {
 
   async compact(sessionId: string, llm: ILlmGateway): Promise<void> {
     if (this.compacting.has(sessionId)) {
-      console.log(`[session] skipping compaction for ${sessionId}: already in progress`)
+      log.info(`skipping compaction for ${sessionId}: already in progress`)
       return
     }
 
     const events = await this.sessionService.read(sessionId)
     if (events.length <= this.compactionThreshold) return
 
-    console.log(`[session] compacting ${sessionId}: ${events.length} → ${this.recentKeep} events`)
+    log.info(`compacting ${sessionId}: ${events.length} → ${this.recentKeep} events`)
     this.compacting.add(sessionId)
     try {
       const snapshotLen = events.length
@@ -61,7 +64,7 @@ This archive replaces the original messages. If a value is not here, it is lost 
       }
 
       await this.sessionService.rewrite(sessionId, [summaryEvent, ...recent, ...newlyAppended])
-      console.log(`[session] compaction done: ${sessionId}${newlyAppended.length > 0 ? ` (+${newlyAppended.length} appended during compaction)` : ""}`)
+      log.info(`compaction done: ${sessionId}${newlyAppended.length > 0 ? ` (+${newlyAppended.length} appended during compaction)` : ""}`)
     } finally {
       this.compacting.delete(sessionId)
     }
@@ -69,7 +72,7 @@ This archive replaces the original messages. If a value is not here, it is lost 
 
   compactAsync(sessionId: string, llm: ILlmGateway): void {
     this.compact(sessionId, llm).catch(err => {
-      console.error(`[session] compaction failed for ${sessionId}:`, err)
+      log.error(`compaction failed for ${sessionId}`, err)
     })
   }
 }

@@ -1,6 +1,9 @@
 import type { ISyncGateway } from "../domain/sync.gateway"
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, watch, type FSWatcher } from "fs"
 import { join, relative, sep } from "path"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("s3")
 
 // Lazy-loaded AWS SDK types
 type S3Client = import("@aws-sdk/client-s3").S3Client
@@ -213,7 +216,7 @@ export class S3SyncService implements ISyncGateway {
       }
     }
 
-    console.log(`[s3] pulled ${count} files`)
+    log.info(`pulled ${count} files`)
   }
 
   /**
@@ -223,7 +226,7 @@ export class S3SyncService implements ISyncGateway {
    */
   async push(): Promise<number> {
     if (this.pushing) {
-      console.log("[s3] push already in progress, skipping")
+      log.debug("push already in progress, skipping")
       return 0
     }
     this.pushing = true
@@ -235,10 +238,10 @@ export class S3SyncService implements ISyncGateway {
         try {
           if (await this.pushIfChanged(relPath)) pushed++
         } catch (err) {
-          console.error(`[s3] failed to push ${relPath}:`, err)
+          log.error(`failed to push ${relPath}`, err)
         }
       }
-      if (pushed > 0) console.log(`[s3] sweep pushed ${pushed} changed files`)
+      if (pushed > 0) log.info(`sweep pushed ${pushed} changed files`)
     } finally {
       this.pushing = false
     }
@@ -256,9 +259,9 @@ export class S3SyncService implements ISyncGateway {
         this.dirty.add(rel)
         this.scheduleFlush()
       })
-      console.log(`[s3] watcher started, debounce ${this.debounceMs}ms`)
+      log.info(`watcher started, debounce ${this.debounceMs}ms`)
     } catch (err) {
-      console.error("[s3] failed to start watcher:", err)
+      log.error("failed to start watcher", err)
     }
   }
 
@@ -277,7 +280,7 @@ export class S3SyncService implements ISyncGateway {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = undefined
-      this.flushDirty().catch(err => console.error("[s3] flush error:", err))
+      this.flushDirty().catch(err => log.error("flush error", err))
     }, this.debounceMs)
   }
 
@@ -293,11 +296,11 @@ export class S3SyncService implements ISyncGateway {
         try {
           if (await this.pushIfChanged(relPath)) pushed++
         } catch (err) {
-          console.error(`[s3] failed to push ${relPath}:`, err)
+          log.error(`failed to push ${relPath}`, err)
           this.dirty.add(relPath) // retry next flush
         }
       }
-      if (pushed > 0) console.log(`[s3] flushed ${pushed} changed files`)
+      if (pushed > 0) log.info(`flushed ${pushed} changed files`)
     } finally {
       this.flushing = false
       // If new dirty paths arrived during the flush, schedule another round.
@@ -313,9 +316,9 @@ export class S3SyncService implements ISyncGateway {
     if (this.timer) return
     if (!Number.isFinite(intervalSec) || intervalSec <= 0) return
     this.timer = setInterval(() => {
-      this.push().catch(err => console.error("[s3] auto-sync error:", err))
+      this.push().catch(err => log.error("auto-sync error", err))
     }, intervalSec * 1000)
-    console.log(`[s3] periodic full sweep every ${intervalSec}s (safety net)`)
+    log.info(`periodic full sweep every ${intervalSec}s (safety net)`)
   }
 
   stopAutoSync(): void {

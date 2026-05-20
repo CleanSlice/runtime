@@ -3,6 +3,9 @@ import { join } from "path"
 import type { IInitGateway } from "../domain/init.gateway"
 import type { IAgentConfig } from "../domain/init.types"
 import { AGENT_CONFIG_DEFAULTS, AGENT_SUBDIRS } from "../domain/init.types"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("init")
 
 export class InitGateway implements IInitGateway {
   scaffold(agentDir: string, exampleDir: string): void {
@@ -23,9 +26,9 @@ export class InitGateway implements IInitGateway {
 
     if (existsSync(exampleDir)) {
       const count = this.copyDirRecursive(exampleDir, agentDir)
-      console.log(`[init] first run — created ${count} files from ${exampleDir}`)
+      log.info(`first run — created ${count} files from ${exampleDir}`)
     } else {
-      console.log(`[init] first run — created minimal scaffold`)
+      log.info(`first run — created minimal scaffold`)
     }
   }
 
@@ -33,17 +36,17 @@ export class InitGateway implements IInitGateway {
     const configPath = join(agentDir, "agent.config.json")
 
     if (!existsSync(configPath)) {
-      console.log(`[init] no agent.config.json, using defaults`)
+      log.info(`no agent.config.json, using defaults`)
       return structuredClone(AGENT_CONFIG_DEFAULTS)
     }
 
     try {
       const raw = JSON.parse(readFileSync(configPath, "utf-8"))
       const config = deepMerge(AGENT_CONFIG_DEFAULTS, raw) as IAgentConfig
-      console.log(`[init] config loaded`)
+      log.info(`config loaded`)
       return config
     } catch (err) {
-      console.error(`[init] failed to parse agent.config.json:`, err)
+      log.error(`failed to parse agent.config.json`, err)
       return structuredClone(AGENT_CONFIG_DEFAULTS)
     }
   }
@@ -58,14 +61,14 @@ export class InitGateway implements IInitGateway {
     // Create parent directory first
     try {
       mkdirSync(agentDir, { recursive: true })
-      console.log(`[init] ✓ created agent directory: ${agentDir}`)
+      log.ok(`created agent directory: ${agentDir}`)
     } catch (err: unknown) {
       const code = (err as any)?.code
       if (code === "EACCES") {
-        console.warn(`[init] permission denied creating ${agentDir}, cannot proceed`)
+        log.warn(`permission denied creating ${agentDir}, cannot proceed`)
         throw err
       }
-      console.warn(`[init] could not create parent dir: ${(err as any)?.message}`)
+      log.warn(`could not create parent dir: ${(err as any)?.message}`)
       throw err
     }
 
@@ -75,16 +78,16 @@ export class InitGateway implements IInitGateway {
       try {
         const subPath = join(agentDir, sub)
         mkdirSync(subPath, { recursive: true })
-        console.log(`[init] ✓ created ${sub} directory`)
+        log.ok(`created ${sub} directory`)
       } catch (err: unknown) {
         const code = (err as any)?.code
         const message = (err as any)?.message
-        console.error(`[init] ✗ FATAL: cannot create ${sub} directory: ${message}`)
+        log.error(`FATAL: cannot create ${sub} directory: ${message}`)
         throw err
       }
     }
 
-    console.log(`[init] ✓ All agent directories ready`)
+    log.ok(`All agent directories ready`)
   }
 
   /**
@@ -105,12 +108,12 @@ export class InitGateway implements IInitGateway {
 
         if (srcContent !== destContent) {
           copyFileSync(src, dest)
-          console.log(`[init] updated managed file: ${file}`)
+          log.info(`updated managed file: ${file}`)
         }
       } catch (err: unknown) {
         const code = (err as any)?.code
         if (code === "EACCES") {
-          console.warn(`[init] permission denied updating ${file}, skipping`)
+          log.warn(`permission denied updating ${file}, skipping`)
         } else {
           throw err
         }
@@ -134,7 +137,7 @@ export class InitGateway implements IInitGateway {
     } catch (err: unknown) {
       const code = (err as any)?.code
       if (code === "EACCES") {
-        console.warn(`[init] permission denied for skills dir, skipping sync`)
+        log.warn(`permission denied for skills dir, skipping sync`)
         return
       }
       throw err
@@ -147,11 +150,11 @@ export class InitGateway implements IInitGateway {
       const destPath = join(destSkills, entry)
       try {
         this.overwriteDirRecursive(srcPath, destPath)
-        console.log(`[init] synced skill: ${entry}`)
+        log.info(`synced skill: ${entry}`)
       } catch (err: unknown) {
         const code = (err as any)?.code
         if (code === "EACCES") {
-          console.warn(`[init] permission denied syncing skill ${entry}, skipping`)
+          log.warn(`permission denied syncing skill ${entry}, skipping`)
         } else {
           throw err
         }
@@ -183,7 +186,7 @@ export class InitGateway implements IInitGateway {
     } catch (err: unknown) {
       const code = (err as any)?.code
       if (code === "EACCES") {
-        console.warn(`[init] permission denied creating ${dest}, skipping`)
+        log.warn(`permission denied creating ${dest}, skipping`)
         return 0
       }
       throw err
@@ -203,7 +206,7 @@ export class InitGateway implements IInitGateway {
         } catch (err: unknown) {
           const code = (err as any)?.code
           if (code === "EACCES") {
-            console.warn(`[init] permission denied copying ${entry}, skipping`)
+            log.warn(`permission denied copying ${entry}, skipping`)
           } else {
             throw err
           }

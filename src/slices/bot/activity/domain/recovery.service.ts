@@ -1,6 +1,9 @@
 import type { IActivityGateway } from "./activity.gateway"
 import type { IRecoveryContext } from "./activity.types"
 import { SILENT_REPLY_TOKEN } from "../../../agent/agent/domain/silentReply"
+import { createLogger } from "../../../setup/logger"
+
+const log = createLogger("recovery")
 
 /**
  * Detects tasks interrupted by a restart and builds a system-role
@@ -24,7 +27,7 @@ export class RecoveryService {
     const elapsed = Math.round((Date.now() - interrupted.startedAt) / 1000)
     const elapsedStr = elapsed > 60 ? `${Math.round(elapsed / 60)}m` : `${elapsed}s`
 
-    console.log(`[recovery] interrupted task found: "${interrupted.label}" for user=${interrupted.userId} (${elapsedStr} ago, step: ${interrupted.lastStep})`)
+    log.info(`interrupted task found: "${interrupted.label}" for user=${interrupted.userId} (${elapsedStr} ago, step: ${interrupted.lastStep})`)
 
     return {
       channel: interrupted.channel,

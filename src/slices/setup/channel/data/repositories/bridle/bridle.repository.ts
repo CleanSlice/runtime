@@ -3,6 +3,9 @@ import { MessagePartTypes, buildMessage, type Message, type MessagePart } from "
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
+import { createLogger } from "../../../../logger"
+
+const log = createLogger("bridle")
 
 /** Wire part types from bridle protocol */
 interface WirePart {
@@ -119,7 +122,7 @@ export class BridleRepository implements IChannelGateway {
   async stop(): Promise<void> {
     this.socket?.disconnect()
     this.socket = null
-    console.log("[bridle] channel stopped")
+    log.info("channel stopped")
   }
 
   async send(to: string, text: string, parts?: MessagePart[]): Promise<void> {
@@ -160,12 +163,12 @@ export class BridleRepository implements IChannelGateway {
     const messageId = randomUUID()
 
     if (!this.socket?.connected) {
-      console.warn("[bridle] streamSend: socket not connected, falling back to non-streaming")
+      log.warn("streamSend: socket not connected, falling back to non-streaming")
       await streamer(() => {})
       return
     }
 
-    console.log(`[bridle] stream start (clientId=${to} messageId=${messageId.slice(0, 8)})`)
+    log.info(`stream start (clientId=${to} messageId=${messageId.slice(0, 8)})`)
     this.socket.emit("typing", { clientId: to, ts: Date.now() })
 
     let lastSent = ""
@@ -216,8 +219,8 @@ export class BridleRepository implements IChannelGateway {
           ts: Date.now(),
         })
       }
-      console.log(
-        `[bridle] stream end (messageId=${messageId.slice(0, 8)}, ` +
+      log.info(
+        `stream end (messageId=${messageId.slice(0, 8)}, ` +
         `chunks=${chunksEmitted}, length=${finalText.length}${isSilentReply(finalText) ? ", silent" : ""})`,
       )
     }
@@ -225,7 +228,7 @@ export class BridleRepository implements IChannelGateway {
 
   private connect(): void {
     const url = this.apiUrl
-    console.log(`[bridle] connecting to hub at ${url}`)
+    log.info(`connecting to hub at ${url}`)
 
     this.socket = io(url, {
       transports: ["websocket", "polling"],
@@ -242,16 +245,16 @@ export class BridleRepository implements IChannelGateway {
     })
 
     this.socket.on("connect", () => {
-      console.log("[bridle] connected to hub")
+      log.info("connected to hub")
       this.socket?.emit("register", {})
     })
 
     this.socket.on("disconnect", (reason) => {
-      console.log(`[bridle] disconnected from hub: ${reason}`)
+      log.info(`disconnected from hub: ${reason}`)
     })
 
     this.socket.on("reconnect", () => {
-      console.log("[bridle] reconnected to hub")
+      log.info("reconnected to hub")
       this.socket?.emit("register", {})
     })
 
@@ -272,14 +275,14 @@ export class BridleRepository implements IChannelGateway {
         ...(images ? { images } : {}),
         ...(files ? { files } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
-      })).catch(err => console.error("[bridle] handler error:", err))
+      })).catch(err => log.error("handler error", err))
     })
 
     this.socket.on("debug_set", (data: unknown) => {
       const msg = data as { enabled?: boolean }
       const next = !!msg?.enabled
       if (this.debugEnabled !== next) {
-        console.log(`[bridle] debug ${next ? "enabled" : "disabled"} by hub`)
+        log.info(`debug ${next ? "enabled" : "disabled"} by hub`)
       }
       this.debugEnabled = next
     })
@@ -309,7 +312,7 @@ export class BridleRepository implements IChannelGateway {
     })
 
     this.socket.on("connect_error", (err) => {
-      console.error("[bridle] connection error:", err.message)
+      log.error(`connection error: ${err.message}`)
     })
   }
 }

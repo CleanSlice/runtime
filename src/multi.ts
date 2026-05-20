@@ -32,6 +32,9 @@
  */
 
 import { readFileSync, existsSync } from "fs"
+import { createLogger } from "./slices/setup/logger"
+
+const log = createLogger("multi")
 
 // Load .env file (shared env for all agents)
 if (existsSync(".env")) {
@@ -43,7 +46,7 @@ if (existsSync(".env")) {
 }
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection] caught:", reason)
+  log.error("unhandled rejection", reason)
 })
 
 import { AgentRuntime } from "./runtime"
@@ -61,13 +64,13 @@ interface AgentConfig {
 // --- Load agents config ---
 const configPath = process.env.AGENTS_CONFIG ?? "agents.json"
 if (!existsSync(configPath)) {
-  console.error(`[multi] agents config not found: ${configPath}`)
-  console.error(`[multi] Create agents.json or set AGENTS_CONFIG env var. See src/multi.ts for format.`)
+  log.error(`agents config not found: ${configPath}`)
+  log.error(`create agents.json or set AGENTS_CONFIG env var. See src/multi.ts for format.`)
   process.exit(1)
 }
 
 const agents: AgentConfig[] = JSON.parse(readFileSync(configPath, "utf-8"))
-console.log(`[multi] loading ${agents.length} agent(s) from ${configPath}`)
+log.info(`loading ${agents.length} agent(s) from ${configPath}`)
 
 // --- Shared tools (registered once, used by all agents) ---
 const toolGateway = new ToolGateway()
@@ -81,7 +84,7 @@ for (const agent of agents) {
   const agentDir = agent.agentDir ?? `.agent-${agent.name}`
   const exampleDir = agent.exampleDir ?? ".agent.example"
 
-  console.log(`[multi] starting agent "${agent.name}" (agentDir: ${agentDir})`)
+  log.info(`starting agent "${agent.name}" (agentDir: ${agentDir})`)
 
   // Temporarily override process.env for this agent's init
   const savedEnv = { ...process.env }
@@ -102,9 +105,9 @@ for (const agent of agents) {
 
     await runtime.start()
     runtimes.push(runtime)
-    console.log(`[multi] ✅ agent "${agent.name}" started`)
+    log.ok(`agent "${agent.name}" started`)
   } catch (err) {
-    console.error(`[multi] ❌ agent "${agent.name}" failed to start:`, err)
+    log.error(`agent "${agent.name}" failed to start`, err)
   } finally {
     // Restore process.env
     for (const key of Object.keys(process.env)) {
@@ -114,13 +117,13 @@ for (const agent of agents) {
   }
 }
 
-console.log(`[multi] ${runtimes.length}/${agents.length} agent(s) running`)
+log.ok(`${runtimes.length}/${agents.length} agent(s) running`)
 
 // --- Graceful shutdown ---
 async function shutdown(signal: string) {
-  console.log(`[multi] received ${signal}, stopping ${runtimes.length} agent(s)...`)
+  log.info(`received ${signal}, stopping ${runtimes.length} agent(s)...`)
   await Promise.allSettled(runtimes.map(r => r.stop()))
-  console.log("[multi] clean exit")
+  log.ok("clean exit")
   process.exit(0)
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"))
@@ -156,4 +159,4 @@ Bun.serve({
     )
   },
 })
-console.log(`[multi] 🌐 HTTP server listening on port ${process.env.PORT ?? 3000}`)
+log.info(`🌐 HTTP server listening on port ${process.env.PORT ?? 3000}`)

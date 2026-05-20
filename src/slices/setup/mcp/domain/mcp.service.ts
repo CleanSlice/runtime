@@ -2,6 +2,9 @@ import type { Tool } from "../../../agent/tool"
 import { IMcpGateway } from "./mcp.gateway"
 import type { IMcpLoadOptions, IMcpServerConfig } from "./mcp.types"
 import { McpFetcher } from "./mcp.fetcher"
+import { createLogger } from "../../logger"
+
+const log = createLogger("mcp")
 
 /**
  * Orchestrates the boot-time MCP load:
@@ -24,12 +27,12 @@ export class McpService {
 
     const merged = this.mergeByName(opts.fromConfig, fromEnv)
     if (merged.length === 0) {
-      console.log("[mcp] no servers configured")
+      log.info("no servers configured")
       return []
     }
 
-    console.log(
-      `[mcp] connecting to ${merged.length} server(s): ${merged.map((m) => m.name).join(", ")}`,
+    log.info(
+      `connecting to ${merged.length} server(s): ${merged.map((m) => m.name).join(", ")}`,
     )
 
     const all: Tool[] = []
@@ -37,7 +40,7 @@ export class McpService {
       const tools = await this.gateway.connect(cfg)
       all.push(...tools)
     }
-    console.log(`[mcp] total ${all.length} tools registered from MCP servers`)
+    log.info(`total ${all.length} tools registered from MCP servers`)
     return all
   }
 
@@ -58,7 +61,7 @@ export class McpService {
     for (const m of local) map.set(m.name, m)
     for (const m of env) {
       if (map.has(m.name)) {
-        console.log(`[mcp] ${m.name}: env entry overrides config-file entry`)
+        log.info(`${m.name}: env entry overrides config-file entry`)
       }
       map.set(m.name, m)
     }

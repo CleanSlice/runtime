@@ -1,6 +1,9 @@
 import type { IChannelGateway } from "./channel.gateway"
 import type { Message, MessagePart } from "./channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
+import { createLogger } from "../../logger"
+
+const log = createLogger("channel")
 
 export class ChannelService {
   private channels: IChannelGateway[] = []
@@ -22,7 +25,7 @@ export class ChannelService {
     const results = await Promise.allSettled(this.channels.map(ch => ch.start()))
     for (let i = 0; i < results.length; i++) {
       if (results[i].status === "rejected") {
-        console.error(`[channel] ${this.channels[i].name} failed to start:`, (results[i] as PromiseRejectedResult).reason)
+        log.error(`${this.channels[i].name} failed to start`, (results[i] as PromiseRejectedResult).reason)
       }
     }
   }
@@ -54,7 +57,7 @@ export class ChannelService {
     try {
       await ch.stop()
     } catch (err) {
-      console.warn(`[channel] ${name} failed to stop cleanly:`, err)
+      log.warn(`${name} failed to stop cleanly`, err)
     }
     return true
   }
@@ -66,7 +69,7 @@ export class ChannelService {
 
   async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
     if (isSilentReply(text)) {
-      console.warn(`[channel] dropping NO_REPLY sentinel on ${channel}`)
+      log.warn(`dropping NO_REPLY sentinel on ${channel}`)
       return
     }
     const ch = this.channels.find(c => c.name === channel)

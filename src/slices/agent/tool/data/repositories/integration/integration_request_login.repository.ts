@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { Tool, ToolContext } from "../../../domain/tool.types"
+import type { Tool } from "../../../domain/tool.types"
 
 // Replaces the legacy browser_login flow which used noVNC + the browser
 // pool. Now the agent asks Ranch for human-readable instructions + a
@@ -36,7 +36,7 @@ const schema = z.object({
     .string()
     .min(1)
     .describe(
-      "Account label for this integration — same as the suffix of the browser_play profile. For `profile: \"x:dimzhuk\"` pass `accountKey: \"dimzhuk\"`. Created on the fly if it does not exist yet.",
+      "Account label for this integration — same as the suffix of the browser_play profile. For `profile: \"x:dimzhuk\"` pass `accountKey: \"dimzhuk\"`.",
     ),
 })
 
@@ -54,15 +54,8 @@ Cookies arrive in Ranch via the user's own browser (Ranch Cookies extension). No
 
 After forwarding, STOP and wait for the user to confirm they pushed cookies. Do not retry browser_play in a tight loop — give the user time. When they say they're done, retry the original tool call.`,
   schema,
-  async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
+  async execute(params: unknown): Promise<unknown> {
     const { service, accountKey } = schema.parse(params)
-    const userId = ctx.from
-    if (!userId) {
-      return {
-        error:
-          "ctx.from is empty — integration_request_login needs an authenticated chat session so the right user gets the cookies request.",
-      }
-    }
 
     const base = ranchBase()
     const key = bridleKey()
@@ -79,7 +72,7 @@ After forwarding, STOP and wait for the user to confirm they pushed cookies. Do 
         "content-type": "application/json",
         "x-bridle-api-key": key,
       },
-      body: JSON.stringify({ userId, service, accountKey }),
+      body: JSON.stringify({ service, accountKey }),
     })
     if (!res.ok) {
       return {
