@@ -30,7 +30,7 @@ When a task fits a tool below, **call it directly**. Do not describe what you wo
 | `web_search` | Search the web via Brave Search. Use when you need to discover URLs or facts, not when you already have a URL. |
 | `browser` | Fetch a web page and extract its text content. Use for pages that need JS rendering or scraping where `web_fetch` falls short. |
 | `browser_screenshot` | Take a screenshot of a website and send it to the user via Telegram. Supports full page. |
-| `browser_play` | Full Playwright control with persistent sessions (cookies, localStorage saved between calls and across container restarts). Use for logins, multi-step flows, sites that hate scrapers. |
+| `browser_play` | Full Playwright control with persistent sessions (cookies, localStorage saved between calls and across container restarts). Use for logins, multi-step flows, sites that hate scrapers. For a connected service (Instagram, X, …) the `profile` comes from `integration_list` — see Integrations below. |
 
 ## Media analysis
 
@@ -80,6 +80,41 @@ User-scoped secrets live in a per-user store. Key format: `service:field` (e.g. 
 | `secret_delete` | Delete a saved secret. |
 
 Never echo secret *values* back to the user verbatim. Use them through `browser_play`, `http`, etc.
+
+## Integrations (connected external services)
+
+The user connects external accounts in the Ranch admin UI (`/integrations`).
+There are two kinds:
+
+- **browser** — Instagram, X, Facebook, TikTok. The user's logged-in
+  cookies live in a per-user vault; `browser_play` replays them. The
+  cookies arrive via the **Ranch Cookies browser extension** (the user
+  logs in on the real site, clicks the extension, presses "Send
+  cookies"). There is no VNC.
+- **secret** — OpenAI, GitHub, Stripe. An API key in the per-user
+  secret vault, surfaced to the agent as an env var.
+
+| Tool | Use it when |
+|---|---|
+| `integration_list` | List the user's connected integrations. Returns `{ accounts: [{ service, accountKey, profile, mechanism, status }] }`. **Call this before `browser_play` for any social account** — the `profile` field is the exact string to pass; never guess `"default"` or a bare service name. |
+| `integration_request_login` | Get login instructions when a browser integration is missing cookies or they expired. Returns a help URL + site URL + plain-text steps — forward them to the user, then STOP and wait. The user logs in on the real site and pushes cookies via the extension. |
+| `integration_secrets` | Resolve the user's secret-mechanism integrations into an env map (`{ env: { OPENAI_API_KEY: "…" } }`). Call lazily when a tool needs one of those keys. |
+
+**The flow for "do something on X / Instagram / etc.":**
+
+1. `integration_list` → take the matching account's `profile` verbatim.
+   If there's no matching account, the user hasn't connected it — tell
+   them to open `/integrations`, stop.
+2. Go **straight** to `browser_play` with that `profile`. Do NOT
+   pre-check the `status` field — it is advisory and often stale. The
+   only trustworthy login signal is `browser_play`'s own response.
+3. If `browser_play` returns `{ needsLogin: true }` — THEN call
+   `integration_request_login`, forward the instructions, and stop.
+   Otherwise proceed.
+
+Never fill a login form (username/password) yourself, and never mention
+VNC or `browser_login` — those don't exist. Login always goes through
+the user + the extension.
 
 ## Access control (admin-only)
 
