@@ -23,6 +23,36 @@ function ensureStealth() {
   stealthRegistered = true
 }
 
+// Playwright key names are strict. LLMs routinely emit aliases —
+// "Return" for "Enter", "Cmd"/"Command" for "Meta", "Esc" for "Escape".
+// Normalise each token of a chord ("Meta+Return" → "Meta+Enter").
+function normalizeKey(key: string): string {
+  const alias: Record<string, string> = {
+    return: "Enter",
+    enter: "Enter",
+    esc: "Escape",
+    escape: "Escape",
+    cmd: "Meta",
+    command: "Meta",
+    ctrl: "Control",
+    control: "Control",
+    opt: "Alt",
+    option: "Alt",
+    space: "Space",
+    tab: "Tab",
+    del: "Delete",
+    delete: "Delete",
+    backspace: "Backspace",
+  }
+  return key
+    .split("+")
+    .map((part) => {
+      const t = part.trim()
+      return alias[t.toLowerCase()] ?? t
+    })
+    .join("+")
+}
+
 /**
  * Fetch the user-level imported storageState from ranch-api as a fallback
  * when no per-agent file exists. Mirrors the (RANCH_API_URL, BRIDLE_API_KEY)
@@ -96,21 +126,12 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
     const home = process.env.HOME ?? "/tmp"
     const { chromium } = await ensurePlaywright()
 
-    // Kill any Chromium left over from a previous run. The runtime's 120s
-    // tool timeout abandons the execute() promise WITHOUT running our
-    // finally block, so a timed-out browser_play leaves its Chromium (and
-    // ~6 child processes) alive. Across a few retries the pod accumulates
-    // dozens of zombies, starves CPU/RAM, and every fresh launch then
-    // also times out — a self-reinforcing storm. Agents run tools
-    // sequentially, so nothing legitimate is running here to kill.
-    try {
-      await Bun.spawn(["pkill", "-9", "-f", "chromium"], {
-        stdout: "ignore",
-        stderr: "ignore",
-      }).exited
-    } catch {
-      // pkill missing or nothing to kill — fine either way
-    }
+    // NOTE: do NOT pkill chromium here. A heartbeat task and a chat task
+    // can run browser_play concurrently — a blanket `pkill chromium`
+    // would tear down the sibling call's live browser ("Target page
+    // closed"). Zombie cleanup is instead handled per-call by the
+    // watchdog below: each browser_play force-closes its OWN browser at
+    // 100s, before the runtime's 120s abandon-timeout can leak it.
 
     const stateFile = profileStatePath(ctx, profile)
     mkdirSync(dirname(stateFile), { recursive: true })
@@ -237,8 +258,11 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
             break
           }
           case "press": {
-            await page.press(action.selector, action.key)
-            results.push({ action: "press", key: action.key })
+            // Normalise common key-name aliases the LLM gets wrong —
+            // Playwright is strict ("Return"/"Cmd" are rejected).
+            const key = normalizeKey(action.key)
+            await page.press(action.selector, key)
+            results.push({ action: "press", key })
             break
           }
           case "wait": {
