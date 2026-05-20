@@ -31,6 +31,7 @@ import { SetAccessStrategyTool } from "./repositories/access/set_strategy.reposi
 import { SkillWriteTool } from "./repositories/skill/skill.repository"
 import { IntegrationSecretsTool } from "./repositories/integration/integration.repository"
 import { IntegrationRequestLoginTool } from "./repositories/integration/integration_request_login.repository"
+import { IntegrationListTool } from "./repositories/integration/integration_list.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -69,6 +70,7 @@ export class ToolGateway implements IToolGateway {
     this.register(SkillWriteTool)
     this.register(IntegrationSecretsTool)
     this.register(IntegrationRequestLoginTool)
+    this.register(IntegrationListTool)
   }
 
   private register(tool: Tool): void {
