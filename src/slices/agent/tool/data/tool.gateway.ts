@@ -8,7 +8,11 @@ import { BrowserTool } from "./repositories/browser/browser.repository"
 
 import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { PlaywrightTool } from "./repositories/browser/playwright.repository"
-import { BrowserLoginTool, BrowserLoginDoneTool } from "./repositories/browser/browserLogin.repository"
+// browser_login + browser_login_done were the legacy noVNC/pool flow.
+// Replaced by integration_request_login below — agent forwards a help
+// URL the user opens, and pushes cookies via the Ranch extension.
+// Imports kept on disk (for the rare standalone agent that still needs
+// them) but no longer registered in the runtime tool registry.
 import { CronListRepository, CronAddRepository, CronRemoveRepository, CronDisableRepository } from "./repositories/cron/cron.repository"
 import { WebSearchTool } from "./repositories/websearch/websearch.repository"
 import { WebFetchTool } from "./repositories/websearch/webfetch.repository"
@@ -25,6 +29,8 @@ import { ChannelTelegramSetTool, ChannelRemoveTool, ChannelListTool } from "./re
 import { ApproveUserTool } from "./repositories/access/approve.repository"
 import { SetAccessStrategyTool } from "./repositories/access/set_strategy.repository"
 import { SkillWriteTool } from "./repositories/skill/skill.repository"
+import { IntegrationSecretsTool } from "./repositories/integration/integration.repository"
+import { IntegrationRequestLoginTool } from "./repositories/integration/integration_request_login.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -37,8 +43,6 @@ export class ToolGateway implements IToolGateway {
     this.register(BrowserTool)
     this.register(BrowserScreenshotTool)
     this.register(PlaywrightTool)
-    this.register(BrowserLoginTool)
-    this.register(BrowserLoginDoneTool)
     this.register(CronListRepository as Tool)
     this.register(CronAddRepository as Tool)
     this.register(CronRemoveRepository as Tool)
@@ -63,6 +67,8 @@ export class ToolGateway implements IToolGateway {
     this.register(ApproveUserTool)
     this.register(SetAccessStrategyTool)
     this.register(SkillWriteTool)
+    this.register(IntegrationSecretsTool)
+    this.register(IntegrationRequestLoginTool)
   }
 
   private register(tool: Tool): void {

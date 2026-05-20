@@ -23,6 +23,35 @@ function ensureStealth() {
   stealthRegistered = true
 }
 
+/**
+ * Fetch the user-level imported storageState from ranch-api as a fallback
+ * when no per-agent file exists. Mirrors the (RANCH_API_URL, BRIDLE_API_KEY)
+ * env-var pair used by every other ranch-internal tool. Returns null on
+ * any error (network, 404, misconfig) — the caller proceeds without state.
+ */
+async function tryFetchUserBrowserState(
+  userId: string | undefined,
+  profile: string,
+): Promise<unknown | null> {
+  if (!userId) return null
+  const base = (process.env.RANCH_API_URL ?? process.env.API_URL)?.replace(/\/+$/, "")
+  const key = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
+  if (!base || !key) return null
+  try {
+    const url = new URL(`${base}/integrations/internal/browser-state`)
+    url.searchParams.set("userId", userId)
+    url.searchParams.set("profile", profile)
+    const res = await fetch(url.toString(), {
+      headers: { "x-bridle-api-key": key },
+    })
+    if (!res.ok) return null
+    const body = (await res.json()) as { data?: unknown }
+    return body?.data ?? body
+  } catch {
+    return null
+  }
+}
+
 const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), url: z.string() }),
   z.object({ kind: z.literal("click"), selector: z.string() }),
@@ -67,9 +96,44 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
     const home = process.env.HOME ?? "/tmp"
     const { chromium } = await ensurePlaywright()
 
+    // Kill any Chromium left over from a previous run. The runtime's 120s
+    // tool timeout abandons the execute() promise WITHOUT running our
+    // finally block, so a timed-out browser_play leaves its Chromium (and
+    // ~6 child processes) alive. Across a few retries the pod accumulates
+    // dozens of zombies, starves CPU/RAM, and every fresh launch then
+    // also times out — a self-reinforcing storm. Agents run tools
+    // sequentially, so nothing legitimate is running here to kill.
+    try {
+      await Bun.spawn(["pkill", "-9", "-f", "chromium"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited
+    } catch {
+      // pkill missing or nothing to kill — fine either way
+    }
+
     const stateFile = profileStatePath(ctx, profile)
     mkdirSync(dirname(stateFile), { recursive: true })
-    const hadState = existsSync(stateFile)
+    let hadState = existsSync(stateFile)
+
+    // Fallback to the per-user import store when no agent-local state
+    // exists yet. Lets `/integrations/accounts/:id/import-cookies` cover
+    // every agent the user owns with a single paste — agent picks it up
+    // on its next browser_play, writes locally, future runs use the
+    // cached file (same path the extension's harvest flow writes to).
+    if (!hadState) {
+      const fetched = await tryFetchUserBrowserState(ctx.from, profile)
+      if (fetched) {
+        try {
+          await Bun.write(stateFile, JSON.stringify(fetched, null, 2))
+          hadState = true
+          console.log(`[browser_play] hydrated ${stateFile} from /integrations/internal/browser-state`)
+        } catch (e) {
+          console.warn(`[browser_play] failed to write hydrated state: ${e}`)
+        }
+      }
+    }
+
     console.log(`[browser_play] profile=${profile} user=${ctx.from} state=${stateFile} exists=${hadState}`)
 
     // The extension may have written the file in the wrapper format
@@ -118,6 +182,18 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
 
     const page = await context.newPage()
     const results: unknown[] = []
+
+    // Self-imposed deadline below the runtime's 120s tool budget. When it
+    // fires we force-close the browser; in-flight page operations then
+    // reject with "Target closed", the catch block runs, and the finally
+    // block's browser.close() is reached — instead of the runtime
+    // abandoning us at 120s and leaking the whole process tree.
+    let deadlineHit = false
+    const watchdog = setTimeout(() => {
+      deadlineHit = true
+      console.warn("[browser_play] internal 100s deadline — force-closing browser")
+      browser.close().catch(() => {})
+    }, 100_000)
 
     const persistState = async () => {
       try {
@@ -255,8 +331,11 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
       await persistState()
 
       // Heuristic: redirect to /login indicates the profile lost its session.
-      // Surface this to the agent so it kicks off the browser_login flow.
-      const needsLogin = /\/(login|accounts\/login|signin)(\?|$|\/)/i.test(currentUrl)
+      // The fix is the integration_request_login tool — no VNC anymore.
+      const needsLogin = /\/(login|accounts\/login|signin|i\/flow\/login)(\?|$|\/)/i.test(currentUrl)
+      const [service, accountKey] = profile.includes(":")
+        ? [profile.slice(0, profile.indexOf(":")), profile.slice(profile.indexOf(":") + 1)]
+        : [profile, "default"]
       return {
         ok: true,
         profile,
@@ -266,15 +345,19 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
         ...(needsLogin
           ? {
               needsLogin: true,
-              hint: `Profile "${profile}" needs authentication. Call browser_login with profile="${profile}" to get a vncUrl, forward it to the user, then call browser_login_done with the same profile to capture cookies.`,
+              hint: `Profile "${profile}" is not logged in. Call integration_request_login with service="${service}" and accountKey="${accountKey}", forward the returned instructions to the user, then STOP and wait for them to confirm before retrying. Do NOT loop browser_play.`,
             }
           : {}),
       }
     } catch (err) {
       await persistState()
-      return { ok: false, profile, error: String(err), results }
+      const msg = deadlineHit
+        ? `browser_play hit its internal 100s deadline — the page or a selector stalled. Do NOT immediately retry; if this persists the site is slow or the selector is wrong.`
+        : String(err)
+      return { ok: false, profile, error: msg, results }
     } finally {
-      await browser.close()
+      clearTimeout(watchdog)
+      await browser.close().catch(() => {})
     }
   },
 }
