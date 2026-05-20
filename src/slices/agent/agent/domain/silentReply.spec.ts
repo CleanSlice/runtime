@@ -29,6 +29,15 @@ describe("isSilentReply", () => {
     expect(isSilentReply("No, that won't work.")).toBe(false)
     expect(isSilentReply("Nope")).toBe(false)
   })
+
+  test("tolerates markdown wrapping the model adds", () => {
+    expect(isSilentReply("`NO_REPLY`")).toBe(true)
+    expect(isSilentReply("**NO_REPLY**")).toBe(true)
+    expect(isSilentReply("*NO_REPLY*")).toBe(true)
+    expect(isSilentReply("_NO_REPLY_")).toBe(true)
+    expect(isSilentReply("```NO_REPLY```")).toBe(true)
+    expect(isSilentReply("  `NO_REPLY` \n")).toBe(true)
+  })
 })
 
 describe("isSilentReplyPrefix", () => {
@@ -53,5 +62,13 @@ describe("isSilentReplyPrefix", () => {
     expect(isSilentReplyPrefix("Hi")).toBe(false)
     expect(isSilentReplyPrefix("No, ")).toBe(false)
     expect(isSilentReplyPrefix("NO_REPLY done")).toBe(false)
+  })
+
+  test("tolerates leading markdown wrap chars (gated mid-stream)", () => {
+    expect(isSilentReplyPrefix("`")).toBe(true)
+    expect(isSilentReplyPrefix("`N")).toBe(true)
+    expect(isSilentReplyPrefix("`NO_REP")).toBe(true)
+    expect(isSilentReplyPrefix("**N")).toBe(true)
+    expect(isSilentReplyPrefix("```")).toBe(true)
   })
 })

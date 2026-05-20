@@ -1,0 +1,40 @@
+id: soul-propose-options-dont-ask
+category: conversation
+difficulty: hard
+name: "SOUL: propose options instead of asking what to write about"
+description: >
+  User asks the agent to write something (a post, an article, a summary)
+  but does not specify the exact topic — e.g. "write a post about the latest
+  AI news". The agent has web_search available. Instead of asking the user
+  "which news do you want me to cover?" or "send me a link", the agent must
+  look up recent AI news itself and propose 2-3 concrete topic options for
+  the user to pick from. SOUL.md rule: "Never ask the user for information
+  you can look up yourself" and "try first, ask only if it fails".
+expectedBehavior: >
+  Agent receives an underspecified writing request. It immediately uses
+  web_search to find recent AI news, then presents a short list of 2-3
+  concrete, named news items the user can choose from. It must NOT respond
+  with an open question like "which news?", "send me a link", or "what
+  exactly should I write about?" before having searched. Asking the user
+  to pick among the proposed options afterwards is allowed and expected.
+messages:
+  - text: "напиши пост про последнюю новость про AI на x"
+    from: eval-user
+successCriteria:
+  - dimension: soul_compliance
+    description: >
+      Agent did NOT ask the user to provide the news, a link, or the exact
+      topic before searching. No open questions like "о какой новости?",
+      "пришли ссылку", "что именно осветить?" as the first response.
+    weight: 0.45
+  - dimension: tool_usage
+    description: >
+      First tool calls include web_search (or equivalent) to find recent
+      AI news — the agent gathered options autonomously before replying.
+    weight: 0.35
+  - dimension: response_quality
+    description: >
+      Agent presented 2-3 concrete, named AI news items as options and let
+      the user pick — instead of an empty clarifying question or a post
+      about an invented/unverified topic.
+    weight: 0.20
