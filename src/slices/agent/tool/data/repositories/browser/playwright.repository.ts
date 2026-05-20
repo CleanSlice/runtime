@@ -204,17 +204,23 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
     const page = await context.newPage()
     const results: unknown[] = []
 
-    // Self-imposed deadline below the runtime's 120s tool budget. When it
-    // fires we force-close the browser; in-flight page operations then
-    // reject with "Target closed", the catch block runs, and the finally
-    // block's browser.close() is reached — instead of the runtime
-    // abandoning us at 120s and leaking the whole process tree.
+    // Hard 90s deadline that RESOLVES execute() — not just a timer that
+    // closes the browser. The runtime abandons a tool call at 120s
+    // without recording a result; that leaves a dangling tool_use, the
+    // next turn injects a synthetic "interrupted" result, and the LLM
+    // retry-storms. Racing runActions() against this rejecting promise
+    // guarantees execute() returns (with a real {ok:false} result)
+    // before the 120s abandon ever triggers.
     let deadlineHit = false
-    const watchdog = setTimeout(() => {
-      deadlineHit = true
-      console.warn("[browser_play] internal 100s deadline — force-closing browser")
-      browser.close().catch(() => {})
-    }, 100_000)
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_, reject) => {
+      watchdog = setTimeout(() => {
+        deadlineHit = true
+        console.warn("[browser_play] internal 90s deadline — force-closing browser")
+        browser.close().catch(() => {})
+        reject(new Error("internal-deadline"))
+      }, 90_000)
+    })
 
     const persistState = async () => {
       try {
@@ -232,7 +238,7 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
       }
     }
 
-    try {
+    const runActions = async () => {
       for (const action of actions) {
         switch (action.kind) {
           case "navigate": {
@@ -373,14 +379,18 @@ Never tell the user to "open instagram.com and log in yourself" — the login MU
             }
           : {}),
       }
+    }
+
+    try {
+      return await Promise.race([deadline, runActions()])
     } catch (err) {
-      await persistState()
+      await persistState().catch(() => {})
       const msg = deadlineHit
-        ? `browser_play hit its internal 100s deadline — the page or a selector stalled. Do NOT immediately retry; if this persists the site is slow or the selector is wrong.`
+        ? `browser_play hit its internal 90s deadline — the page or a selector stalled. The result is final: do NOT retry browser_play. Tell the user the page was too slow or report what you got in "results".`
         : String(err)
       return { ok: false, profile, error: msg, results }
     } finally {
-      clearTimeout(watchdog)
+      if (watchdog) clearTimeout(watchdog)
       await browser.close().catch(() => {})
     }
   },
