@@ -1,6 +1,9 @@
 import type { Tool } from "./domain/tool.types"
 import { zodToJsonSchema } from "zod-to-json-schema"
 
+// Re-export Tool so consumers can import it from the module barrel.
+export type { Tool } from "./domain/tool.types"
+
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map()
 

@@ -1,20 +1,10 @@
 import { z } from "zod"
 import { randomUUID } from "crypto"
 import type { ToolContext } from "../../../domain/tool.types"
+import type { CronJob } from "../../../../cron/domain/cron.types"
 
 const cronDir = (ctx: ToolContext) => `${ctx.agentDir}/data`
 const cronPath = (ctx: ToolContext) => `${cronDir(ctx)}/cron.json`
-
-type CronJob = {
-  id: string
-  name: string
-  schedule: string
-  message: string
-  to?: string
-  channel?: string
-  enabled: boolean
-  lastRunAt?: number
-}
 
 async function loadJobs(ctx: ToolContext): Promise<CronJob[]> {
   try {

@@ -5,7 +5,7 @@ for (const line of lines) {
   if (key && rest.length) process.env[key.trim()] = rest.join("=").trim()
 }
 
-import { ToolGateway } from "./src/slices/tool/data/tool.gateway"
+import { ToolGateway } from "./src/slices/agent/tool/data/tool.gateway"
 
 const gateway = new ToolGateway()
 const ctx = { sessionId: "test", agentDir: ".agent", send: async (t: string) => console.log("SEND:", t) }

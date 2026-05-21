@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
-import type { ChannelServer } from "../../../../../setup/channel/channel.module"
+import type { ChannelModule } from "../../../../../setup/channel/channel.module"
 
 const schema = z.object({
   to: z.string().describe("Recipient ID"),
@@ -8,7 +8,7 @@ const schema = z.object({
   channel: z.string().describe("Channel name (e.g. telegram)"),
 })
 
-export function createMessageTool(server: ChannelServer): Tool {
+export function createMessageTool(server: ChannelModule): Tool {
   return {
     name: "message",
     description: "Send a message to a user on a specific channel",

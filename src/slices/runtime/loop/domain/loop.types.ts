@@ -30,7 +30,7 @@ export interface ILoopContext {
   tools: Tool[]
   send: (text: string) => Promise<void>
   streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<void>
-  agentConfig: import("../init").IAgentConfig
+  agentConfig: import("../../init").IAgentConfig
   reloadSkills: () => Promise<void>
   access?: AccessModule
   isAdmin: boolean

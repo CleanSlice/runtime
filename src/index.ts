@@ -185,7 +185,6 @@ if (llmAuxiliary) {
 
 const runtime = new AgentRuntime({
   init,
-  agentDir: ".agent",
   llm,
   llmAuxiliary,
   // channels.json wins per type; env is the fallback. Bridle stays
