@@ -5,7 +5,7 @@ recovery, reliable reading). This file is Instagram-specific.
 
 | Need | Answer |
 |------|--------|
-| Profile | `instagram:<handle>` — from `integration_list`, never guess |
+| Profile | `instagram:<handle>` — from `session_list`, never guess |
 | Login URL | `https://www.instagram.com/accounts/login/` |
 
 Instagram's rendered DOM is the most hostile of all the services — its

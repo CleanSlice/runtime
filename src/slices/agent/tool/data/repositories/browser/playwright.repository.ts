@@ -6,6 +6,7 @@ import { dirname } from "path"
 import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 import { profileStatePath } from "./browserLogin.repository"
 import { createLogger } from "../../../../../setup/logger"
+import { SessionModule } from "../../../../../setup/session/session.module"
 
 const log = createLogger("browser_play")
 
@@ -69,27 +70,26 @@ function normalizeKey(key: string): string {
     .join("+")
 }
 
+// SessionModule (lazy) — resolves the host adapter behind ISessionGateway.
+// browser_play never talks to a host API directly; which host (Ranch,
+// local cookie files, …) is selected is an adapter detail.
+let _sessions: SessionModule | null = null
+function getSessions(ctx: ToolContext): SessionModule {
+  if (!_sessions) _sessions = new SessionModule(ctx.agentDir)
+  return _sessions
+}
+
 /**
- * Fetch the user-level imported storageState from ranch-api as a fallback
- * when no per-agent file exists. Mirrors the (RANCH_API_URL, BRIDLE_API_KEY)
- * env-var pair used by every other ranch-internal tool. Returns null on
- * any error (network, 404, misconfig) — the caller proceeds without state.
+ * Fetch a host-provided storageState as a fallback when no per-agent
+ * file exists. Returns null on any miss — the caller proceeds without
+ * state.
  */
-async function tryFetchUserBrowserState(
+async function fetchHostBrowserState(
   profile: string,
+  ctx: ToolContext,
 ): Promise<unknown | null> {
-  const base = (process.env.RANCH_API_URL ?? process.env.API_URL)?.replace(/\/+$/, "")
-  const key = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
-  if (!base || !key) return null
   try {
-    const url = new URL(`${base}/integrations/internal/browser-state`)
-    url.searchParams.set("profile", profile)
-    const res = await fetch(url.toString(), {
-      headers: { "x-bridle-api-key": key },
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as { data?: unknown }
-    return body?.data ?? body
+    return await getSessions(ctx).getBrowserState(profile)
   } catch {
     return null
   }
@@ -126,11 +126,11 @@ Supports: navigate, click, fill, press, wait, waitForSelector, evaluate (JS), sc
 Login flow for sites that need authentication (Instagram, Meta Ads, PayPal, etc.):
 
 1. Try browser_play. If the navigated URL ends up on a /login or /accounts/login path, the tool returns { needsLogin: true, hint }.
-2. Call integration_request_login with the SAME service — it returns instructions for the user.
+2. Call session_request_login with the SAME service — it returns instructions for the user.
 3. Forward the instructions to the user. Wait for them to confirm they sent cookies.
 4. Retry browser_play. Now it runs logged in.
 
-Never tell the user to "open instagram.com and log in yourself" without the integration_request_login instructions — cookies must arrive via the Ranch Cookies extension.`,
+Never tell the user to "open instagram.com and log in yourself" without the session_request_login instructions — cookies must arrive through the flow it describes.`,
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { profile, actions } = schema.parse(params)
@@ -189,12 +189,12 @@ Never tell the user to "open instagram.com and log in yourself" without the inte
       // agent — agent picks it up on its next browser_play, writes locally,
       // future runs use the cached file.
       if (!hadState) {
-        const fetched = await tryFetchUserBrowserState(profile)
+        const fetched = await fetchHostBrowserState(profile, ctx)
         if (fetched) {
           try {
             await Bun.write(stateFile, JSON.stringify(fetched, null, 2))
             hadState = true
-            log.info(`hydrated ${stateFile} from /integrations/internal/browser-state`)
+            log.info(`hydrated ${stateFile} from session host`)
           } catch (e) {
             log.warn(`failed to write hydrated state: ${e}`)
           }
@@ -417,7 +417,7 @@ Never tell the user to "open instagram.com and log in yourself" without the inte
         ...(needsLogin
           ? {
               needsLogin: true,
-              hint: `Profile "${profile}" is not logged in. Call integration_request_login with service="${service}" and accountKey="${accountKey}", forward the returned instructions to the user, then STOP and wait for them to confirm before retrying. Do NOT loop browser_play.`,
+              hint: `Profile "${profile}" is not logged in. Call session_request_login with service="${service}" and accountKey="${accountKey}", forward the returned instructions to the user, then STOP and wait for them to confirm before retrying. Do NOT loop browser_play.`,
             }
           : {}),
       }

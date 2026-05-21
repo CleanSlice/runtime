@@ -5,7 +5,7 @@ recovery, reliable reading). This file is TikTok-specific.
 
 | Need | Answer |
 |------|--------|
-| Profile | `tiktok:<handle>` — from `integration_list`, never guess |
+| Profile | `tiktok:<handle>` — from `session_list`, never guess |
 | Login URL | `https://www.tiktok.com/login` |
 | Anti-bot | The most aggressive of all — wait 2–5s between actions, never loop |
 

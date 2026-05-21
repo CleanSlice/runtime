@@ -9,7 +9,7 @@ import { BrowserTool } from "./repositories/browser/browser.repository"
 import { BrowserScreenshotTool } from "./repositories/browser/screenshot.repository"
 import { PlaywrightTool } from "./repositories/browser/playwright.repository"
 // browser_login + browser_login_done were the legacy noVNC/pool flow.
-// Replaced by integration_request_login below — agent forwards a help
+// Replaced by session_request_login below — agent forwards a help
 // URL the user opens, and pushes cookies via the Ranch extension.
 // Imports kept on disk (for the rare standalone agent that still needs
 // them) but no longer registered in the runtime tool registry.
@@ -29,9 +29,9 @@ import { ChannelTelegramSetTool, ChannelRemoveTool, ChannelListTool } from "./re
 import { ApproveUserTool } from "./repositories/access/approve.repository"
 import { SetAccessStrategyTool } from "./repositories/access/set_strategy.repository"
 import { SkillWriteTool } from "./repositories/skill/skill.repository"
-import { IntegrationSecretsTool } from "./repositories/integration/integration.repository"
-import { IntegrationRequestLoginTool } from "./repositories/integration/integration_request_login.repository"
-import { IntegrationListTool } from "./repositories/integration/integration_list.repository"
+import { SessionSecretsTool } from "./repositories/session/session_secrets.repository"
+import { SessionRequestLoginTool } from "./repositories/session/session_request_login.repository"
+import { SessionListTool } from "./repositories/session/session_list.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -68,9 +68,9 @@ export class ToolGateway implements IToolGateway {
     this.register(ApproveUserTool)
     this.register(SetAccessStrategyTool)
     this.register(SkillWriteTool)
-    this.register(IntegrationSecretsTool)
-    this.register(IntegrationRequestLoginTool)
-    this.register(IntegrationListTool)
+    this.register(SessionSecretsTool)
+    this.register(SessionRequestLoginTool)
+    this.register(SessionListTool)
   }
 
   private register(tool: Tool): void {

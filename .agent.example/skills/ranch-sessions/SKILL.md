@@ -21,10 +21,10 @@ recipes" at the bottom and read the one you need before calling
 ## Step 0 — discover the profile (always, never guess)
 
 `browser_play` needs a `profile` string. Never invent it — call
-`integration_list` and use the exact `profile` field it returns:
+`session_list` and use the exact `profile` field it returns:
 
 ```ts
-const { accounts } = await integration_list()
+const { accounts } = await session_list()
 const acc = accounts.find(a => a.service === "instagram") // or x / facebook / tiktok
 if (!acc) {
   // not connected — tell the user to connect it (see below), then STOP
@@ -38,7 +38,7 @@ Guessing `x:default` or a handle you assumed is the #1 cause of false
 
 ## Always try browser_play first — don't gate on status
 
-`integration_list` returns a `status` field. **It is advisory and often
+`session_list` returns a `status` field. **It is advisory and often
 stale** — it can say `needs_login` while the cookies are perfectly
 valid. The only trustworthy login signal is `browser_play`'s own
 `needsLogin` response. Run `browser_play`; let it decide. Skipping it
@@ -67,7 +67,7 @@ cookies must arrive through it.
 When `browser_play` returns `needsLogin: true`:
 
 ```ts
-const help = await integration_request_login({
+const help = await session_request_login({
   service: acc.service, accountKey: acc.accountKey,
 })
 await ctx.send(help.instructions)   // forward the instructions verbatim
@@ -124,12 +124,12 @@ Paths are relative to the agent working dir (`.agent/`).
 
 ## Don't (all services)
 
-- **Don't guess the profile** — `integration_list` first, use it verbatim.
-- **Don't fill login forms** — `integration_request_login` → user pushes
+- **Don't guess the profile** — `session_list` first, use it verbatim.
+- **Don't fill login forms** — `session_request_login` → user pushes
   cookies via the extension. Scripted logins lock accounts.
 - **Don't claim success from a closed dialog** — verify by reading the
   result back (e.g. the top post on `/<handle>`).
 - **Don't burst** — rate limits are aggressive; pace navigations,
   especially on TikTok and Instagram.
 - **Don't reference VNC / `browser_login`** — those tools were removed.
-  The login path is `integration_request_login` + the Ranch extension.
+  The login path is `session_request_login` + the Ranch extension.

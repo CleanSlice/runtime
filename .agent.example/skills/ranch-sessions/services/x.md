@@ -5,11 +5,11 @@ recovery, reliable reading). This file is X-specific.
 
 | Need | Answer |
 |------|--------|
-| Profile | `x:<accountKey>` — from `integration_list`, never guess |
+| Profile | `x:<accountKey>` — from `session_list`, never guess |
 | Login URL | `https://x.com/i/flow/login` |
 | Write limits | 50 posts/hour free, ~300 Premium |
 
-All recipes use `acc.profile` from `integration_list`. Placeholders
+All recipes use `acc.profile` from `session_list`. Placeholders
 (`text`, `handle`, …) are values you fill in.
 
 ## Post a tweet
