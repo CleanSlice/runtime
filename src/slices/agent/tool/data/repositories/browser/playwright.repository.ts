@@ -233,7 +233,16 @@ Never tell the user to "open instagram.com and log in yourself" without the inte
       browser = await chromiumExtra.launch({
         headless: true,
         executablePath: chromiumPath(),
-        args: ["--no-sandbox", "--disable-dev-shm-usage"],
+        // --no-sandbox / --disable-dev-shm-usage: required in the pod (no
+        // user namespaces, 64MB default /dev/shm). --disable-gpu: headless
+        // has no GPU, and the GPU process is a known source of renderer
+        // crashes ("Target page… has been closed") on heavy SPAs like
+        // instagram.com under the pod's memory ceiling.
+        args: [
+          "--no-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+        ],
       })
 
       // launch() can finish a beat after the deadline already fired — the
