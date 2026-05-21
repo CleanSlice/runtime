@@ -137,15 +137,58 @@ export class MemoryService {
     this.doReview(sessionId, llm, session).catch(err => reviewLog.error("unhandled", err))
   }
 
-  private async doReview(sessionId: string, llm: LlmModule, session: SessionModule): Promise<void> {
+  /**
+   * Review a session that is ending (e.g. `/clear`) regardless of the turn
+   * cadence, so short conversations that never reached `everyTurns` still get
+   * reviewed. Events are read up front so the caller can clear the session
+   * immediately afterwards without racing the background pass.
+   */
+  async flushReview(sessionId: string, llm: LlmModule, session: SessionModule): Promise<void> {
+    if (!this.review.enabled) return
+
+    const pending = this.reviewCounters.get(sessionId) ?? 0
+    if (pending === 0) return  // nothing new since the last review
+
+    this.reviewCounters.delete(sessionId)
     const events = await session.read(sessionId)
     if (events.length === 0) return
+
+    this.doReview(sessionId, llm, session, events).catch(err => reviewLog.error("unhandled", err))
+  }
+
+  /**
+   * Flush reviews for every session with pending turns. Awaited on graceful
+   * shutdown so promoted facts land in MEMORY.md before the final S3 push.
+   * Bounded by a timeout so a slow auxiliary LLM can't block process exit.
+   */
+  async flushAllPendingReviews(llm: LlmModule, session: SessionModule): Promise<void> {
+    if (!this.review.enabled) return
+
+    const pending = [...this.reviewCounters.entries()].filter(([, n]) => n > 0).map(([sid]) => sid)
+    this.reviewCounters.clear()
+    if (pending.length === 0) return
+
+    const work = Promise.all(pending.map(async sid => {
+      try {
+        const events = await session.read(sid)
+        if (events.length > 0) await this.doReview(sid, llm, session, events)
+      } catch (err) {
+        reviewLog.error(`flush failed for ${sid}`, err)
+      }
+    }))
+    const timeout = new Promise<void>(resolve => setTimeout(resolve, 20_000))
+    await Promise.race([work, timeout])
+  }
+
+  private async doReview(sessionId: string, llm: LlmModule, session: SessionModule, events?: Event[]): Promise<void> {
+    const evts = events ?? await session.read(sessionId)
+    if (evts.length === 0) return
 
     reviewLog.info(`reviewing session ${sessionId}`)
     try {
       const existing = this.gateway.readMemoryFile() ?? ""
       // Auxiliary LLM — cheaper model, no contention with the main prompt cache.
-      const response = await llm.auxComplete(buildMemoryReviewPrompt(existing), events, [])
+      const response = await llm.auxComplete(buildMemoryReviewPrompt(existing), evts, [])
 
       const text = response.text?.trim()
       if (!text || text === "NOTHING") return

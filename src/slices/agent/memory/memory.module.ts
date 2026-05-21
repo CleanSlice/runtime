@@ -48,4 +48,12 @@ export class MemoryModule {
   reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule): void {
     this.service.reviewMemory(sessionId, llm, session)
   }
+
+  flushReview(sessionId: string, llm: LlmModule, session: SessionModule): Promise<void> {
+    return this.service.flushReview(sessionId, llm, session)
+  }
+
+  flushAllPendingReviews(llm: LlmModule, session: SessionModule): Promise<void> {
+    return this.service.flushAllPendingReviews(llm, session)
+  }
 }

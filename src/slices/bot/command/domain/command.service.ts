@@ -7,6 +7,8 @@ import type { SkillModule } from "../../../agent/skill/skill.module"
 import type { VoiceModule } from "../../voice/voice.module"
 import type { TaskManager } from "../../../agent/task/domain/task.service"
 import type { SessionModule } from "../../../agent/session/session.module"
+import type { MemoryModule } from "../../../agent/memory/memory.module"
+import type { LlmModule } from "../../../setup/llm/llm.module"
 
 interface CommandDeps {
   access: AccessModule
@@ -14,6 +16,8 @@ interface CommandDeps {
   voice: VoiceModule
   tasks: TaskManager
   session: SessionModule
+  memory: MemoryModule
+  llm: LlmModule
 }
 
 type SendFn = (text: string) => Promise<void>
@@ -81,6 +85,10 @@ export class CommandService {
 
     // /clear — reset session
     if (text === "/clear") {
+      // Review the ending session before wiping it, so short conversations
+      // that never reached the turn-cadence still get a self-improvement pass.
+      // flushReview captures events up front, so clearing right after is safe.
+      await this.deps.memory.flushReview(ctx.sessionId, this.deps.llm, this.deps.session)
       this.deps.session.clear(ctx.channel, ctx.from)
       await send(`✅ Session cleared. Starting fresh!`)
       return { handled: true }

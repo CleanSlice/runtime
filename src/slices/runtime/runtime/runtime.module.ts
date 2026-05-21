@@ -145,7 +145,7 @@ export class AgentRuntime {
     const access = this.access
 
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
-    const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session })
+    const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm })
 
     // ── Runtime slices (orchestration) ─────────────────────────────
 
@@ -202,6 +202,9 @@ export class AgentRuntime {
     this.cron.stop()
     this.heartbeat.stop()
     await this.usage.flush()
+    // Promote pending self-improvement reviews into MEMORY.md before the
+    // final S3 push, so short sessions are not lost on shutdown.
+    await this.memory.flushAllPendingReviews(this.llm, this.session)
     if (this.s3sync) {
       this.s3sync.stopWatcher()
       this.s3sync.stopAutoSync()
