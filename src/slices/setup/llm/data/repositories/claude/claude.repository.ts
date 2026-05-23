@@ -189,7 +189,10 @@ export class ClaudeRepository implements ILlmGateway {
     //   anything else → x-api-key
     // Legacy: CLAUDE_CODE_OAUTH_TOKEN (comma-separated + _2.._10) +
     // ANTHROPIC_API_KEY fallback — kept for pre-migration envs.
-    const primary = this.apiKey ?? process.env.LLM_API_KEY
+    // `||` (not `??`) so an empty-string config value falls through to the
+    // env — deploy pipelines that emit `LLM_AUX_API_KEY=""` would otherwise
+    // pin this.apiKey to "" and make init fail.
+    const primary = this.apiKey || process.env.LLM_API_KEY
     const oauthClients: Anthropic[] = []
     let apiKeyClient: Anthropic | undefined
 

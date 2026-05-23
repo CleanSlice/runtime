@@ -171,12 +171,18 @@ const llm = buildLlmConfig(
 //   - If only LLM_AUX_MODEL is set, inherit provider/key from main but use
 //     the smaller model.
 //   - Otherwise no aux is configured and aux calls fall back to main.
+// `||` (not `??`) so empty-string env vars fall through to the main config.
+// Deploy pipelines (Ranch's agent-workflow manifest, helm charts, k8s
+// downward API) often emit `LLM_AUX_API_KEY=""` instead of omitting the var,
+// and `??` treats that empty string as a valid value — leaving the aux LLM
+// with `apiKey=""` and the Claude repo failing init with "No Claude
+// credentials configured" during memory-flush and compaction.
 const llmAuxiliary = (process.env.LLM_AUX_PROVIDER || process.env.LLM_AUX_MODEL || process.env.LLM_AUX_API_KEY)
   ? buildLlmConfig(
-    process.env.LLM_AUX_PROVIDER ?? process.env.LLM_PROVIDER,
+    process.env.LLM_AUX_PROVIDER || process.env.LLM_PROVIDER,
     process.env.LLM_AUX_MODEL,
     process.env.LLM_AUX_FALLBACK_MODEL,
-    process.env.LLM_AUX_API_KEY ?? process.env.LLM_API_KEY,
+    process.env.LLM_AUX_API_KEY || process.env.LLM_API_KEY,
   )
   : undefined
 if (llmAuxiliary) {
