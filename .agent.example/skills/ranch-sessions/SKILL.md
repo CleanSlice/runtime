@@ -1,6 +1,8 @@
 ---
 name: ranch-sessions
 description: Logged-in browser automation for social and web accounts — X (Twitter), Instagram, Facebook / Meta Ads, TikTok. Discover a connected session, recover a dead login, read content reliably, then load the per-service recipe file.
+metadata:
+  always: true
 ---
 
 # Ranch Sessions
