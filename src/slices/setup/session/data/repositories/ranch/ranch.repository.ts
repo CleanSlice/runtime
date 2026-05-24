@@ -19,7 +19,16 @@ function hostKey(): string | null {
   return process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY ?? null
 }
 
-function requireHost(): { base: string; key: string } {
+// The Ranch internal session endpoints scope every call to a userId
+// (cookies belong to a Ranch user, not the agent). The runtime doesn't
+// have user identity built in, so we read the owner from env at boot.
+// Ranch's agent-workflow manifest is the canonical place to set this;
+// 'admin' is the safe default for single-tenant deployments.
+function ownerUserId(): string {
+  return process.env.RANCH_AGENT_OWNER_ID ?? "admin"
+}
+
+function requireHost(): { base: string; key: string; userId: string } {
   const base = hostBase()
   const key = hostKey()
   if (!base || !key) {
@@ -27,13 +36,15 @@ function requireHost(): { base: string; key: string } {
       "Session host not configured (RANCH_API_URL / BRIDLE_API_KEY missing in runtime env).",
     )
   }
-  return { base, key }
+  return { base, key, userId: ownerUserId() }
 }
 
 export class RanchSessionRepository implements ISessionGateway {
   async list(): Promise<IRuntimeSession[]> {
-    const { base, key } = requireHost()
-    const res = await fetch(`${base}/integrations/internal/accounts`, {
+    const { base, key, userId } = requireHost()
+    const url = new URL(`${base}/integrations/internal/accounts`)
+    url.searchParams.set("userId", userId)
+    const res = await fetch(url.toString(), {
       headers: { "x-bridle-api-key": key },
     })
     if (!res.ok) {
@@ -53,6 +64,7 @@ export class RanchSessionRepository implements ISessionGateway {
     if (!base || !key) return null
     try {
       const url = new URL(`${base}/integrations/internal/browser-state`)
+      url.searchParams.set("userId", ownerUserId())
       url.searchParams.set("profile", profile)
       const res = await fetch(url.toString(), {
         headers: { "x-bridle-api-key": key },
@@ -69,14 +81,14 @@ export class RanchSessionRepository implements ISessionGateway {
     service: string,
     accountKey: string,
   ): Promise<ILoginInstruction | null> {
-    const { base, key } = requireHost()
+    const { base, key, userId } = requireHost()
     const res = await fetch(`${base}/integrations/internal/request-login`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-bridle-api-key": key,
       },
-      body: JSON.stringify({ service, accountKey }),
+      body: JSON.stringify({ userId, service, accountKey }),
     })
     if (!res.ok) {
       throw new Error(`Session host returned ${res.status} ${res.statusText}`)
@@ -88,8 +100,9 @@ export class RanchSessionRepository implements ISessionGateway {
   }
 
   async resolveSecrets(service?: string): Promise<Record<string, string>> {
-    const { base, key } = requireHost()
+    const { base, key, userId } = requireHost()
     const url = new URL(`${base}/integrations/internal/secrets`)
+    url.searchParams.set("userId", userId)
     if (service) url.searchParams.set("service", service)
     const res = await fetch(url.toString(), {
       headers: { "x-bridle-api-key": key },
