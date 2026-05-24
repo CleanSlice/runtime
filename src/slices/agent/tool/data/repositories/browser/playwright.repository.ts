@@ -414,7 +414,7 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
                 body: form,
               })
               await Bun.spawn(["rm", "-f", outPath]).exited
-              results.push({ action: "screenshot", sent: ((await res.json()) as { ok: boolean }).ok, vision: visionDescription })
+              results.push({ action: "screenshot", sentTo: "telegram", sent: ((await res.json()) as { ok: boolean }).ok, vision: visionDescription })
             } else if (ctx.channel && ctx.channel !== "internal" && ctx.channel !== "cron") {
               // Generic channel path (bridle, web, etc.): send the screenshot
               // as a base64 image part. Every channel that supports
@@ -427,7 +427,9 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
                 await ctx.send(`📸 ${await page.url()}`, [
                   { type: MessagePartTypes.Image, base64, mediaType: "image/png" },
                 ])
-                results.push({ action: "screenshot", sent: true, vision: visionDescription })
+                // Annotate the channel so the LLM doesn't say "sent to
+                // Telegram" out of muscle memory when it was bridle/web.
+                results.push({ action: "screenshot", sentTo: ctx.channel, sent: true, vision: visionDescription })
               } catch (e) {
                 log.warn(`screenshot send via channel failed: ${e}`)
                 results.push({ action: "screenshot", path: outPath, vision: visionDescription })

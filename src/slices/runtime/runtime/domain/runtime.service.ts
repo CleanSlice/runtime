@@ -47,9 +47,12 @@ export class RuntimeService {
     const isAdmin = isInternal ? true : this.deps.access.isAdmin(msg.from)
     const visibleTools = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
 
-    const send = async (text: string) => {
+    const send = async (
+      text: string,
+      parts?: import("../../../setup/channel").MessagePart[],
+    ) => {
       if (msg.channel !== "internal") {
-        await this.deps.channel.send(msg.channel, msg.from, text)
+        await this.deps.channel.send(msg.channel, msg.from, text, parts)
       }
     }
 
