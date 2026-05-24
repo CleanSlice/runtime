@@ -2,13 +2,18 @@ import type { ZodSchema } from "zod"
 import type { IAgentConfig } from "../../../runtime/init"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
+import type { MessagePart } from "../../../setup/channel/domain/channel.types"
 
 export interface ToolContext {
   sessionId: string
   agentDir: string
   from?: string   // chat id (e.g. Telegram user id)
   channel?: string
-  send: (text: string) => Promise<void>
+  // `parts` is the rich-content escape hatch: pass [{type:"image", base64,
+  // mediaType}, ...] to attach images/files to the same message. Channels
+  // that don't support rich parts (telegram via this hook — telegram has
+  // its own sendPhoto path) fall back to text-only.
+  send: (text: string, parts?: MessagePart[]) => Promise<void>
   agentConfig?: IAgentConfig
   reloadSkills?: () => Promise<void>  // hot-reload skills after skill_write
   access?: AccessModule

@@ -7,6 +7,7 @@ import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
 import { profileStatePath } from "./browserLogin.repository"
 import { createLogger } from "../../../../../setup/logger"
 import { SessionModule } from "../../../../../setup/session/session.module"
+import { MessagePartTypes } from "../../../../../setup/channel/domain/channel.types"
 
 const log = createLogger("browser_play")
 
@@ -394,7 +395,11 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
 
             const telegramToken = process.env.TELEGRAM_BOT_TOKEN
             const chatId = ctx.from
-            if (telegramToken && chatId && chatId !== "cron") {
+            const isTelegramChannel = ctx.channel === "telegram"
+            if (telegramToken && chatId && chatId !== "cron" && isTelegramChannel) {
+              // Telegram has its own native sendPhoto — bypass the channel
+              // abstraction and post the file directly so users see the
+              // image inline in the chat.
               const file = Bun.file(outPath)
               const form = new FormData()
               form.append("chat_id", chatId)
@@ -410,6 +415,23 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
               })
               await Bun.spawn(["rm", "-f", outPath]).exited
               results.push({ action: "screenshot", sent: ((await res.json()) as { ok: boolean }).ok, vision: visionDescription })
+            } else if (ctx.channel && ctx.channel !== "internal" && ctx.channel !== "cron") {
+              // Generic channel path (bridle, web, etc.): send the screenshot
+              // as a base64 image part. Every channel that supports
+              // MessagePart rendering picks it up; the rest fall back to the
+              // caption text. Lets the user actually SEE what the agent is
+              // doing instead of staring at "browser_play succeeded".
+              try {
+                const buf = await Bun.file(outPath).arrayBuffer()
+                const base64 = Buffer.from(buf).toString("base64")
+                await ctx.send(`📸 ${await page.url()}`, [
+                  { type: MessagePartTypes.Image, base64, mediaType: "image/png" },
+                ])
+                results.push({ action: "screenshot", sent: true, vision: visionDescription })
+              } catch (e) {
+                log.warn(`screenshot send via channel failed: ${e}`)
+                results.push({ action: "screenshot", path: outPath, vision: visionDescription })
+              }
             } else {
               results.push({ action: "screenshot", path: outPath, vision: visionDescription })
             }

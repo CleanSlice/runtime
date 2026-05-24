@@ -27,7 +27,8 @@ export class BotService {
   constructor(private deps: BotDeps) {}
 
   async route(msg: Message, sessionId: string): Promise<RouteResult> {
-    const send = (text: string) => this.deps.channel.send(msg.channel, msg.from, text)
+    const send = (text: string, parts?: import("../../../setup/channel/domain/channel.types").MessagePart[]) =>
+      this.deps.channel.send(msg.channel, msg.from, text, parts)
 
     // Auto-approve: if admin sends a message containing a 6-char access code
     if (this.deps.access.isAdmin(msg.from)) {
