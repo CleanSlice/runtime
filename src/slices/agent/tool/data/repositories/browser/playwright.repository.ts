@@ -100,9 +100,20 @@ const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("click"), selector: z.string() }),
   z.object({ kind: z.literal("fill"), selector: z.string(), value: z.string() }),
   z.object({ kind: z.literal("press"), selector: z.string(), key: z.string() }),
+  // `type` does what `fill` should have done for React rich-text editors
+  // (Lexical / Draft.js on X.com, Instagram, etc.): instead of slamming the
+  // DOM `value` directly, it simulates real keystrokes through Playwright's
+  // keyboard, so `beforeinput`/`input`/composition events fire and the
+  // editor's state updates. Required for any composer where the submit
+  // button stays disabled after a plain `fill`.
+  z.object({ kind: z.literal("type"), selector: z.string(), text: z.string(), delay: z.number().optional() }),
   z.object({ kind: z.literal("wait"), ms: z.number() }),
   z.object({ kind: z.literal("waitForSelector"), selector: z.string(), timeout: z.number().optional() }),
   z.object({ kind: z.literal("evaluate"), code: z.string() }),
+  // `fullPage` defaults to FALSE — viewport-only. On lazy-load pages (X,
+  // Instagram) `fullPage: true` triggers infinite scroll-and-shoot that
+  // routinely blows the 100s deadline. Pass `fullPage: true` explicitly
+  // when you actually need the whole scrollable area.
   z.object({ kind: z.literal("screenshot"), fullPage: z.boolean().optional() }),
   z.object({ kind: z.literal("getText"), selector: z.string() }),
 ])
@@ -309,6 +320,16 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
             results.push({ action: "press", key })
             break
           }
+          case "type": {
+            // page.locator(...).type() focuses then keyboard-types char by
+            // char — fires beforeinput/input/composition events so React
+            // rich-text editors (Lexical, Draft) actually register the
+            // input and enable their submit buttons. `delay` is optional
+            // ms-between-keystrokes for sites that throttle (default 0).
+            await page.locator(action.selector).type(action.text, { delay: action.delay ?? 0 })
+            results.push({ action: "type", chars: action.text.length })
+            break
+          }
           case "wait": {
             await new Promise((r) => setTimeout(r, action.ms))
             results.push({ action: "wait", ms: action.ms })
@@ -332,7 +353,10 @@ Never tell the user to "open instagram.com and log in yourself" without the sess
           case "screenshot": {
             const filename = `screenshot-${randomUUID()}.png`
             const outPath = `${home}/${filename}`
-            await page.screenshot({ path: outPath, fullPage: action.fullPage !== false })
+            // viewport-only by default — `fullPage: true` triggers
+            // scroll-and-shoot on lazy-load sites (X, Instagram) and
+            // routinely blows the 100s hard deadline.
+            await page.screenshot({ path: outPath, fullPage: action.fullPage === true })
 
             let visionDescription: string | undefined
             const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN

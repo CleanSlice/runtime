@@ -22,38 +22,45 @@ calls, never retry the whole thing in a loop. Critical details:
 - **Scope every selector to `[role="dialog"]`** — the page has TWO
   `tweetTextarea_0` (sidebar mini-composer + modal); unscoped selectors
   hit the invisible sidebar one.
-- `waitForSelector` the submit button **before** clicking it — blind
-  clicks are what cause `click: Timeout 10000ms`.
-- Pace for slow pods: `wait 6000` after navigate, `wait 4000` after
-  `fill` (X's React enables the button a beat late).
+- **Use `type`, not `fill`.** X's editor is Lexical; `fill` slams `.value`
+  directly and React never sees the input → Post button stays disabled.
+- `waitForSelector` the post button `:not([aria-disabled="true"])` so
+  you don't click while it's still disabled.
+- **No `screenshot`** in the post flow — fullPage on X triggers infinite
+  scroll and blows the 100s deadline. Verify via `evaluate` instead.
 - Stay under 280 chars on non-Premium accounts.
-- **Always verify** — navigate to `/<handle>` and read the top tweet. A
-  closed modal is NOT proof; it closes on cancel and rejection too.
+- **Always verify** in a separate `browser_play` call — navigate to
+  `/<handle>` and read the top tweet. The modal closes on cancel too.
 
 ```ts
 await browser_play({
   profile: acc.profile,
   actions: [
     { kind: 'navigate', url: 'https://x.com/compose/post' },
-    { kind: 'wait', ms: 6000 },
     { kind: 'waitForSelector', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', timeout: 30000 },
     { kind: 'click', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]' },
-    { kind: 'fill', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', value: text },
-    { kind: 'wait', ms: 4000 },
-    { kind: 'waitForSelector', selector: '[role="dialog"] [data-testid="tweetButton"]', timeout: 15000 },
+    { kind: 'type', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', text },
+    { kind: 'wait', ms: 1000 },
+    { kind: 'waitForSelector', selector: '[role="dialog"] [data-testid="tweetButton"]:not([aria-disabled="true"])', timeout: 15000 },
     { kind: 'click', selector: '[role="dialog"] [data-testid="tweetButton"]' },
-    { kind: 'wait', ms: 7000 },
+    { kind: 'wait', ms: 3000 },
+  ],
+})
+
+// Verify in a SEPARATE call.
+await browser_play({
+  profile: acc.profile,
+  actions: [
     { kind: 'navigate', url: `https://x.com/${handle}` },
     { kind: 'waitForSelector', selector: '[data-testid="tweet"]', timeout: 30000 },
-    { kind: 'wait', ms: 3000 },
     { kind: 'evaluate', code: `
         const top = document.querySelector('[data-testid="tweet"]');
         const link = top?.querySelector('a[href*="/status/"]')?.getAttribute('href');
-        return {
+        JSON.stringify({
           posted: top?.querySelector('[data-testid="tweetText"]')?.innerText?.includes(${JSON.stringify(text)}),
           url: link ? 'https://x.com' + link : null,
           text: top?.querySelector('[data-testid="tweetText"]')?.innerText,
-        };
+        })
       ` },
   ],
 })
@@ -88,8 +95,8 @@ await browser_play({
     { kind: 'navigate', url: `https://x.com/${authorHandle}/status/${tweetId}` },
     { kind: 'click', selector: '[data-testid="reply"]' },
     { kind: 'waitForSelector', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', timeout: 10000 },
-    { kind: 'fill', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', value: reply },
-    { kind: 'wait', ms: 1500 },
+    { kind: 'type', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', text: reply },
+    { kind: 'wait', ms: 1000 },
     { kind: 'press', selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', key: 'Meta+Enter' },
     { kind: 'wait', ms: 4000 },
   ],

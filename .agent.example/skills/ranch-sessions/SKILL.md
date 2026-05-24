@@ -124,6 +124,131 @@ Paths are relative to the agent working dir (`.agent/`).
 
 ---
 
+## Per-service: X (Twitter) — INLINED, do not freelance
+
+The X recipe is inlined here on purpose: sub-files don't auto-load and the
+LLM consistently fails to read them. This is the **only** sequence that
+works — every variant tried in production (clicking sidebar buttons,
+`a[href='/compose/tweet']`, `fill` on the textarea, `fullPage` screenshots)
+hits a dead end. Use it verbatim.
+
+### Why each step is the way it is
+
+- `/compose/post` is the modal-direct URL. `/home` + click on sidebar
+  button is selector-fragile.
+- `[role="dialog"]` scope is **mandatory** — the page has two
+  `tweetTextarea_0` (sidebar mini-composer + modal). Without the scope
+  Playwright in strict mode times out on ambiguity.
+- Use `type` (real keystrokes), **never `fill`**. X's editor is Lexical;
+  `fill` slams `.value` directly and React never sees the input → the
+  Post button stays disabled forever.
+- **No `screenshot`** in the posting flow. X is infinite-scroll heavy;
+  fullPage shots trigger lazy-load loops that blow the 100s deadline.
+  Verify by reading the timeline back instead.
+
+### Post a tweet
+
+```ts
+const { accounts } = await session_list()
+const acc = accounts.find(a => a.service === "x")
+if (!acc) { /* tell the user to connect X via /sessions, STOP */ return }
+
+await browser_play({
+  profile: acc.profile,
+  actions: [
+    { kind: "navigate", url: "https://x.com/compose/post" },
+    { kind: "waitForSelector",
+      selector: '[role="dialog"] [data-testid="tweetTextarea_0"]',
+      timeout: 30000 },
+    { kind: "click", selector: '[role="dialog"] [data-testid="tweetTextarea_0"]' },
+    // ← `type`, not `fill`. Fires the input events Lexical listens to.
+    { kind: "type",
+      selector: '[role="dialog"] [data-testid="tweetTextarea_0"]',
+      text },
+    { kind: "wait", ms: 1000 },
+    // Wait for the button to become enabled (X disables it until valid text).
+    { kind: "waitForSelector",
+      selector: '[role="dialog"] [data-testid="tweetButton"]:not([aria-disabled="true"])',
+      timeout: 15000 },
+    { kind: "click", selector: '[role="dialog"] [data-testid="tweetButton"]' },
+    { kind: "wait", ms: 3000 },
+  ],
+})
+
+// Verify in a SEPARATE call (the modal closes on cancel too, so closure ≠ success).
+await browser_play({
+  profile: acc.profile,
+  actions: [
+    { kind: "navigate", url: `https://x.com/${handle}` },
+    { kind: "waitForSelector", selector: '[data-testid="tweet"]', timeout: 30000 },
+    { kind: "evaluate", code: `
+        const top = document.querySelector('[data-testid="tweet"]');
+        JSON.stringify({
+          posted: top?.querySelector('[data-testid="tweetText"]')?.innerText?.includes(${JSON.stringify(text)}),
+          text:   top?.querySelector('[data-testid="tweetText"]')?.innerText,
+        })
+      ` },
+  ],
+})
+```
+
+### Reply
+
+Same dialog-scope + `type`; `Meta+Enter` is the documented submit shortcut.
+
+```ts
+await browser_play({
+  profile: acc.profile,
+  actions: [
+    { kind: "navigate", url: `https://x.com/${authorHandle}/status/${tweetId}` },
+    { kind: "click", selector: '[data-testid="reply"]' },
+    { kind: "waitForSelector",
+      selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', timeout: 10000 },
+    { kind: "type",
+      selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', text: reply },
+    { kind: "wait", ms: 1000 },
+    { kind: "press",
+      selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', key: "Meta+Enter" },
+    { kind: "wait", ms: 4000 },
+  ],
+})
+```
+
+### Read a user's timeline
+
+```ts
+await browser_play({
+  profile: acc.profile,
+  actions: [
+    { kind: "navigate", url: `https://x.com/${handle}` },
+    { kind: "waitForSelector", selector: '[data-testid="tweet"]', timeout: 15000 },
+    { kind: "evaluate", code: `
+        JSON.stringify([...document.querySelectorAll('[data-testid="tweet"]')].slice(0, 20).map(t => ({
+          text: t.querySelector('[data-testid="tweetText"]')?.innerText ?? '',
+          time: t.querySelector('time')?.getAttribute('datetime'),
+        })))
+      ` },
+  ],
+})
+```
+
+### Failure protocol (X)
+
+- `tool error: TimeoutError` on the textarea selector → the modal didn't open
+  (X redirected to login). Treat as `needsLogin`: call `session_request_login`,
+  forward the instructions, **STOP**.
+- `tool error: TimeoutError` on the post-button-not-disabled selector → text
+  didn't register. You almost certainly used `fill` instead of `type`. Use
+  `type` and retry **once**.
+- `browser_play hit its 100s hard deadline` → almost always means a
+  `screenshot` action triggered fullPage scroll-and-shoot. Remove all
+  `screenshot` actions from posting flows; verify via `evaluate` instead.
+- 3 consecutive errors in a row → stop. Report what happened to the user.
+  Do NOT loop `browser_play` — it holds the per-agent browser mutex and
+  starves other live conversations.
+
+---
+
 ## Don't (all services)
 
 - **Don't guess the profile** — `session_list` first, use it verbatim.
