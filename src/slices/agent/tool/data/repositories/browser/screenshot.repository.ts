@@ -2,92 +2,113 @@ import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { randomUUID } from "crypto"
 import { ensurePlaywright, chromiumPath } from "./ensure-playwright"
+import { MessagePartTypes } from "../../../../../setup/channel/domain/channel.types"
+import { createLogger } from "../../../../../setup/logger"
+
+const log = createLogger("browser_screenshot")
 
 const schema = z.object({
   url: z.string().describe("URL to take a screenshot of"),
-  fullPage: z.boolean().optional().default(true).describe("Capture full page height (default: true)"),
+  fullPage: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Capture full page height (default: false — viewport-only). " +
+        "Setting true on lazy-load pages (X, Instagram) routinely blows " +
+        "the 30s deadline because of scroll-and-shoot.",
+    ),
   width: z.number().optional().default(1280).describe("Viewport width in pixels"),
 })
 
 export const BrowserScreenshotTool: Tool = {
   name: "browser_screenshot",
-  description: "Take a screenshot of a website and send it to the user via Telegram. Supports full page screenshots.",
+  description:
+    "Take a viewport-only screenshot of a website and post it to the current chat as an image. " +
+    "For multi-step browser flows (login, fill, click, submit) use browser_play instead.",
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, fullPage, width } = schema.parse(params)
 
-    const home = process.env.HOME ?? "/home/dmitriyzhuk"
+    const home = process.env.HOME ?? "/home/agent"
     const filename = `screenshot-${randomUUID()}.png`
     const outPath = `${home}/${filename}`
 
     const { chromium } = await ensurePlaywright()
-    const browser = await chromium.launch({ headless: true, executablePath: chromiumPath() })
-    const page = await browser.newPage({ viewport: { width: width ?? 1280, height: 900 } })
+    // Same launch args as browser_play — required in containers:
+    //   --no-sandbox             k8s pods have no user-namespaces support
+    //   --disable-dev-shm-usage  /dev/shm defaults to 64MB; without this
+    //                            Chromium crashes on shared-mem allocations
+    //   --disable-gpu            headless has no GPU; the GPU process is a
+    //                            known source of "Target has been closed"
+    //                            crashes on JS-heavy SPAs (X, Instagram).
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: chromiumPath(),
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    })
+    try {
+      const page = await browser.newPage({ viewport: { width: width ?? 1280, height: 900 } })
 
-    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 })
-    await page.screenshot({ path: outPath, fullPage: fullPage !== false })
-    await browser.close()
-
-    // Check file exists
-    const file = Bun.file(outPath)
-    const exists = await file.exists()
-    if (!exists) return { error: "Screenshot failed — file not created" }
-
-    // Analyze screenshot with Claude vision
-    let visionDescription: string | undefined
-    const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
-    if (oauthToken) {
-      try {
-        const imgBuffer = await file.arrayBuffer()
-        const base64 = Buffer.from(imgBuffer).toString("base64")
-        const visionRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${oauthToken}`,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "oauth-2025-04-20",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1024,
-            messages: [{
-              role: "user",
-              content: [
-                { type: "image", source: { type: "base64", media_type: "image/png", data: base64 } },
-                { type: "text", text: "Describe exactly what you see on this screenshot: page content, visible text, forms, buttons, errors, dialogs, current state." },
-              ],
-            }],
-          }),
-        })
-        const visionData = await visionRes.json() as { content?: Array<{ type: string; text?: string }> }
-        visionDescription = visionData?.content?.find(c => c.type === "text")?.text
-      } catch (_e) {
-        // vision failed, continue without it
-      }
+      // `domcontentloaded` (not `networkidle`). X / Instagram are SPAs with
+      // websockets and long-polling that never let the network go idle —
+      // `networkidle` always hits the 30s timeout there. DCL fires as soon
+      // as the HTML is parsed, which is what we want for a screenshot.
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
+      // Give the page a beat to paint above-the-fold content.
+      await page.waitForTimeout(1500)
+      await page.screenshot({ path: outPath, fullPage: fullPage === true })
+    } finally {
+      await browser.close().catch(() => {})
     }
 
-    // Send via Telegram
+    const file = Bun.file(outPath)
+    if (!(await file.exists())) {
+      return { error: "Screenshot failed — file not created" }
+    }
+
+    // ── Deliver: prefer the current channel (bridle, web, etc.) as a
+    // proper image part. Falls back to Telegram's native sendPhoto when
+    // the chat is on Telegram. If neither applies (internal / cron), the
+    // file path is returned so the LLM can decide what to do with it.
     const telegramToken = process.env.TELEGRAM_BOT_TOKEN
     const chatId = ctx.from
-    if (telegramToken && chatId && chatId !== "cron") {
+    const isTelegramChannel = ctx.channel === "telegram"
+
+    if (telegramToken && chatId && chatId !== "cron" && isTelegramChannel) {
       const form = new FormData()
       form.append("chat_id", chatId)
       form.append("caption", `📸 ${url}`)
-      form.append("photo", new Blob([await file.arrayBuffer()], { type: "image/png" }), "screenshot.png")
-
+      form.append(
+        "photo",
+        new Blob([await file.arrayBuffer()], { type: "image/png" }),
+        "screenshot.png",
+      )
       const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
         method: "POST",
         body: form,
       })
-      const data = await res.json() as { ok: boolean; description?: string }
-
+      const data = (await res.json()) as { ok: boolean; description?: string }
       await Bun.spawn(["rm", "-f", outPath]).exited
-
-      if (data.ok) return { ok: true, sent: true, url, vision: visionDescription }
-      return { error: `Telegram send failed: ${data.description}` }
+      return data.ok
+        ? { ok: true, sentTo: "telegram", url }
+        : { error: `Telegram send failed: ${data.description}` }
     }
 
-    return { ok: true, sent: false, path: outPath, url, vision: visionDescription }
+    if (ctx.channel && ctx.channel !== "internal" && ctx.channel !== "cron") {
+      try {
+        const buf = await file.arrayBuffer()
+        const base64 = Buffer.from(buf).toString("base64")
+        await ctx.send(`📸 ${url}`, [
+          { type: MessagePartTypes.Image, base64, mediaType: "image/png" },
+        ])
+        await Bun.spawn(["rm", "-f", outPath]).exited
+        return { ok: true, sentTo: ctx.channel, url }
+      } catch (e) {
+        log.warn(`channel send failed: ${e}`)
+      }
+    }
+
+    return { ok: true, sentTo: null, path: outPath, url }
   },
 }
