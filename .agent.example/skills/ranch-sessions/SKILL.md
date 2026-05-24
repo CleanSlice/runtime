@@ -146,6 +146,46 @@ hits a dead end. Use it verbatim.
   fullPage shots trigger lazy-load loops that blow the 100s deadline.
   Verify by reading the timeline back instead.
 
+### MUST: length budget BEFORE you post
+
+X disables the Post button for posts over the character limit. When this
+happens the agent classically misreads it as a Lexical bug or a session
+problem and starts freelancing — that's wrong. The button is correctly
+disabled because the text is too long.
+
+**Hard rule: count characters BEFORE calling `browser_play`. Truncate or
+split into a thread if over budget.**
+
+```ts
+// X.com weighted length:
+//   - Most characters = 1
+//   - Each URL = 23 (X auto-shortens via t.co), regardless of actual length
+//   - Most emoji = 2 (X uses the legacy "weighted" count)
+//   - CJK characters = 2 (rough approximation)
+// A simple length cap works for English/Latin tweets without links.
+function tweetTooLong(text: string, premium = false): boolean {
+  const limit = premium ? 25_000 : 280
+  // Conservative: assume every char weighs 1.2 (covers some emoji/CJK
+  // without doing full Twitter-text parsing).
+  return text.length * 1.2 > limit
+}
+
+if (tweetTooLong(text)) {
+  // Two options — pick based on user intent:
+  // (a) truncate: text = text.slice(0, 270) + "…"
+  // (b) split into a thread: see "Post a thread" below
+  // Do NOT call browser_play with the over-limit text. The Post button
+  // will not enable and you'll loop, blame Lexical, and waste minutes.
+  await ctx.send(`The post is ${text.length} chars — over X's 280 limit.
+Want me to (a) shorten it or (b) post as a thread?`)
+  return
+}
+```
+
+If the user said "post this exact text" and it's over 280, ASK first —
+do not silently truncate their words. If they said "write a post about
+X", you wrote it: rewriting tighter is part of the task.
+
 ### Post a tweet
 
 ```ts
@@ -214,6 +254,72 @@ await browser_play({
 })
 ```
 
+### Post a thread (when text > 280 chars)
+
+X auto-chains tweets if you add them in the same modal via the small
+"+" button between composer cells. Each cell has the same length budget
+(280 chars). Split the text into ≤270-char chunks (leave room for "1/N"
+prefix) along sentence/paragraph boundaries — never mid-word.
+
+```ts
+// Naive splitter: paragraph boundaries first, then sentence, then hard cut.
+function splitForThread(text: string, perTweet = 270): string[] {
+  const parts: string[] = []
+  let buf = ""
+  for (const para of text.split(/\n\n+/)) {
+    if ((buf + "\n\n" + para).length <= perTweet) {
+      buf = buf ? buf + "\n\n" + para : para
+    } else {
+      if (buf) parts.push(buf)
+      // Paragraph alone over budget — sentence-split it.
+      if (para.length > perTweet) {
+        let pbuf = ""
+        for (const s of para.split(/(?<=[.!?])\s+/)) {
+          if ((pbuf + " " + s).length <= perTweet) pbuf = pbuf ? pbuf + " " + s : s
+          else { if (pbuf) parts.push(pbuf); pbuf = s.slice(0, perTweet) }
+        }
+        if (pbuf) parts.push(pbuf)
+        buf = ""
+      } else { buf = para }
+    }
+  }
+  if (buf) parts.push(buf)
+  return parts.map((p, i, a) => a.length > 1 ? `${i + 1}/${a.length} ${p}` : p)
+}
+
+const chunks = splitForThread(text)
+// All chunks in ONE browser_play call — open the modal once, type the
+// first cell, click "+" to add another, type the next, …, then Post.
+const actions: object[] = [
+  { kind: "navigate", url: "https://x.com/compose/post" },
+  { kind: "waitForSelector",
+    selector: '[role="dialog"] [data-testid="tweetTextarea_0"]', timeout: 30000 },
+]
+for (let i = 0; i < chunks.length; i++) {
+  // Each successive cell is tweetTextarea_<i>.
+  const cell = `[role="dialog"] [data-testid="tweetTextarea_${i}"]`
+  actions.push({ kind: "click", selector: cell })
+  actions.push({ kind: "type",  selector: cell, text: chunks[i] })
+  actions.push({ kind: "wait", ms: 400 })
+  // Add a fresh cell unless this was the last chunk.
+  if (i < chunks.length - 1) {
+    actions.push({ kind: "click",
+      selector: '[role="dialog"] [data-testid="addButton"]' })
+    actions.push({ kind: "wait", ms: 400 })
+  }
+}
+actions.push(
+  { kind: "waitForSelector",
+    selector: '[role="dialog"] [data-testid="tweetButtons"] [data-testid="tweetButton"]:not([aria-disabled="true"])',
+    timeout: 15000 },
+  { kind: "click",
+    selector: '[role="dialog"] [data-testid="tweetButtons"] [data-testid="tweetButton"]' },
+  { kind: "wait", ms: 4000 },
+)
+
+await browser_play({ profile: acc.profile, actions })
+```
+
 ### Read a user's timeline
 
 ```ts
@@ -237,9 +343,12 @@ await browser_play({
 - `tool error: TimeoutError` on the textarea selector → the modal didn't open
   (X redirected to login). Treat as `needsLogin`: call `session_request_login`,
   forward the instructions, **STOP**.
-- `tool error: TimeoutError` on the post-button-not-disabled selector → text
-  didn't register. You almost certainly used `fill` instead of `type`. Use
-  `type` and retry **once**.
+- `tool error: TimeoutError` on the post-button-not-disabled selector →
+  **most common cause is text over the 280-char limit**, not Lexical.
+  X correctly disables the button when the post is too long. Check
+  `text.length`. If > 280 → either truncate or use the thread pattern
+  above. Only if length is fine, the second suspect is `fill` instead of
+  `type` — switch to `type` and retry **once**.
 - `browser_play hit its 100s hard deadline` → almost always means a
   `screenshot` action triggered fullPage scroll-and-shoot. Remove all
   `screenshot` actions from posting flows; verify via `evaluate` instead.
