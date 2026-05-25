@@ -42,8 +42,14 @@ async function openPoolSession(
   return data
 }
 
+// Mirrors BrowserGateway.canonicalAccountKey and
+// UserBrowserStateGateway.objectKey on the ranch-api side — all three
+// must lowercase + apply the same character whitelist so a profile
+// passed as "Instagram" lands on the same file as one passed as
+// "instagram". Diverging here is how `admin-instagram.json` and
+// `admin-Instagram.json` ended up as separate files in S3.
 const localStatePath = (ctx: ToolContext, accountKey: string): string => {
-  const safe = accountKey.replace(/[^a-zA-Z0-9_:\-.]/g, "_")
+  const safe = accountKey.toLowerCase().replace(/[^a-z0-9_:\-.]/g, "_")
   const userPart = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat"
     ? `${ctx.from.replace(/[^a-zA-Z0-9_\-.]/g, "_")}-`
     : ""

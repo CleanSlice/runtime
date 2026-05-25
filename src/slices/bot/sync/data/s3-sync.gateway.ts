@@ -126,6 +126,12 @@ export class S3SyncService implements ISyncGateway {
     }))
   }
 
+  private async s3Delete(key: string): Promise<void> {
+    const s3 = await this.getClient()
+    const { DeleteObjectCommand } = await getS3Module()
+    await s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }))
+  }
+
   private async s3List(prefix: string): Promise<string[]> {
     const s3 = await this.getClient()
     const { ListObjectsV2Command } = await getS3Module()
@@ -169,13 +175,24 @@ export class S3SyncService implements ISyncGateway {
 
   // ── Differential push core ────────────────────────────────────────────────────
 
-  /** Push a single file if mtime/size differs from manifest. Returns true if pushed. */
+  /** Push a single file if mtime/size differs from manifest, or delete from S3 if the
+   *  file is gone locally. Returns true if any S3 mutation happened. */
   private async pushIfChanged(relPath: string): Promise<boolean> {
     const localPath = join(this.agentDir, relPath)
     if (!existsSync(localPath)) {
-      // File deleted locally — drop from manifest. (We don't delete from S3 yet.)
-      this.manifest.delete(relPath)
-      return false
+      // Propagate the delete so S3 doesn't accumulate orphans (the reason
+      // legacy `admin-Instagram.json`-style case-duplicates piled up before
+      // canonicalisation). Only act when the file was tracked — never
+      // blind-delete a key we didn't write.
+      if (!this.manifest.has(relPath)) return false
+      try {
+        await this.s3Delete(this.s3Key(relPath))
+        this.manifest.delete(relPath)
+        return true
+      } catch (err) {
+        log.error(`failed to delete ${relPath} from S3`, err)
+        return false
+      }
     }
     const stat = statSync(localPath)
     if (!stat.isFile()) return false
@@ -221,8 +238,9 @@ export class S3SyncService implements ISyncGateway {
 
   /**
    * Full sweep: walk the directory and push files whose mtime/size changed
-   * since the last successful push. Used as periodic safety net and on shutdown.
-   * Returns the number of files actually pushed in this sweep.
+   * since the last successful push, then delete S3 keys whose local file
+   * vanished. Used as periodic safety net and on shutdown. Returns the
+   * total number of files pushed + deleted.
    */
   async push(): Promise<number> {
     if (this.pushing) {
@@ -231,9 +249,11 @@ export class S3SyncService implements ISyncGateway {
     }
     this.pushing = true
     let pushed = 0
+    let deleted = 0
 
     try {
       const files = this.walkDir(this.agentDir)
+      const localSet = new Set(files)
       for (const relPath of files) {
         try {
           if (await this.pushIfChanged(relPath)) pushed++
@@ -241,11 +261,36 @@ export class S3SyncService implements ISyncGateway {
           log.error(`failed to push ${relPath}`, err)
         }
       }
-      if (pushed > 0) log.info(`sweep pushed ${pushed} changed files`)
+
+      // Orphan sweep — catches deletes that fs.watch missed (recursive
+      // watch is flaky on Linux, and events fired during runtime startup
+      // are silently lost). Hard refusal when EVERY tracked file has
+      // vanished: that pattern is almost always a wiped local volume,
+      // not the agent intentionally clearing N>0 files.
+      const orphans = Array.from(this.manifest.keys()).filter((k) => !localSet.has(k))
+      if (orphans.length > 0 && orphans.length === this.manifest.size && this.manifest.size > 3) {
+        log.warn(
+          `orphan sweep refusing to delete all ${this.manifest.size} tracked files — looks like the local dir was wiped, not an intentional cleanup. Restart the runtime to re-pull from S3.`,
+        )
+      } else {
+        for (const relPath of orphans) {
+          try {
+            await this.s3Delete(this.s3Key(relPath))
+            this.manifest.delete(relPath)
+            deleted++
+          } catch (err) {
+            log.error(`failed to delete orphan ${relPath} from S3`, err)
+          }
+        }
+      }
+
+      if (pushed > 0 || deleted > 0) {
+        log.info(`sweep pushed ${pushed}, deleted ${deleted} orphan(s)`)
+      }
     } finally {
       this.pushing = false
     }
-    return pushed
+    return pushed + deleted
   }
 
   /** Start fs.watch-based event-driven sync. */
