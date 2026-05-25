@@ -19,6 +19,15 @@ export interface ModelResponse {
   toolCalls?: Array<{ name: string; params: unknown }>
   usage?: ModelUsage
   stopReason?: "end_turn" | "max_tokens" | "tool_use" | "stop_sequence"
+  /**
+   * Retry telemetry — populated by providers that retry internally (currently
+   * only Claude). Optional so other providers stay backward-compatible.
+   */
+  meta?: {
+    retries: number
+    rateLimited: boolean
+    overloaded: boolean
+  }
 }
 
 export interface ModelLlm {

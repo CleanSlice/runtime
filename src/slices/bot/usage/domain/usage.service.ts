@@ -43,6 +43,19 @@ export class UsageService {
     return this.empty()
   }
 
+  /**
+   * Shallow clone of the live daily-usage record. Returns a new object so
+   * downstream callers (e.g. resource_status tool) can serialize without
+   * risk of the live counter mutating mid-flight.
+   */
+  getCurrent(): IDailyUsage {
+    return {
+      ...this.current,
+      byCredential: { ...this.current.byCredential },
+      byModel: this.current.byModel ? { ...this.current.byModel } : undefined,
+    }
+  }
+
   /** Call after each LLM response */
   add(usage: ModelUsage | undefined): void {
     if (!usage) return

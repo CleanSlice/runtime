@@ -17,6 +17,10 @@ export class LlmGateway implements ILlmGateway {
     if (typeof (this.repository as ILlmGateway).stream === "function") {
       this.stream = (...args) => (this.repository as Required<ILlmGateway>).stream!(...args)
     }
+    // Same passthrough for getResourceSnapshot (Claude implements it; others don't).
+    if (typeof (this.repository as ILlmGateway).getResourceSnapshot === "function") {
+      this.getResourceSnapshot = () => (this.repository as Required<ILlmGateway>).getResourceSnapshot!()
+    }
   }
 
   private createRepository(config: LlmConfig): ILlmGateway {
@@ -77,4 +81,5 @@ export class LlmGateway implements ILlmGateway {
   }
 
   stream?: ILlmGateway["stream"]
+  getResourceSnapshot?: ILlmGateway["getResourceSnapshot"]
 }

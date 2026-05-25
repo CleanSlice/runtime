@@ -10,6 +10,7 @@ import type { ILoopContext, ILoopConfig, ILoopResult } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
+import { LastTurnStatsTracker } from "./last-turn-stats.tracker"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -46,6 +47,7 @@ function isDebugEnabled(deps: LoopServiceDeps): boolean {
 
 export class LoopService {
   private config: ILoopConfig
+  public readonly lastTurnStats = new LastTurnStatsTracker()
 
   constructor(
     private deps: LoopServiceDeps,
@@ -86,11 +88,30 @@ export class LoopService {
       try {
         response = await this.callLlm(ctx)
         if (response.usage) this.deps.usage.add(response.usage)
-        this.maybeEmitDebug(ctx, response, Date.now() - llmStartMs)
+        const elapsedMs = Date.now() - llmStartMs
+        this.maybeEmitDebug(ctx, response, elapsedMs)
+        this.lastTurnStats.record(sessionId, {
+          elapsedMs,
+          retries: response.meta?.retries ?? 0,
+          rateLimited: response.meta?.rateLimited ?? false,
+          overloaded: response.meta?.overloaded ?? false,
+          model: response.usage?.model ?? this.deps.llm.describe().model,
+          occurredAt: Date.now(),
+        })
       } catch (err: unknown) {
+        const elapsedMs = Date.now() - llmStartMs
         const status = (err as { status?: number })?.status
         const errMsg = String((err as { message?: unknown })?.message ?? err ?? "")
         const isOverloaded = errMsg.includes("overloaded_error") || errMsg.includes("Overloaded") || status === 529
+        const isRateLimited = status === 429 || errMsg.includes("rate_limit") || errMsg.includes("Rate limit")
+        this.lastTurnStats.record(sessionId, {
+          elapsedMs,
+          retries: 0, // unknown — gateway swallowed inner retry count
+          rateLimited: isRateLimited,
+          overloaded: isOverloaded,
+          model: this.deps.llm.describe().model,
+          occurredAt: Date.now(),
+        })
         rlog.error(`LLM error${status ? ` (${status})` : ""}`, errMsg.slice(0, 120))
         if (!ctx.isInternal) {
           await ctx.send(isOverloaded
@@ -273,6 +294,9 @@ export class LoopService {
               access: ctx.access,
               isAdmin: ctx.isAdmin,
               channels: ctx.channels,
+              llm: this.deps.llm,
+              usage: this.deps.usage,
+              lastTurnStats: this.lastTurnStats,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)

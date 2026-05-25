@@ -1,10 +1,30 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import type { ILlmGateway } from "../../../domain/llm.gateway"
 import type { ModelResponse } from "../../../domain/llm.types"
+import type { ICredentialStatus, ILlmResourceStatus } from "../../../domain/resource.types"
 import type { Tool } from "../../../../../agent/tool/tool.module"
 import type { Event } from "../../../../event"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { createLogger } from "../../../../logger"
+
+/**
+ * Context-window in tokens, looked up by model name prefix. Used to compute
+ * headroom in the resource-status snapshot. Defaults to 200k for unknown
+ * Claude models — Anthropic's standard window since Claude 3.
+ */
+const CONTEXT_WINDOW_BY_MODEL: Array<{ prefix: string; tokens: number }> = [
+  { prefix: "claude-opus-4-7", tokens: 1_000_000 },
+  { prefix: "claude-opus-4", tokens: 200_000 },
+  { prefix: "claude-sonnet-4", tokens: 200_000 },
+  { prefix: "claude-haiku-4", tokens: 200_000 },
+  { prefix: "claude-3-5", tokens: 200_000 },
+  { prefix: "claude-3", tokens: 200_000 },
+]
+
+function contextWindowFor(model: string): number {
+  const match = CONTEXT_WINDOW_BY_MODEL.find(e => model.startsWith(e.prefix))
+  return match?.tokens ?? 200_000
+}
 
 const log = createLogger("llm")
 
@@ -102,17 +122,22 @@ interface TokenState {
  * Returns true if succeeded (result via out param), false if all attempts failed with overload.
  * Throws immediately on non-retryable errors (401, 403, 400).
  */
+type WithRetryOk<T> = { ok: true; value: T; retries: number; rateLimited: boolean; overloaded: boolean }
+type WithRetryErr = { ok: false; lastError: unknown; wasOverloaded: boolean; wasBadRequest: boolean; retries: number; rateLimited: boolean }
+
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxAttempts: number,
   label: string
-): Promise<{ ok: true; value: T } | { ok: false; lastError: unknown; wasOverloaded: boolean; wasBadRequest: boolean }> {
+): Promise<WithRetryOk<T> | WithRetryErr> {
   let lastError: unknown
   let wasOverloaded = false
+  let wasRateLimited = false
+  let retries = 0
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const value = await fn()
-      return { ok: true, value }
+      return { ok: true, value, retries, rateLimited: wasRateLimited, overloaded: wasOverloaded }
     } catch (err: unknown) {
       lastError = err
       // Local JS errors (TypeError, ReferenceError, SyntaxError) are bugs, not network —
@@ -126,18 +151,20 @@ async function withRetry<T>(
       // 400 = model not available or bad request — stop retrying, let caller try fallback
       if (status === 400) {
         log.warn(`${label} got 400 (model unavailable?), will try fallback`)
-        return { ok: false, lastError: err, wasOverloaded: false, wasBadRequest: true }
+        return { ok: false, lastError: err, wasOverloaded: false, wasBadRequest: true, retries, rateLimited: wasRateLimited }
       }
       const overloaded = isOverloadedError(err)
       if (overloaded) wasOverloaded = true
+      if (isRateLimitError(err)) wasRateLimited = true
       if (attempt < maxAttempts) {
+        retries++
         const delay = overloaded ? Math.min(5000 * attempt, 60000) : attempt * 2000
         log.warn(`${label} attempt ${attempt}/${maxAttempts} failed (${overloaded ? "overloaded" : status ?? "network"}), retrying in ${delay}ms...`)
         await new Promise(r => setTimeout(r, delay))
       }
     }
   }
-  return { ok: false, lastError, wasOverloaded, wasBadRequest: false }
+  return { ok: false, lastError, wasOverloaded, wasBadRequest: false, retries, rateLimited: wasRateLimited }
 }
 
 // How long to stay on fallback before retrying primary (ms)
@@ -294,6 +321,56 @@ export class ClaudeRepository implements ILlmGateway {
     const state = this.tokenStates[index]
     if (state && state.consecutive429s > 0) {
       state.consecutive429s = 0
+    }
+  }
+
+  /**
+   * Snapshot of the credential pool + rate-limit state for the agent's
+   * resource_status tool. Reads the same private fields as
+   * markRateLimited / selectClientIndex / switchToNextClient — any refactor
+   * of those must keep this in sync.
+   */
+  getResourceSnapshot(): ILlmResourceStatus {
+    const now = Date.now()
+    const credentials: ICredentialStatus[] = this.clients.map((_, i) => {
+      const state = this.tokenStates[i] ?? { cooldownUntil: 0, consecutive429s: 0 }
+      const cooldownUntilMs = state.cooldownUntil
+      const msUntilAvailable = Math.max(0, cooldownUntilMs - now)
+      return {
+        id: `oauth-${i}`,
+        active: i === this.currentClientIndex,
+        cooldownUntilMs,
+        msUntilAvailable,
+        consecutive429s: state.consecutive429s,
+      }
+    })
+
+    if (this.apiKeyClient) {
+      credentials.push({
+        id: "apikey-fallback",
+        active: false,
+        cooldownUntilMs: 0,
+        msUntilAvailable: 0,
+        consecutive429s: 0,
+      })
+    }
+
+    const anyAvailableNow = credentials.some(c => c.msUntilAvailable === 0)
+    const soonestAvailableMs = anyAvailableNow
+      ? 0
+      : Math.min(...credentials.map(c => c.msUntilAvailable))
+
+    return {
+      provider: "claude",
+      model: this.model,
+      fallbackModel: this.fallbackModel,
+      contextWindow: contextWindowFor(this.model),
+      maxOutputTokens: this.maxTokens,
+      credentials,
+      activeCredential: credentials[this.currentClientIndex]?.id ?? credentials[0]?.id ?? "unknown",
+      anyAvailableNow,
+      soonestAvailableMs,
+      primaryOverloaded: this.primaryOverloadedAt > 0,
     }
   }
 
@@ -466,7 +543,10 @@ export class ClaudeRepository implements ILlmGateway {
           log.info(`primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
         }
-        return result.value
+        return {
+          ...result.value,
+          meta: { retries: result.retries, rateLimited: result.rateLimited, overloaded: result.overloaded },
+        }
       }
       lastError = result.lastError
       const status = (lastError as { status?: number })?.status
@@ -566,7 +646,10 @@ export class ClaudeRepository implements ILlmGateway {
           log.info(`primary model recovered, resetting circuit breaker`)
           this.primaryOverloadedAt = 0
         }
-        return result.value
+        return {
+          ...result.value,
+          meta: { retries: result.retries, rateLimited: result.rateLimited, overloaded: result.overloaded },
+        }
       }
       lastError = result.lastError
       const status = (lastError as { status?: number })?.status

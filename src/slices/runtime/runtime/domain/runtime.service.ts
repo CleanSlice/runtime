@@ -15,6 +15,7 @@ import type { Tool } from "../../../agent/tool"
 import { ToolService } from "../../../agent/tool/domain/tool.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
+import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -82,7 +83,7 @@ export class RuntimeService {
 
         const history = await this.buildHistory(msg, sessionId, task.id)
         const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools)
-        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin)
+        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId)
 
         await this.deps.loop.service.run({
           task,
@@ -157,7 +158,7 @@ export class RuntimeService {
     return history
   }
 
-  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean): Promise<string> {
+  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string): Promise<string> {
     const secretKeys = await this.deps.secrets.list().catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
@@ -169,6 +170,20 @@ export class RuntimeService {
       metadata: s.metadata,
     }))
 
+    // One-shot resource-status hint: if the previous LLM turn for this
+    // session was delayed (retries, rate limit, overload, >30s), nudge the
+    // agent to inspect resources. `consume` removes the entry so the hint
+    // fires exactly once per delayed turn.
+    let extraHint: string | undefined
+    const tracker = this.deps.loop.service.lastTurnStats
+    if (tracker.wasDelayed(sessionId)) {
+      const stats = tracker.consume(sessionId)
+      if (stats) {
+        extraHint = buildResourceHintPrompt(stats)
+        log.child(tid).info(`injecting resource hint (elapsed=${stats.elapsedMs}ms retries=${stats.retries} 429=${stats.rateLimited} overload=${stats.overloaded})`)
+      }
+    }
+
     let systemPrompt = await this.deps.agent.buildPrompt({
       userId: msg.from,
       toolingPrompt,
@@ -176,6 +191,7 @@ export class RuntimeService {
       dailyMemory,
       skills: skillSummaries,
       isAdmin,
+      extraHint,
     })
 
     // Inject full content for always-on skills

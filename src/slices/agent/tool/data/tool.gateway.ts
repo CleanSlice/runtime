@@ -32,6 +32,7 @@ import { SkillWriteTool } from "./repositories/skill/skill.repository"
 import { SessionSecretsTool } from "./repositories/session/session_secrets.repository"
 import { SessionRequestLoginTool } from "./repositories/session/session_request_login.repository"
 import { SessionListTool } from "./repositories/session/session_list.repository"
+import { ResourceStatusTool } from "./repositories/resource/resource_status.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -71,6 +72,7 @@ export class ToolGateway implements IToolGateway {
     this.register(SessionSecretsTool)
     this.register(SessionRequestLoginTool)
     this.register(SessionListTool)
+    this.register(ResourceStatusTool)
   }
 
   private register(tool: Tool): void {

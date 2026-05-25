@@ -2,6 +2,7 @@ import { LlmGateway } from "./data/llm.gateway"
 import type { LlmConfig } from "./domain/llm.types"
 import { LlmService } from "./domain/llm.service"
 import type { ModelResponse } from "./domain/llm.types"
+import type { ILlmResourceStatus } from "./domain/resource.types"
 import type { Tool } from "../../agent/tool"
 import type { Event } from "../event"
 
@@ -93,5 +94,32 @@ export class LlmModule {
   getAuxGateway(): import("./domain/llm.gateway").ILlmGateway {
     const svc = this.auxService ?? this.service
     return (svc as unknown as { gateway: import("./domain/llm.gateway").ILlmGateway }).gateway
+  }
+
+  /**
+   * Operational snapshot for the agent's `resource_status` tool. Falls back
+   * to a synthetic single-credential stub when the underlying provider
+   * doesn't implement getResourceSnapshot (currently only Claude does).
+   */
+  getResourceSnapshot(): ILlmResourceStatus {
+    const gw = this.getGateway()
+    if (gw.getResourceSnapshot) return gw.getResourceSnapshot()
+    const { provider, model } = this.describe()
+    return {
+      provider,
+      model,
+      contextWindow: 0,
+      maxOutputTokens: 0,
+      credentials: [{
+        id: "default",
+        active: true,
+        cooldownUntilMs: 0,
+        msUntilAvailable: 0,
+        consecutive429s: 0,
+      }],
+      activeCredential: "default",
+      anyAvailableNow: true,
+      soonestAvailableMs: 0,
+    }
   }
 }

@@ -3,6 +3,9 @@ import type { IAgentConfig } from "../../../runtime/init"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { LlmModule } from "../../../setup/llm/llm.module"
+import type { UsageModule } from "../../../bot/usage/usage.module"
+import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
 
 export interface ToolContext {
   sessionId: string
@@ -19,6 +22,11 @@ export interface ToolContext {
   access?: AccessModule
   isAdmin?: boolean
   channels?: ChannelModule  // live channel registry — drives channel_* tools
+  // Operational modules — wired by the loop so resource_status can inspect
+  // LLM credential state, daily usage totals, and the previous-turn stats.
+  llm?: LlmModule
+  usage?: UsageModule
+  lastTurnStats?: LastTurnStatsTracker
 }
 
 export interface Tool {

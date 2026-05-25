@@ -10,6 +10,12 @@ export interface BuildPromptOpts {
   dailyMemory?: string
   skills?: SkillSummary[]
   isAdmin?: boolean
+  /**
+   * One-shot system-prompt addendum, prepended near the top. Used by the
+   * runtime to surface "your previous turn was delayed" notices that point
+   * the agent at the `resource_status` tool.
+   */
+  extraHint?: string
 }
 
 const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
@@ -51,6 +57,7 @@ export class AgentService {
     const memory = gate(config.memory)
 
     if (soul)              parts.push(`# Soul\n\n${soul}`)
+    if (opts?.extraHint)   parts.push(opts.extraHint)
     if (opts?.toolingPrompt) parts.push(opts.toolingPrompt)
     if (agents)            parts.push(`# Agent Instructions\n\n${agents}`)
     if (user)              parts.push(`# User Context\n\n${user}`)
@@ -104,7 +111,7 @@ export class AgentService {
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -120,6 +127,7 @@ export class AgentService {
       dailyMemory: opts?.dailyMemory,
       skills: opts?.skills,
       isAdmin: opts?.isAdmin,
+      extraHint: opts?.extraHint,
     })
   }
 }

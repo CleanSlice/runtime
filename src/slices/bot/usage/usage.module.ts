@@ -1,5 +1,6 @@
 import { UsageService } from "./domain/usage.service"
 import { UsageGateway } from "./data/usage.gateway"
+import type { IDailyUsage } from "./domain/usage.types"
 
 export class UsageModule {
   private service: UsageService
@@ -21,6 +22,11 @@ export class UsageModule {
 
   add(usage: Parameters<UsageService["add"]>[0]): void {
     this.service.add(usage)
+  }
+
+  /** Cloned daily-usage snapshot; safe to JSON-serialize. */
+  getCurrent(): IDailyUsage {
+    return this.service.getCurrent()
   }
 
   async flush(): Promise<void> {
