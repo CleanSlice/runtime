@@ -2,6 +2,7 @@ import type { IChannelGateway } from "../../../domain/channel.gateway"
 import {
   MessagePartTypes,
   buildMessage,
+  buildUiForm,
   type Message,
   type MessagePart,
   type IMessageUiPart,
@@ -156,6 +157,12 @@ export class BridleRepository implements IChannelGateway {
   private socket: Socket | null = null
   private apiUrl: string
   /**
+   * Opt-in: when true, /form intent + matching ui_submit are handled
+   * inside the channel before the agent's onMessage handler runs.
+   * Toggled by `attachFormDemo()` or `BRIDLE_FORM_DEMO=true` env.
+   */
+  private formDemoEnabled = false
+  /**
    * Server-pushed debug flag. Updated via "debug_set" WS event from the
    * hub. Defaults to false so a fresh agent doesn't leak prompts before
    * the hub has had a chance to rehydrate the value from DB.
@@ -164,6 +171,35 @@ export class BridleRepository implements IChannelGateway {
 
   constructor(apiUrl: string) {
     this.apiUrl = apiUrl
+    // Auto-enable from env so showcase deployments can flip it on without
+    // a code change: `BRIDLE_FORM_DEMO=true` in the agent's env.
+    if (process.env.BRIDLE_FORM_DEMO === "true") {
+      this.formDemoEnabled = true
+      log.info("form demo enabled via BRIDLE_FORM_DEMO=true")
+    }
+  }
+
+  /**
+   * Opt-in showcase: wires the /form trigger and the matching ui_submit
+   * ack into this channel. Equivalent to setting `BRIDLE_FORM_DEMO=true`
+   * in env. Idempotent — calling more than once is a no-op.
+   *
+   * The handler runs BEFORE your agent's onMessage:
+   *   - If the incoming text is `/form` and the client advertises the
+   *     `ui` capability, sends a plan-picker form and short-circuits.
+   *   - If the incoming message carries a `ui_submit` with
+   *     `uiId === 'plan-demo'`, acks it with a confirmation and
+   *     short-circuits.
+   *   - Everything else falls through to your agent untouched.
+   *
+   * On channels that don't advertise the `ui` capability the /form
+   * branch sends a plain-text fallback and still short-circuits, so
+   * the agent doesn't have to know about the showcase.
+   */
+  attachFormDemo(): void {
+    if (this.formDemoEnabled) return
+    this.formDemoEnabled = true
+    log.info("form demo attached via attachFormDemo()")
   }
 
   /**
@@ -335,6 +371,19 @@ export class BridleRepository implements IChannelGateway {
         ? (msg.capabilities as unknown[]).filter((c): c is string => typeof c === "string")
         : undefined
 
+      // Showcase short-circuit. Runs only when the channel was put in
+      // demo mode (env or attachFormDemo()). Falls through to the agent's
+      // handler if nothing matches.
+      if (this.formDemoEnabled) {
+        const handled = this.tryHandleFormDemo(
+          msg.clientId as string,
+          text,
+          parts,
+          capabilities,
+        )
+        if (handled) return
+      }
+
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
         text,
@@ -383,5 +432,79 @@ export class BridleRepository implements IChannelGateway {
     this.socket.on("connect_error", (err) => {
       log.error(`connection error: ${err.message}`)
     })
+  }
+
+  /**
+   * Form-demo intercept. Returns true when the incoming message was the
+   * showcase trigger (`/form`) or its ui_submit ack, so the caller knows
+   * to skip the agent's main handler. Returns false otherwise.
+   *
+   * Kept in the channel layer on purpose — the agent never has to know
+   * the showcase exists; flip BRIDLE_FORM_DEMO and it Just Works.
+   */
+  private tryHandleFormDemo(
+    clientId: string,
+    text: string,
+    parts: MessagePart[],
+    capabilities: string[] | undefined,
+  ): boolean {
+    // 1) ui_submit ack — checks before text trigger because submit messages
+    //    carry no text, just the structured part.
+    for (const part of parts) {
+      if (part.type !== MessagePartTypes.UiSubmit) continue
+      if (part.uiId !== "plan-demo") continue
+      const values = part.values as Record<string, unknown>
+      const plan = String(values.plan ?? "unknown")
+      const newsletter = values.newsletter === true
+      this.send(
+        clientId,
+        `Got it — you picked **${plan}**${newsletter ? ", newsletter on" : ""}. ` +
+          `(This is a demo; nothing actually changed.)`,
+      ).catch(err => log.error("form demo ack failed", err))
+      return true
+    }
+
+    // 2) /form trigger — case-insensitive, ignores surrounding whitespace
+    if (text?.trim().toLowerCase() !== "/form") return false
+
+    // 3) Capability gate — degrade to text for channels without ui support
+    if (!capabilities?.includes("ui")) {
+      this.send(
+        clientId,
+        "Reply with one of: `basic`, `pro`, `team` (your client doesn't support inline forms).",
+      ).catch(err => log.error("form demo fallback failed", err))
+      return true
+    }
+
+    const form = buildUiForm(
+      [
+        { type: "heading", text: "Pick a plan" },
+        { type: "text", text: "You can change this later in account settings." },
+        {
+          type: "radio",
+          name: "plan",
+          label: "Plan",
+          required: true,
+          default: "basic",
+          options: [
+            { value: "basic", label: "Basic — $0 / mo" },
+            { value: "pro", label: "Pro — $10 / mo" },
+            { value: "team", label: "Team — $30 / mo" },
+          ],
+        },
+        {
+          type: "checkbox",
+          name: "newsletter",
+          label: "Send me weekly product updates",
+        },
+      ],
+      { uiId: "plan-demo", submitLabel: "Continue" },
+    )
+
+    this.send(clientId, "Pick a plan to continue:", [
+      { type: MessagePartTypes.Text, text: "Pick a plan to continue:" },
+      form,
+    ]).catch(err => log.error("form demo send failed", err))
+    return true
   }
 }
