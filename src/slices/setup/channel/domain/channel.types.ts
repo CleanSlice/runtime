@@ -6,6 +6,8 @@ export enum MessagePartTypes {
   Text = "text",
   Image = "image",
   File = "file",
+  Ui = "ui",
+  UiSubmit = "ui_submit",
 }
 
 export enum MessageRoleTypes {
@@ -34,7 +36,81 @@ export interface IMessageFilePart {
   mimeType?: string
 }
 
-export type MessagePart = IMessageTextPart | IMessageImagePart | IMessageFilePart
+// ── Interactive UI parts (Bridle ≥ v0.12.0) ───────────────────
+// Agent → client: render an interactive form in the bubble.
+// Client → agent: ship the submitted values back, scoped by uiId.
+// Channels that don't render UI (Telegram, etc.) just pass these through
+// unchanged — the agent should capability-gate before emitting them.
+
+export type MessageUiOption = { value: string; label: string }
+
+export type MessageUiComponent =
+  | { type: "heading"; text: string }
+  | { type: "text"; text: string }
+  | {
+      type: "input"
+      name: string
+      label?: string
+      placeholder?: string
+      required?: boolean
+      default?: string
+    }
+  | {
+      type: "textarea"
+      name: string
+      label?: string
+      placeholder?: string
+      required?: boolean
+      default?: string
+    }
+  | {
+      type: "radio"
+      name: string
+      label?: string
+      required?: boolean
+      default?: string
+      options: MessageUiOption[]
+    }
+  | { type: "checkbox"; name: string; label: string; default?: boolean }
+  | {
+      type: "checkbox-group"
+      name: string
+      label?: string
+      required?: boolean
+      default?: string[]
+      options: MessageUiOption[]
+    }
+  | {
+      type: "select"
+      name: string
+      label?: string
+      placeholder?: string
+      required?: boolean
+      default?: string
+      options: MessageUiOption[]
+    }
+
+export interface IMessageUiPart {
+  type: MessagePartTypes.Ui
+  uiId: string
+  components: MessageUiComponent[]
+  submit?: { label?: string }
+}
+
+export type MessageUiValue = string | boolean | string[]
+
+export interface IMessageUiSubmitPart {
+  type: MessagePartTypes.UiSubmit
+  uiId: string
+  values: Record<string, MessageUiValue>
+}
+
+export type MessagePart =
+  | IMessageTextPart
+  | IMessageImagePart
+  | IMessageFilePart
+  | IMessageUiPart
+  | IMessageUiSubmitPart
 
 // ── Message ───────────────────────────────────────────────────
 
@@ -47,6 +123,16 @@ export interface Message {
   channel: string                     // "telegram" | "slack" | "web" | "internal"
   ts: number                          // unix timestamp ms
   metadata?: Record<string, unknown>
+  /**
+   * What part types the originating client can render. Set by channels that
+   * advertise it (Bridle SDK ≥ v0.12.0 sends `["streaming","images","files","ui"]`
+   * on handshake; the hub forwards it on every message). Older clients and
+   * channels without the concept (Telegram, email) leave this undefined —
+   * agents should default to text when checking.
+   *
+   * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`.
+   */
+  capabilities?: string[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -59,6 +145,14 @@ export function getMessageFiles(msg: Message): IMessageFilePart[] {
   return msg.parts.filter((p): p is IMessageFilePart => p.type === MessagePartTypes.File)
 }
 
+export function getMessageUiParts(msg: Message): IMessageUiPart[] {
+  return msg.parts.filter((p): p is IMessageUiPart => p.type === MessagePartTypes.Ui)
+}
+
+export function getMessageUiSubmits(msg: Message): IMessageUiSubmitPart[] {
+  return msg.parts.filter((p): p is IMessageUiSubmitPart => p.type === MessagePartTypes.UiSubmit)
+}
+
 export function buildMessage(fields: {
   id: string
   text: string
@@ -66,22 +160,35 @@ export function buildMessage(fields: {
   channel: string
   ts: number
   role?: MessageRoleTypes
+  /**
+   * Pre-assembled parts (used by channels that decode the wire-format
+   * themselves — e.g. bridle delivering `ui` / `ui_submit`). When set,
+   * takes precedence over `text` / `images` / `files`. When unset, the
+   * legacy text+images+files path is used so callers don't break.
+   */
+  parts?: MessagePart[]
   images?: Array<{ base64: string; mediaType: string }>
   files?: Array<{ path: string; name: string; mimeType?: string }>
+  capabilities?: string[]
   metadata?: Record<string, unknown>
 }): Message {
-  const parts: MessagePart[] = []
-  if (fields.text) {
-    parts.push({ type: MessagePartTypes.Text, text: fields.text })
-  }
-  if (fields.images) {
-    for (const img of fields.images) {
-      parts.push({ type: MessagePartTypes.Image, base64: img.base64, mediaType: img.mediaType })
+  let parts: MessagePart[]
+  if (fields.parts) {
+    parts = fields.parts
+  } else {
+    parts = []
+    if (fields.text) {
+      parts.push({ type: MessagePartTypes.Text, text: fields.text })
     }
-  }
-  if (fields.files) {
-    for (const file of fields.files) {
-      parts.push({ type: MessagePartTypes.File, path: file.path, name: file.name, mimeType: file.mimeType })
+    if (fields.images) {
+      for (const img of fields.images) {
+        parts.push({ type: MessagePartTypes.Image, base64: img.base64, mediaType: img.mediaType })
+      }
+    }
+    if (fields.files) {
+      for (const file of fields.files) {
+        parts.push({ type: MessagePartTypes.File, path: file.path, name: file.name, mimeType: file.mimeType })
+      }
     }
   }
   return {
@@ -92,7 +199,44 @@ export function buildMessage(fields: {
     from: fields.from,
     channel: fields.channel,
     ts: fields.ts,
+    ...(fields.capabilities?.length ? { capabilities: fields.capabilities } : {}),
     metadata: fields.metadata,
+  }
+}
+
+/**
+ * Build a `ui` MessagePart the SDK can render as an interactive form.
+ * Auto-generates `uiId` when omitted so agents don't have to roll one
+ * themselves — but pass a stable string for multi-step flows where you
+ * need to match the submit back to the question.
+ *
+ * @example
+ *   await bridle.send(msg.from, "Pick a plan", [
+ *     { type: MessagePartTypes.Text, text: "Pick a plan" },
+ *     buildUiForm([
+ *       { type: "radio", name: "plan", required: true, options: [
+ *         { value: "basic", label: "Basic" },
+ *         { value: "pro",   label: "Pro" },
+ *       ]},
+ *     ], { uiId: "plan-pick", submitLabel: "Continue" }),
+ *   ])
+ */
+export function buildUiForm(
+  components: MessageUiComponent[],
+  opts: { uiId?: string; submitLabel?: string } = {},
+): IMessageUiPart {
+  // Native crypto.randomUUID exists on Node ≥ 14.17 and all current browsers.
+  // Avoid importing node:crypto so this stays bundle-friendly.
+  const uiId =
+    opts.uiId ??
+    (typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `ui-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`)
+  return {
+    type: MessagePartTypes.Ui,
+    uiId,
+    components,
+    ...(opts.submitLabel ? { submit: { label: opts.submitLabel } } : {}),
   }
 }
 

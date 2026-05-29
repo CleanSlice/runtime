@@ -1,5 +1,12 @@
 import type { IChannelGateway } from "../../../domain/channel.gateway"
-import { MessagePartTypes, buildMessage, type Message, type MessagePart } from "../../../domain/channel.types"
+import {
+  MessagePartTypes,
+  buildMessage,
+  type Message,
+  type MessagePart,
+  type IMessageUiPart,
+  type IMessageUiSubmitPart,
+} from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
@@ -7,37 +14,77 @@ import { createLogger } from "../../../../logger"
 
 const log = createLogger("bridle")
 
-/** Wire part types from bridle protocol */
+/** Wire part shape from the bridle protocol — superset of every type we
+ *  speak with the hub. Field presence depends on `type`. */
 interface WirePart {
-  type: "text" | "image" | "file"
+  type: "text" | "image" | "file" | "ui" | "ui_submit"
+  // text
   text?: string
+  // image
   base64?: string
   mediaType?: string
+  // file
   url?: string
   name?: string
   mimeType?: string
+  // ui (agent → browser)
+  uiId?: string
+  components?: unknown[]
+  submit?: { label?: string }
+  // ui_submit (browser → agent)
+  values?: Record<string, unknown>
 }
 
-/** Extract images and files from wire parts for buildMessage() */
-function extractMediaFromWireParts(wireParts: WirePart[]): { images?: Array<{ base64: string; mediaType: string }>; files?: Array<{ path: string; name: string; mimeType?: string }> } {
-  const images: Array<{ base64: string; mediaType: string }> = []
-  const files: Array<{ path: string; name: string; mimeType?: string }> = []
-
+/** Convert bridle wire parts → runtime MessagePart[]. Handles the full
+ *  set; unknown types are dropped silently to stay forward-compatible
+ *  with whatever the next SDK release adds. */
+function wirePartsToMessageParts(wireParts: WirePart[]): MessagePart[] {
+  const out: MessagePart[] = []
   for (const part of wireParts) {
-    if (part.type === "image" && part.base64 && part.mediaType) {
-      images.push({ base64: part.base64, mediaType: part.mediaType })
-    } else if (part.type === "file" && part.url && part.name) {
-      files.push({ path: part.url, name: part.name, mimeType: part.mimeType })
+    switch (part.type) {
+      case "text":
+        if (typeof part.text === "string") {
+          out.push({ type: MessagePartTypes.Text, text: part.text })
+        }
+        break
+      case "image":
+        if (part.base64 && part.mediaType) {
+          out.push({ type: MessagePartTypes.Image, base64: part.base64, mediaType: part.mediaType })
+        }
+        break
+      case "file":
+        if (part.url && part.name) {
+          out.push({ type: MessagePartTypes.File, path: part.url, name: part.name, mimeType: part.mimeType })
+        }
+        break
+      case "ui":
+        // Components are user-supplied — pass them through. The SDK
+        // validates the schema; the runtime treats them as opaque.
+        if (part.uiId && Array.isArray(part.components)) {
+          out.push({
+            type: MessagePartTypes.Ui,
+            uiId: part.uiId,
+            components: part.components as IMessageUiPart["components"],
+            ...(part.submit ? { submit: part.submit } : {}),
+          })
+        }
+        break
+      case "ui_submit":
+        if (part.uiId && part.values && typeof part.values === "object") {
+          out.push({
+            type: MessagePartTypes.UiSubmit,
+            uiId: part.uiId,
+            values: part.values as IMessageUiSubmitPart["values"],
+          })
+        }
+        break
     }
   }
-
-  return {
-    ...(images.length ? { images } : {}),
-    ...(files.length ? { files } : {}),
-  }
+  return out
 }
 
-/** Convert runtime MessagePart[] to bridle wire parts */
+/** Convert runtime MessagePart[] → bridle wire parts. Mirrors the
+ *  wire-to-message converter above. */
 function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
   return parts.map(part => {
     switch (part.type) {
@@ -47,6 +94,19 @@ function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
         return { type: "image" as const, base64: part.base64, mediaType: part.mediaType }
       case MessagePartTypes.File:
         return { type: "file" as const, url: part.path, name: part.name, mimeType: part.mimeType }
+      case MessagePartTypes.Ui:
+        return {
+          type: "ui" as const,
+          uiId: part.uiId,
+          components: part.components,
+          ...(part.submit ? { submit: part.submit } : {}),
+        }
+      case MessagePartTypes.UiSubmit:
+        return {
+          type: "ui_submit" as const,
+          uiId: part.uiId,
+          values: part.values,
+        }
     }
   })
 }
@@ -264,7 +324,16 @@ export class BridleRepository implements IChannelGateway {
 
       const text = (msg.text as string) ?? ""
       const wireParts = (msg.parts as WirePart[]) ?? []
-      const { images, files } = extractMediaFromWireParts(wireParts)
+      // Decode the full wire payload — text/image/file/ui/ui_submit alike.
+      // `parts` overrides the legacy text/images/files extraction so the
+      // ui parts survive into the agent's Message.
+      const parts = wirePartsToMessageParts(wireParts)
+      // Capabilities are forwarded by the hub on every message (Bridle SDK
+      // ≥ v0.12.0 sets them at handshake). Drop them on the Message so any
+      // onMessage handler can capability-gate `ui` parts before emitting.
+      const capabilities = Array.isArray(msg.capabilities)
+        ? (msg.capabilities as unknown[]).filter((c): c is string => typeof c === "string")
+        : undefined
 
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
@@ -272,8 +341,8 @@ export class BridleRepository implements IChannelGateway {
         from: msg.clientId as string,
         channel: "bridle",
         ts: Date.now(),
-        ...(images ? { images } : {}),
-        ...(files ? { files } : {}),
+        parts,
+        ...(capabilities ? { capabilities } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })
