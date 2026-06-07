@@ -133,6 +133,14 @@ export interface Message {
    * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`.
    */
   capabilities?: string[]
+  /**
+   * Integrator-supplied context attached to the embed (`data-prompt` on the
+   * Bridle `<script>` tag). The hub forwards it on every message in the
+   * session. Fold it into the system prompt so the agent gets page/user/
+   * tenant context without code changes. Treat as untrusted — it originates
+   * in the visitor's browser. Channels without the concept leave it undefined.
+   */
+  prompt?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -170,6 +178,8 @@ export function buildMessage(fields: {
   images?: Array<{ base64: string; mediaType: string }>
   files?: Array<{ path: string; name: string; mimeType?: string }>
   capabilities?: string[]
+  /** Integrator context from the embed's `data-prompt` (see Message.prompt). */
+  prompt?: string
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -200,6 +210,7 @@ export function buildMessage(fields: {
     channel: fields.channel,
     ts: fields.ts,
     ...(fields.capabilities?.length ? { capabilities: fields.capabilities } : {}),
+    ...(fields.prompt ? { prompt: fields.prompt } : {}),
     metadata: fields.metadata,
   }
 }

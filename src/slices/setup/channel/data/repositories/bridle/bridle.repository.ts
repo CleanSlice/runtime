@@ -358,6 +358,13 @@ export class BridleRepository implements IChannelGateway {
         ? (msg.capabilities as unknown[]).filter((c): c is string => typeof c === "string")
         : undefined
 
+      // Integrator context from the embed's `data-prompt`. The hub forwards it
+      // on every message; carry it onto the Message so the runtime can fold it
+      // into the system prompt (otherwise the agent never sees it).
+      const prompt = typeof msg.prompt === "string" && msg.prompt.trim()
+        ? msg.prompt
+        : undefined
+
       // When the visitor submits a form, the SDK ships an empty text + a
       // ui_submit part. Synthesize a readable summary so the LLM sees the
       // turn as a normal user message (LLMs that only get text/images
@@ -372,6 +379,7 @@ export class BridleRepository implements IChannelGateway {
         ts: Date.now(),
         parts,
         ...(capabilities ? { capabilities } : {}),
+        ...(prompt ? { prompt } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })

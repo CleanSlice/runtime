@@ -205,6 +205,7 @@ export class RuntimeService {
       skills: skillSummaries,
       isAdmin,
       extraHint,
+      integratorPrompt: msg.prompt,
     })
 
     // Inject full content for always-on skills
