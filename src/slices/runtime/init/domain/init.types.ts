@@ -22,6 +22,12 @@ export interface IAgentConfig {
 
   session: {
     compactionThreshold: number
+    /**
+     * Compact when the serialized session exceeds this many bytes, even if the
+     * event COUNT is still under compactionThreshold. Guards against a few huge
+     * tool_result payloads overflowing the model's context window.
+     */
+    compactionBytesThreshold: number
     recentKeep: number
   }
 
@@ -149,6 +155,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
 
   session: {
     compactionThreshold: 60,
+    compactionBytesThreshold: 200_000,
     recentKeep: 20,
   },
 

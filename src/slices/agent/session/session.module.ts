@@ -7,6 +7,7 @@ import { CompactionService } from "./domain/compaction.service"
 export interface SessionConfig {
   compactionThreshold?: number
   recentKeep?: number
+  compactionBytesThreshold?: number
 }
 
 export class SessionModule {
@@ -19,6 +20,7 @@ export class SessionModule {
       this.service,
       config?.compactionThreshold ?? 60,
       config?.recentKeep ?? 20,
+      config?.compactionBytesThreshold ?? 200_000,
     )
   }
 

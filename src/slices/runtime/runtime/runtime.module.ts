@@ -97,6 +97,7 @@ export class AgentRuntime {
     this.session = new SessionModule(agentDir, {
       compactionThreshold: this.config.session.compactionThreshold,
       recentKeep: this.config.session.recentKeep,
+      compactionBytesThreshold: this.config.session.compactionBytesThreshold,
     })
 
     // Encrypted credential storage (file-based or AWS Secrets Manager)

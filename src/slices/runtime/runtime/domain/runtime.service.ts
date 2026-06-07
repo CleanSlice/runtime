@@ -16,6 +16,7 @@ import { ToolService } from "../../../agent/tool/domain/tool.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
+import { truncateStrings } from "../../../agent/session/domain/compaction.service"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -107,7 +108,7 @@ export class RuntimeService {
 
         this.deps.session.touch(sessionId)
         this.deps.activity.clear()
-        this.deps.memory.flushAndCompact(sessionId, history, this.deps.llm, this.deps.session, this.deps.config.session.compactionThreshold)
+        this.deps.memory.flushAndCompact(sessionId, history, this.deps.llm, this.deps.session, this.deps.config.session.compactionThreshold, this.deps.config.session.compactionBytesThreshold)
         this.deps.memory.reviewMemory(sessionId, this.deps.llm, this.deps.session)
 
       } catch (err) {
@@ -152,6 +153,18 @@ export class RuntimeService {
           const tail = text.slice(-500)
           d.text = `${head}\n\n[… ${text.length - MAX_USER_MSG_CHARS + 500} characters truncated — message was very long/repetitive …]\n\n${tail}`
         }
+      }
+    }
+
+    // Cap tool_call / tool_result payloads sent to the LLM. Raw API responses
+    // (catalogs, page dumps, CDN URLs) can be tens of KB each; a handful of
+    // them blows the model's context window even when the event COUNT is well
+    // below the compaction threshold. The full payload stays on disk for
+    // retrieval — only the in-memory copy handed to the model is trimmed.
+    const MAX_TOOL_OUTPUT_CHARS = 4000
+    for (const evt of history) {
+      if (evt.type === "tool_call" || evt.type === "tool_result") {
+        evt.data = truncateStrings(evt.data, MAX_TOOL_OUTPUT_CHARS)
       }
     }
 

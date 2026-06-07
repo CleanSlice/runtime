@@ -3,6 +3,7 @@ import type { MemoryEntry, MemoryReviewConfig } from "./memory.types"
 import type { Event } from "../../../setup/event"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { SessionModule } from "../../session/session.module"
+import { estimateEventsBytes } from "../../session/domain/compaction.service"
 import { DEFAULT_MEMORY_REVIEW, MEMORY_LEARNED_HEADING } from "./memory.types"
 import { buildAdminOwnerPrompt } from "../../agent/domain/prompts/admin-owner.prompt"
 import { buildMemoryFlushPrompt, buildMemoryReviewPrompt } from "../../agent/domain/prompts/error-hint.prompt"
@@ -86,15 +87,18 @@ export class MemoryService {
 
   // ─── Memory flush + compaction ─────────────────────────────────────
 
-  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): void {
-    this.doFlush(sessionId, history, llm, session, compactionThreshold).catch(err =>
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): void {
+    this.doFlush(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold).catch(err =>
       log.error("unhandled", err)
     )
   }
 
-  private async doFlush(sessionId: string, _history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): Promise<void> {
+  private async doFlush(sessionId: string, _history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): Promise<void> {
     const events = await session.read(sessionId)
-    if (events.length <= compactionThreshold) return
+    // Flush + compact when either the event COUNT or the serialized SIZE is
+    // over budget — a few huge tool_results can overflow context long before
+    // the count threshold is hit.
+    if (events.length <= compactionThreshold && estimateEventsBytes(events) <= compactionBytesThreshold) return
 
     log.info(`flushing session ${sessionId} before compaction`)
     try {

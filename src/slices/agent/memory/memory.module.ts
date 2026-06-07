@@ -41,8 +41,8 @@ export class MemoryModule {
     this.service.ensureAdminInMemory(adminIds)
   }
 
-  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number): void {
-    this.service.flushAndCompact(sessionId, history, llm, session, compactionThreshold)
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): void {
+    this.service.flushAndCompact(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold)
   }
 
   reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule): void {
