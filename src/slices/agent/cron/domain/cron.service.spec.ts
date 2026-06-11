@@ -136,4 +136,35 @@ describe("CronService.shouldRun", () => {
     expect(service.shouldRun(j, monday)).toBe(true)
     expect(service.shouldRun(j, sunday)).toBe(false)
   })
+
+  describe("timezone-aware scheduling (tz field)", () => {
+    // 2026-01-01 07:00 UTC = 09:00 Europe/Kyiv (UTC+2 in winter)
+    const utc0700 = new Date("2026-01-01T07:00:00Z")
+
+    test("'0 9 * * *' with tz=Europe/Kyiv fires at 09:00 Kyiv time (07:00 UTC)", () => {
+      const j = job({ schedule: "0 9 * * *", tz: "Europe/Kyiv" })
+      expect(service.shouldRun(j, utc0700)).toBe(true)
+    })
+
+    test("'0 9 * * *' without tz does NOT fire at 07:00 UTC when server is UTC", () => {
+      // Without tz the job uses server local time; 07:00 UTC ≠ 09:00
+      const j = job({ schedule: "0 9 * * *" })
+      // This test is only meaningful when the test runner is in UTC (TZ=UTC).
+      // It documents that local-time and tz-aware paths differ.
+      const serverHour = utc0700.getHours()
+      expect(service.shouldRun(j, utc0700)).toBe(serverHour === 9)
+    })
+
+    test("'0 9 * * *' with tz=Europe/Kyiv does NOT fire at 08:00 UTC (10:00 Kyiv)", () => {
+      const utc0800 = new Date("2026-01-01T08:00:00Z")
+      const j = job({ schedule: "0 9 * * *", tz: "Europe/Kyiv" })
+      expect(service.shouldRun(j, utc0800)).toBe(false)
+    })
+
+    test("'0 0 * * *' midnight in America/New_York fires at 05:00 UTC (UTC-5 in winter)", () => {
+      const utc0500 = new Date("2026-01-01T05:00:00Z")
+      const j = job({ schedule: "0 0 * * *", tz: "America/New_York" })
+      expect(service.shouldRun(j, utc0500)).toBe(true)
+    })
+  })
 })
