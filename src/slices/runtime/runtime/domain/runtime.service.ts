@@ -121,6 +121,30 @@ export class RuntimeService {
     }, { internal: isInternal })
   }
 
+  private buildChannelContext(msg: Message): string | undefined {
+    const { channel, metadata } = msg
+    if (channel === "internal") return undefined
+
+    if (channel === "telegram") {
+      const isGroup = metadata?.isGroup as boolean | undefined
+      const username = metadata?.username as string | undefined
+      const fromName = metadata?.fromName as string | undefined
+      const chatTitle = metadata?.chatTitle as string | undefined
+
+      if (isGroup) {
+        const groupDesc = chatTitle ? `"${chatTitle}"` : "a group"
+        const sender = fromName ?? (username ? `@${username}` : "someone")
+        return `You are responding in a Telegram group chat ${groupDesc}. This message is from ${sender}.`
+      }
+      const userDesc = username ? `@${username}` : "a user"
+      return `You are responding via Telegram (direct message) with ${userDesc}.`
+    }
+
+    if (channel === "bridle") return "You are responding via the Bridle web embed."
+    if (channel === "slack") return "You are responding via Slack."
+    return `You are responding via ${channel}.`
+  }
+
   private async buildHistory(msg: Message, sessionId: string, taskId: string): Promise<Event[]> {
     // Append user message as shared context
     const userEvent: Event = {
@@ -206,6 +230,7 @@ export class RuntimeService {
       isAdmin,
       extraHint,
       integratorPrompt: msg.prompt,
+      channelContext: this.buildChannelContext(msg),
     })
 
     // Inject full content for always-on skills
