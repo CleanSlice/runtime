@@ -16,6 +16,7 @@ import { ToolService } from "../../../agent/tool/domain/tool.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
+import { buildRlmForceHintPrompt } from "../../loop/domain/prompts/rlm-force.prompt"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
@@ -195,6 +196,17 @@ export class RuntimeService {
         extraHint = buildResourceHintPrompt(stats)
         log.child(tid).info(`injecting resource hint (elapsed=${stats.elapsedMs}ms retries=${stats.retries} 429=${stats.rateLimited} overload=${stats.overloaded})`)
       }
+    }
+
+    // Explicit "use RLM" toggle from the chat UI (see Message.forceRlm) —
+    // composed onto extraHint rather than replacing it, so a delayed-turn
+    // resource hint and a forced-RLM hint can both land on the same turn.
+    // Recomputed from the message every call, never persisted — non-sticky
+    // by construction, same as the resource hint above.
+    if (msg.forceRlm) {
+      const rlmHint = buildRlmForceHintPrompt()
+      extraHint = extraHint ? `${extraHint}\n\n---\n\n${rlmHint}` : rlmHint
+      log.child(tid).info("injecting RLM force hint (user toggled RLM for this message)")
     }
 
     let systemPrompt = await this.deps.agent.buildPrompt({

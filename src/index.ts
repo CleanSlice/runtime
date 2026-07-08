@@ -55,77 +55,32 @@ const knownEnv = [
 const setEnv = knownEnv.filter(k => process.env[k])
 if (setEnv.length) envLog.ok(`ok: ${setEnv.join(", ")}`)
 
-const hasChannel = !!(process.env.BRIDLE_URL || process.env.TELEGRAM_BOT_TOKEN || (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN))
-const hasLlmCred = !!process.env.LLM_API_KEY
-if (!hasChannel) envLog.warn("no channel configured (set BRIDLE_URL, TELEGRAM_BOT_TOKEN, or SLACK_BOT_TOKEN+SLACK_APP_TOKEN)")
-if (!hasLlmCred) envLog.warn("LLM_API_KEY not set")
+// RLM executor pods have no channel and use RLM_ROOT_*/RLM_SUB_* instead of
+// LLM_*/BRIDLE_* - skip the normal-agent env warnings, they'd be noise.
+if (process.env.RLM_MODE !== "1") {
+  const hasChannel = !!(process.env.BRIDLE_URL || process.env.TELEGRAM_BOT_TOKEN || (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN))
+  const hasLlmCred = !!process.env.LLM_API_KEY
+  if (!hasChannel) envLog.warn("no channel configured (set BRIDLE_URL, TELEGRAM_BOT_TOKEN, or SLACK_BOT_TOKEN+SLACK_APP_TOKEN)")
+  if (!hasLlmCred) envLog.warn("LLM_API_KEY not set")
+}
 
 import pkg from "../package.json"
 import { AgentRuntime } from "./runtime"
 import { ChannelModule } from "./slices/setup/channel"
-import type { LlmConfig } from "./slices/setup/llm/llm.module"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
 import { McpModule } from "./slices/setup/mcp"
+import { buildLlmConfig } from "./slices/setup/llm/buildLlmConfig"
 
-/**
- * Build an LlmConfig from a (provider, model, fallbackModel, apiKey) tuple.
- * Shared by main LLM and auxiliary LLM resolution so behavior stays consistent.
- * Defaults to "claude" when provider is missing.
- */
-function buildLlmConfig(
-  provider: string | undefined,
-  model: string | undefined,
-  fallbackModel: string | undefined,
-  apiKey: string | undefined,
-): LlmConfig {
-  const p = provider ?? "claude"
-  switch (p) {
-    case "deepseek":
-      return {
-        provider: "deepseek",
-        model: model ?? "deepseek-chat",
-        fallbackModel,
-        apiKey: apiKey ?? process.env.DEEPSEEK_API_KEY,
-      }
-    case "google":
-      return {
-        provider: "google",
-        model: model ?? "gemini-2.0-flash",
-        fallbackModel,
-        apiKey: apiKey ?? process.env.GOOGLE_API_KEY,
-      }
-    case "mistral":
-      return {
-        provider: "mistral",
-        model: model ?? "mistral-medium-latest",
-        fallbackModel,
-        apiKey: apiKey ?? process.env.MISTRAL_API_KEY,
-      }
-    case "openai":
-      return {
-        provider: "openai",
-        model: model ?? "gpt-4o-mini",
-        fallbackModel,
-        apiKey: apiKey ?? process.env.OPENAI_API_KEY,
-      }
-    case "openrouter":
-      return {
-        provider: "openrouter",
-        model: model ?? "anthropic/claude-sonnet-4",
-        fallbackModel,
-        apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
-      }
-    case "anthropic":
-    case "claude":
-    default:
-      return {
-        provider: "claude",
-        model,
-        fallbackModel,
-        apiKey,
-      }
-  }
+// RLM executor mode: this pod was spawned by Ranch's RLM Argo Job (see
+// ranch/api/src/slices/rlm/data/rlm-job.manifest.ts) to run a single,
+// disposable recursive-reasoning job instead of the normal agent bootstrap
+// below. Short-circuits before any channel/MCP/agent-dir setup — the RLM
+// job doesn't have an `.agent/` directory or bridle connection at all.
+if (process.env.RLM_MODE === "1") {
+  const { runRlmJob } = await import("./slices/runtime/rlm/domain/rlm-loop.service")
+  const exitCode = await runRlmJob()
+  process.exit(exitCode)
 }
 
 const init = new InitModule(

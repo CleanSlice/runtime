@@ -365,6 +365,11 @@ export class BridleRepository implements IChannelGateway {
         ? msg.prompt
         : undefined
 
+      // Explicit "use RLM this turn" toggle from the chat UI. Per-message —
+      // the hub only sets this on the one message it was sent with, so no
+      // trimming/persistence needed here, unlike `prompt`.
+      const forceRlm = msg.forceRlm === true
+
       // When the visitor submits a form, the SDK ships an empty text + a
       // ui_submit part. Synthesize a readable summary so the LLM sees the
       // turn as a normal user message (LLMs that only get text/images
@@ -380,6 +385,7 @@ export class BridleRepository implements IChannelGateway {
         parts,
         ...(capabilities ? { capabilities } : {}),
         ...(prompt ? { prompt } : {}),
+        ...(forceRlm ? { forceRlm } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })

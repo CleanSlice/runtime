@@ -141,6 +141,15 @@ export interface Message {
    * in the visitor's browser. Channels without the concept leave it undefined.
    */
   prompt?: string
+  /**
+   * User explicitly requested the RLM (Recursive Language Model) tool for
+   * this turn via a chat UI toggle. Per-message, not sticky — unlike
+   * `prompt`, the hub re-sends this only on the message it was set for.
+   * Treat as untrusted (originates client-side), but it's an instruction
+   * hint, not data — RuntimeService folds it into a one-shot system-prompt
+   * addendum (see rlm-force.prompt.ts) rather than executing anything.
+   */
+  forceRlm?: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -180,6 +189,8 @@ export function buildMessage(fields: {
   capabilities?: string[]
   /** Integrator context from the embed's `data-prompt` (see Message.prompt). */
   prompt?: string
+  /** See Message.forceRlm. */
+  forceRlm?: boolean
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -211,6 +222,7 @@ export function buildMessage(fields: {
     ts: fields.ts,
     ...(fields.capabilities?.length ? { capabilities: fields.capabilities } : {}),
     ...(fields.prompt ? { prompt: fields.prompt } : {}),
+    ...(fields.forceRlm ? { forceRlm: true } : {}),
     metadata: fields.metadata,
   }
 }
