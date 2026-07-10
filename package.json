@@ -1,6 +1,6 @@
 {
   "name": "@cleanslice/runtime",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "license": "MIT",
   "type": "module",
   "bin": {

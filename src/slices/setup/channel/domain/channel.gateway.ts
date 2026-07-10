@@ -1,4 +1,4 @@
-import type { Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, Message, MessagePart } from "./channel.types"
 
 export interface IChannelGateway {
   readonly name: string
@@ -12,4 +12,10 @@ export interface IChannelGateway {
    * Returns when streaming is complete.
    */
   streamSend?(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void>
+  /**
+   * Groups/rooms/channels the bot works in, in a channel-agnostic shape.
+   * Optional — channels without the concept (bridle) don't implement it.
+   * Telegram serves its persisted registry; Slack queries the API live.
+   */
+  listGroups?(): Promise<IChannelGroup[]>
 }

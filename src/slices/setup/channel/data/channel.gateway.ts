@@ -1,5 +1,5 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
-import type { ChannelConfig, Message, MessagePart } from "../domain/channel.types"
+import type { ChannelConfig, IChannelGroup, Message, MessagePart } from "../domain/channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
@@ -8,16 +8,25 @@ import { BridleRepository, type BridleSyncHandler, type IBridleDebugPayload } fr
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
   private repository: TelegramRepository | SlackRepository | BridleRepository | IChannelGateway
+  // Defined only when the wrapped repository supports groups — channels
+  // without the concept (bridle) stay undefined so consumers can skip them,
+  // matching the optional domain contract.
+  listGroups?: () => Promise<IChannelGroup[]>
 
-  constructor(config: ChannelConfig) {
+  constructor(config: ChannelConfig, agentDir?: string) {
     this.name = config.type
-    this.repository = this.createRepository(config)
+    this.repository = this.createRepository(config, agentDir)
+    const repo = this.repository
+    if ('listGroups' in repo && typeof repo.listGroups === 'function') {
+      this.listGroups = () => repo.listGroups!()
+    }
   }
 
-  private createRepository(config: ChannelConfig): TelegramRepository | SlackRepository | BridleRepository | IChannelGateway {
+  private createRepository(config: ChannelConfig, agentDir?: string): TelegramRepository | SlackRepository | BridleRepository | IChannelGateway {
     switch (config.type) {
       case "telegram":
-        return new TelegramRepository(config.token)
+        // agentDir lets the repository persist its group registry
+        return new TelegramRepository(config.token, agentDir)
       case "slack":
         return new SlackRepository(config.botToken, config.appToken)
       case "bridle":

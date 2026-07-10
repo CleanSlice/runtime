@@ -1,8 +1,16 @@
-import { buildMessage, type Message } from "../../../domain/channel.types"
+import { buildMessage, type IChannelGroup, type Message } from "../../../domain/channel.types"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../../logger"
 
 const log = createLogger("slack")
+
+interface ISlackConversation {
+  id: string
+  name?: string
+  is_private?: boolean
+  is_im?: boolean
+  is_mpim?: boolean
+}
 
 export class SlackRepository {
   private ws: WebSocket | null = null
@@ -86,5 +94,47 @@ export class SlackRepository {
       },
       body: JSON.stringify({ channel: chatId, text }),
     })
+  }
+
+  /**
+   * Channels the bot is a member of — unlike Telegram, Slack's API can
+   * answer this directly (users.conversations for the calling bot user),
+   * so there's no persisted registry; every call is a live query.
+   */
+  async listGroups(): Promise<IChannelGroup[]> {
+    const out: IChannelGroup[] = []
+    let cursor = ""
+    // Cursor pagination, hard-capped to keep a huge workspace from stalling the tool.
+    for (let page = 0; page < 10; page++) {
+      const params = new URLSearchParams({
+        types: "public_channel,private_channel",
+        exclude_archived: "true",
+        limit: "200",
+      })
+      if (cursor) params.set("cursor", cursor)
+      const res = await fetch(`https://slack.com/api/users.conversations?${params}`, {
+        headers: { Authorization: `Bearer ${this.botToken}` },
+      })
+      const json = (await res.json()) as {
+        ok: boolean
+        error?: string
+        channels?: ISlackConversation[]
+        response_metadata?: { next_cursor?: string }
+      }
+      if (!json.ok) {
+        log.error(`users.conversations failed: ${json.error}`)
+        break
+      }
+      for (const ch of json.channels ?? []) {
+        out.push({
+          id: ch.id,
+          name: ch.name,
+          type: ch.is_private ? "private_channel" : "public_channel",
+        })
+      }
+      cursor = json.response_metadata?.next_cursor ?? ""
+      if (!cursor) break
+    }
+    return out
   }
 }

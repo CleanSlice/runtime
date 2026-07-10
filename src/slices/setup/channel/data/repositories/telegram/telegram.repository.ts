@@ -1,16 +1,28 @@
-import { buildMessage, type Message } from "../../../domain/channel.types"
+import { buildMessage, type IChannelGroup, type Message } from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../../logger"
+import {
+  type ITelegramGroupEntry,
+  loadTelegramFile,
+  updateTelegramFile,
+} from "./telegramFile"
 
 const log = createLogger("telegram")
+
+interface TelegramChat {
+  id: number
+  type: "private" | "group" | "supergroup" | "channel"
+  title?: string
+  username?: string
+}
 
 interface TelegramUpdate {
   update_id: number
   message?: {
     message_id: number
     from?: { id: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean }
-    chat: { id: number; type: "private" | "group" | "supergroup" | "channel"; title?: string }
+    chat: TelegramChat
     text?: string
     date: number
     photo?: Array<{ file_id: string; file_size: number; width: number; height: number }>
@@ -19,6 +31,13 @@ interface TelegramUpdate {
     reply_to_message?: {
       from?: { id: number; username?: string; is_bot?: boolean }
     }
+  }
+  // Fires when the bot itself is added to / removed from / promoted in a chat.
+  // Delivered by default (no allowed_updates opt-in needed).
+  my_chat_member?: {
+    chat: TelegramChat
+    date: number
+    new_chat_member: { status: string; user: { id: number; is_bot?: boolean } }
   }
 }
 
@@ -31,8 +50,11 @@ export class TelegramRepository {
   private baseUrl: string
   private botUsername: string | null = null
   private groupContext: Map<string, Array<{ name: string; text: string }>> = new Map()
+  // Registry of groups/channels the bot works in — persisted into
+  // <agentDir>/data/channels/telegram.json when agentDir is provided.
+  private groups: Map<string, ITelegramGroupEntry> = new Map()
 
-  constructor(private token: string) {
+  constructor(private token: string, private agentDir?: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`
   }
 
@@ -42,9 +64,73 @@ export class TelegramRepository {
 
   async start(): Promise<void> {
     this.running = true
+    await this.loadGroups()
     await this.fetchBotInfo()
     await this.registerCommands()
     this.poll()
+  }
+
+  /** Channel-agnostic view of the group registry — freshest first. */
+  listGroups(): Promise<IChannelGroup[]> {
+    const groups = [...this.groups.values()]
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+      .map(g => ({
+        id: g.id,
+        name: g.title,
+        username: g.username,
+        type: g.type,
+        status: g.status,
+        lastSeenAt: g.lastSeenAt,
+      }))
+    return Promise.resolve(groups)
+  }
+
+  private async loadGroups(): Promise<void> {
+    if (!this.agentDir) return
+    const file = await loadTelegramFile(this.agentDir)
+    for (const [id, entry] of Object.entries(file.groups ?? {})) {
+      this.groups.set(id, entry)
+    }
+    if (this.groups.size) log.info(`loaded ${this.groups.size} known group(s)`)
+  }
+
+  private saveGroups(): void {
+    if (!this.agentDir) return
+    // Patches only `groups` — bot config in the same file stays intact.
+    updateTelegramFile(this.agentDir, { groups: Object.fromEntries(this.groups) })
+      .catch(err => log.error("failed to persist groups", err))
+  }
+
+  /**
+   * Upsert a group/channel the bot sees. `status` comes from my_chat_member
+   * updates; plain group messages leave it unchanged. Persists only on
+   * meaningful change (new chat, title/username/type/status) so a busy group
+   * doesn't rewrite the file on every message — lastSeenAt still updates
+   * in memory and rides along with the next persisted change.
+   */
+  private trackGroup(chat: TelegramChat, ts: number, status?: string): void {
+    if (chat.type === "private") return
+    const id = String(chat.id)
+    const prev = this.groups.get(id)
+    const next: ITelegramGroupEntry = {
+      id,
+      type: chat.type,
+      title: chat.title ?? prev?.title,
+      username: chat.username ?? prev?.username,
+      status: status ?? prev?.status ?? "member",
+      addedAt: prev?.addedAt ?? ts,
+      lastSeenAt: ts,
+    }
+    this.groups.set(id, next)
+    const changed = !prev
+      || prev.title !== next.title
+      || prev.username !== next.username
+      || prev.type !== next.type
+      || prev.status !== next.status
+    if (changed) {
+      log.info(`group ${next.title ?? id} (${id}) → ${next.status}`)
+      this.saveGroups()
+    }
   }
 
   private async fetchBotInfo(): Promise<void> {
@@ -235,6 +321,14 @@ export class TelegramRepository {
 
         for (const update of json.result) {
           this.offset = update.update_id + 1
+
+          // Membership change: bot added to / removed from / promoted in a chat
+          const member = update.my_chat_member
+          if (member) {
+            this.trackGroup(member.chat, member.date * 1000, member.new_chat_member.status)
+            continue
+          }
+
           const msg = update.message
           const hasText = !!msg?.text
           const hasPhoto = !!msg?.photo?.length
@@ -250,6 +344,10 @@ export class TelegramRepository {
           let groupChatTitle = ""
 
           if (isGroup) {
+            // Every group message keeps the registry fresh — covers groups the
+            // bot joined before my_chat_member tracking existed.
+            this.trackGroup(msg!.chat, msg!.date * 1000)
+
             const rawText = msg!.text ?? msg!.caption ?? ""
             groupSenderName = msg!.from?.username
               ? `@${msg!.from.username}`
