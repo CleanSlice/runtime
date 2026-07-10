@@ -1,0 +1,56 @@
+id: memory-compaction-id-recall-from-summary
+category: memory
+difficulty: hard
+name: Compaction summary preserves IDs from noisy tool_result outputs
+description: >
+  Validates that session compaction preserves specific identifiers buried
+  in large tool_result stdouts from earlier turns. Without field-level
+  truncation + ID-focused summarization, a 3KB-noise stdout drowns out
+  the leading "CAMPAIGN_ID=..." headline and the value is lost forever
+  once the session file is rewritten.
+expectedBehavior: >
+  Turn 1: agent runs exec — stdout is "CAMPAIGN_ID=120248377180560181\n"
+  followed by ~3KB of "junk noise filler" bytes. Turn 2: agent runs a
+  second exec with ADSET_ID. With compactionThreshold=6 / recentKeep=2,
+  the event count crosses the threshold on turn 2 (8 events: 2×[user +
+  tool_call + tool_result + assistant]) and the fire-and-forget
+  compactor summarizes events 0-5 — which includes turn 1's full
+  tool_result containing CAMPAIGN_ID. Turn 3 (after a long delay to
+  let the async LLM summarization land on disk): user asks for the
+  CAMPAIGN_ID. Agent must answer with the exact ID, served from the
+  archived-context block — not from a fresh re-exec.
+setup:
+  files:
+    agent.config.json: '{"maxIterations":15,"taskLabelLength":60,"maxTokens":4096,"heartbeat":{"intervalMin":30},"session":{"compactionThreshold":6,"recentKeep":2},"s3":{"syncIntervalSec":60},"tools":{"spawnAgent":{"timeoutMin":5,"outputLimit":4000},"browser":{"outputLimit":5000},"webFetch":{"maxChars":8000}}}'
+messages:
+  - text: |
+      Run this exact bash command with the exec tool, then briefly confirm:
+        echo "CAMPAIGN_ID=120248377180560181" && yes "junk noise filler padding bytes " | head -c 3000
+    from: eval-user
+  - text: |
+      Now run this one too with exec:
+        echo "ADSET_ID=120248402638650181" && yes "more padding chunks here " | head -c 3000
+    from: eval-user
+    delayMs: 2000
+  - text: "From the FIRST bash command I asked you to run, what was the CAMPAIGN_ID value? Just the number."
+    from: eval-user
+    delayMs: 15000
+successCriteria:
+  - dimension: correctness
+    description: >
+      Answer contains the exact string "120248377180560181". This ID was
+      the first ~35 chars of a 3KB stdout in turn 1's tool_result. After
+      turn 2 triggers compaction, that tool_result is summarized — only
+      the truncation-to-500-chars + ID-focused summarization prompt keeps
+      the value in the archive. Failure (wrong number, "I don't remember",
+      or re-running exec) means the summary lost the value.
+    weight: 0.7
+  - dimension: tool_usage
+    description: >
+      Agent ran both exec commands on turns 1 and 2 as instructed.
+      On turn 3 it must NOT re-exec to look up the value — recall comes
+      from session context (the summary), not from rerunning the script.
+    weight: 0.15
+  - dimension: response_quality
+    description: Concise direct answer with the ID — no hedging, no apologies.
+    weight: 0.15

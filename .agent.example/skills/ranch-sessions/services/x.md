@@ -52,6 +52,7 @@ await browser_play({
   profile: acc.profile,
   actions: [
     { kind: 'navigate', url: `https://x.com/${handle}` },
+    { kind: 'wait', ms: 10000 },
     { kind: 'waitForSelector', selector: '[data-testid="tweet"]', timeout: 30000 },
     { kind: 'evaluate', code: `
         const top = document.querySelector('[data-testid="tweet"]');
@@ -68,11 +69,14 @@ await browser_play({
 
 ## Read a user's timeline
 
+**Always wait 10 seconds after navigating** to allow the page to fully load.
+
 ```ts
 await browser_play({
   profile: acc.profile,
   actions: [
     { kind: 'navigate', url: `https://x.com/${handle}` },
+    { kind: 'wait', ms: 10000 },
     { kind: 'waitForSelector', selector: '[data-testid="tweet"]', timeout: 15000 },
     { kind: 'evaluate', code: `
         return [...document.querySelectorAll('[data-testid="tweet"]')].slice(0, 20).map(t => ({
@@ -80,6 +84,21 @@ await browser_play({
           time: t.querySelector('time')?.getAttribute('datetime'),
         }));
       ` },
+  ],
+})
+```
+
+## Get home feed screenshot
+
+**Always wait 10 seconds after navigating** to allow the home feed to fully load and render.
+
+```ts
+await browser_play({
+  profile: acc.profile,
+  actions: [
+    { kind: 'navigate', url: 'https://x.com/home' },
+    { kind: 'wait', ms: 10000 },
+    { kind: 'screenshot', fullPage: false },
   ],
 })
 ```
