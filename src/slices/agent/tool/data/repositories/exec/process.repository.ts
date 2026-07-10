@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
+import { nonInteractiveEnv } from "./spawnEnv"
 
 const schema = z.object({
   action: z.enum(["start", "status", "output", "kill"]).describe("Action to perform on the process"),
@@ -27,8 +28,10 @@ export const ProcessExecTool: Tool = {
       if (!command) return { error: "command is required for action=start" }
 
       const proc = Bun.spawn(["sh", "-c", command], {
+        stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
+        env: nonInteractiveEnv(),
       })
 
       const entry: ProcessEntry = { proc, stdout: "", stderr: "" }

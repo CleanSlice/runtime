@@ -233,8 +233,11 @@ export class SkillGateway implements ISkillGateway {
 
   private async exec(cmd: string): Promise<string> {
     const proc = Bun.spawn(["sh", "-c", cmd], {
+      stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      // Never prompt on the terminal — remote users can't answer it. Fail fast instead.
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes" },
     })
 
     const exitCode = await proc.exited
