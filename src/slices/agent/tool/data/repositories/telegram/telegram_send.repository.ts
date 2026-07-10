@@ -9,7 +9,7 @@ const schema = z.object({
 
 export const TelegramSendTool: Tool = {
   name: "telegram_send",
-  description: "Send a Telegram message to any chat ID. Use this to proactively message users.",
+  description: "Send a Telegram message to any chat ID. Use this to proactively message users. For group chats, resolve the chat ID first via channel_groups.",
   schema,
   adminOnly: true,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {

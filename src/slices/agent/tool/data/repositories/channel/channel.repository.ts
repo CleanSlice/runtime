@@ -1,90 +1,20 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 
-// Channel tools let the agent configure its own messaging connections from
-// chat. Tokens land in <agentDir>/data/channels.json (persisted, S3-synced)
-// and the channel connects immediately — no pod restart needed.
+// Generic channel management tools. Per-channel data lives in
+// <agentDir>/data/channels/<type>.json (persisted, S3-synced); changes apply
+// immediately — no pod restart needed. Channel-specific tools live in their
+// own repository folders (e.g. telegram/ holds channel_telegram_set,
+// telegram_send, telegram_groups).
 //
 // Bridle is intentionally NOT exposed here. It's the bootstrap channel the
 // runtime can't reconfigure without losing the very link that delivers tool
 // calls. It stays env-only.
 
-async function validateTelegramToken(
-  token: string,
-): Promise<{ ok: boolean; username?: string; error?: string }> {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`)
-    const data = await res.json() as {
-      ok: boolean
-      result?: { username?: string; first_name?: string }
-      description?: string
-    }
-    if (!data.ok) {
-      return { ok: false, error: data.description || `Telegram API returned not-ok` }
-    }
-    return { ok: true, username: data.result?.username }
-  } catch (err) {
-    return { ok: false, error: (err as Error).message }
-  }
-}
-
-export const ChannelTelegramSetTool: Tool = {
-  name: "channel_telegram_set",
-  description:
-    "Configure (or replace) this agent's Telegram bot. Provide the bot token from @BotFather; bot name auto-detects from the token if omitted. The bot starts receiving messages immediately after a successful save. Admin-only.",
-  adminOnly: true,
-  schema: z.object({
-    botToken: z.string().describe("Telegram bot HTTP API token (from @BotFather)"),
-    botName: z
-      .string()
-      .optional()
-      .describe("Public username without @ — auto-detected from the token when omitted"),
-    adminIds: z
-      .string()
-      .optional()
-      .describe("Comma-separated Telegram chat IDs treated as bot admins (defaults to current admin list)"),
-  }),
-  async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
-    const { botToken, botName, adminIds } =
-      (ChannelTelegramSetTool.schema as ReturnType<typeof z.object>).parse(params) as {
-        botToken: string
-        botName?: string
-        adminIds?: string
-      }
-    if (!ctx.channels) {
-      return { error: "Channel registry not available in this context" }
-    }
-    const valid = await validateTelegramToken(botToken)
-    if (!valid.ok) {
-      return { error: `Invalid Telegram token: ${valid.error}` }
-    }
-    const resolvedName = botName ?? valid.username
-    try {
-      await ctx.channels.setTelegram({
-        botToken,
-        botName: resolvedName,
-        adminIds,
-      })
-      return {
-        ok: true,
-        botName: resolvedName,
-        message: resolvedName
-          ? `Telegram channel connected as @${resolvedName}.`
-          : "Telegram channel connected.",
-        note: adminIds
-          ? "adminIds saved — already-running access checks pick up new admins on the next agent restart."
-          : undefined,
-      }
-    } catch (err) {
-      return { error: `Failed to connect Telegram: ${(err as Error).message}` }
-    }
-  },
-}
-
 export const ChannelRemoveTool: Tool = {
   name: "channel_remove",
   description:
-    "Disconnect a configured channel and remove it from channels.json. Use to stop receiving messages on that platform. Bridle cannot be removed this way — it's the bootstrap channel.",
+    "Disconnect a configured channel and delete its data/channels/<type>.json file (for telegram this includes the group registry). Use to stop receiving messages on that platform. Bridle cannot be removed this way — it's the bootstrap channel.",
   adminOnly: true,
   schema: z.object({
     type: z.enum(["telegram", "slack"]).describe("Channel type to remove"),
@@ -118,5 +48,51 @@ export const ChannelListTool: Tool = {
       return { error: "Channel registry not available in this context" }
     }
     return { channels: await ctx.channels.listInfo() }
+  },
+}
+
+const channelGroupsSchema = z.object({
+  channel: z
+    .string()
+    .optional()
+    .describe('Limit to one channel type, e.g. "telegram" or "slack". Omit for all.'),
+})
+
+export const ChannelGroupsTool: Tool = {
+  name: "channel_groups",
+  description:
+    "List the groups/rooms the bot works in, per channel: Telegram groups and channels (with chat_id, title, membership status) and Slack channels the bot is a member of. " +
+    "Use this to resolve a group name to an id for telegram_send or channel sends. " +
+    "Telegram groups appear after the bot is added to them or sees a message there; Slack is queried live.",
+  schema: channelGroupsSchema,
+  adminOnly: true,
+  async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
+    const { channel } = channelGroupsSchema.parse(params)
+    if (!ctx.channels) {
+      return { error: "Channel registry not available in this context" }
+    }
+    const results = await ctx.channels.listGroups(channel)
+    if (!results.length) {
+      return {
+        channels: [],
+        note: channel
+          ? `No running channel of type "${channel}" supports groups.`
+          : "No running channels support groups.",
+      }
+    }
+    return {
+      channels: results.map(r => ({
+        channel: r.channel,
+        ...(r.error ? { error: r.error } : {}),
+        groups: r.groups.map(g => ({
+          id: g.id,
+          ...(g.name ? { name: g.name } : {}),
+          ...(g.username ? { username: `@${g.username}` } : {}),
+          ...(g.type ? { type: g.type } : {}),
+          ...(g.status ? { status: g.status } : {}),
+          ...(g.lastSeenAt ? { lastSeenAt: new Date(g.lastSeenAt).toISOString() } : {}),
+        })),
+      })),
+    }
   },
 }

@@ -22,6 +22,11 @@ export interface BuildPromptOpts {
    * the agent is aware of what the embedding site passed in.
    */
   integratorPrompt?: string
+  /**
+   * Describes the originating channel and sender so the agent knows where
+   * the conversation is happening (Telegram DM, Telegram group, Slack, etc.).
+   */
+  channelContext?: string
 }
 
 const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
@@ -63,6 +68,7 @@ export class AgentService {
     const memory = gate(config.memory)
 
     if (soul)              parts.push(`# Soul\n\n${soul}`)
+    if (opts?.channelContext) parts.push(`# Channel\n\n${opts.channelContext}`)
     if (opts?.extraHint)   parts.push(opts.extraHint)
     if (opts?.toolingPrompt) parts.push(opts.toolingPrompt)
     if (agents)            parts.push(`# Agent Instructions\n\n${agents}`)
@@ -127,7 +133,7 @@ export class AgentService {
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -145,6 +151,7 @@ export class AgentService {
       isAdmin: opts?.isAdmin,
       extraHint: opts?.extraHint,
       integratorPrompt: opts?.integratorPrompt,
+      channelContext: opts?.channelContext,
     })
   }
 }

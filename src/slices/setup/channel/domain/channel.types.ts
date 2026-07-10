@@ -251,6 +251,21 @@ export function buildUiForm(
   }
 }
 
+// ── Groups ────────────────────────────────────────────────────
+// Channel-agnostic view of a group/room/channel the bot works in. Each
+// channel maps its own concept onto this shape: Telegram groups/supergroups
+// (from the persisted registry), Slack channels (live API query). Channels
+// without the concept (bridle) report none.
+
+export interface IChannelGroup {
+  id: string          // conversation id usable for sending (telegram chat_id, slack channel id)
+  name?: string       // group title / channel name
+  username?: string   // public handle when the platform has one (telegram @username)
+  type?: string       // platform-specific: "supergroup" | "channel" | "public_channel" | ...
+  status?: string     // bot's membership when the platform reports it (telegram: member | left | ...)
+  lastSeenAt?: number // unix ms of last observed activity, when tracked
+}
+
 // ── Channel Config ────────────────────────────────────────────
 
 export type ChannelConfig =

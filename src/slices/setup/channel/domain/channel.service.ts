@@ -1,5 +1,5 @@
 import type { IChannelGateway } from "./channel.gateway"
-import type { Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, Message, MessagePart } from "./channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { createLogger } from "../../logger"
 
@@ -65,6 +65,28 @@ export class ChannelService {
   /** Names of currently registered channels — used by the channel_list tool. */
   listNames(): string[] {
     return this.channels.map(c => c.name)
+  }
+
+  /**
+   * Groups/rooms per channel — used by the channel_groups tool. Channels
+   * without the concept are skipped; a channel whose lookup fails is
+   * reported with an error instead of hiding the whole result.
+   */
+  async listGroups(channel?: string): Promise<Array<{ channel: string; groups: IChannelGroup[]; error?: string }>> {
+    const targets = channel
+      ? this.channels.filter(c => c.name === channel)
+      : this.channels
+    const out: Array<{ channel: string; groups: IChannelGroup[]; error?: string }> = []
+    for (const ch of targets) {
+      if (!ch.listGroups) continue
+      try {
+        out.push({ channel: ch.name, groups: await ch.listGroups() })
+      } catch (err) {
+        log.warn(`${ch.name} listGroups failed`, err)
+        out.push({ channel: ch.name, groups: [], error: (err as Error).message })
+      }
+    }
+    return out
   }
 
   async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {

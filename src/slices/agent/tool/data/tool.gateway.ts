@@ -18,14 +18,15 @@ import { WebSearchTool } from "./repositories/websearch/websearch.repository"
 import { WebFetchTool } from "./repositories/websearch/webfetch.repository"
 import { ImageAnalyzeTool } from "./repositories/image/image.repository"
 import { PdfAnalyzeTool } from "./repositories/image/pdf.repository"
-import { TelegramSendTool } from "./repositories/message/telegram_send.repository"
+import { TelegramSendTool } from "./repositories/telegram/telegram_send.repository"
+import { ChannelTelegramSetTool } from "./repositories/telegram/telegram_set.repository"
 import { TtsTool } from "./repositories/message/tts.repository"
 import { MemorySearchTool } from "./repositories/memory/memory_search.repository"
 import { MemorySaveTool } from "./repositories/memory/memory_save.repository"
 import { ProcessExecTool } from "./repositories/exec/process.repository"
 import { SpawnAgentTool } from "./repositories/exec/spawn_agent.repository"
 import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "./repositories/secret/secret.repository"
-import { ChannelTelegramSetTool, ChannelRemoveTool, ChannelListTool } from "./repositories/channel/channel.repository"
+import { ChannelRemoveTool, ChannelListTool, ChannelGroupsTool } from "./repositories/channel/channel.repository"
 import { ApproveUserTool } from "./repositories/access/approve.repository"
 import { SetAccessStrategyTool } from "./repositories/access/set_strategy.repository"
 import { SkillWriteTool } from "./repositories/skill/skill.repository"
@@ -67,6 +68,7 @@ export class ToolGateway implements IToolGateway {
     this.register(ChannelTelegramSetTool)
     this.register(ChannelRemoveTool)
     this.register(ChannelListTool)
+    this.register(ChannelGroupsTool)
     this.register(ApproveUserTool)
     this.register(SetAccessStrategyTool)
     this.register(SkillWriteTool)
