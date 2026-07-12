@@ -1,6 +1,9 @@
 import type { CronJob } from "./domain/cron.types"
 import { CronService } from "./domain/cron.service"
 import { CronGateway } from "./data/cron.gateway"
+import { createLogger } from "../../setup/logger"
+
+const log = createLogger("cron")
 
 export class CronModule {
   private service: CronService
@@ -29,7 +32,15 @@ export class CronModule {
           // One-shot: fire when current time passes runAt
           shouldFire = nowMs >= job.runAt && (!job.lastRunAt || job.lastRunAt < job.runAt)
         } else {
-          shouldFire = this.service.shouldRun(job, now)
+          // A job with an unparseable schedule (hand-edited cron.json, or
+          // saved by a pre-validation runtime) must not kill the tick for
+          // every OTHER job — skip it loudly instead.
+          try {
+            shouldFire = this.service.shouldRun(job, now)
+          } catch (err) {
+            log.warn(`job "${job.name}" (${job.id.slice(0, 8)}) has invalid schedule "${job.schedule}" — skipping: ${(err as Error).message}`)
+            continue
+          }
           // Deduplication: don't fire if already ran during this calendar minute.
           // Without this, the 10s polling interval would fire a job 6× per minute.
           if (shouldFire && job.lastRunAt) {

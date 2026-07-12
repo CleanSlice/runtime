@@ -136,4 +136,37 @@ describe("CronService.shouldRun", () => {
     expect(service.shouldRun(j, monday)).toBe(true)
     expect(service.shouldRun(j, sunday)).toBe(false)
   })
+
+  test("'*/15' fires on quarter hours only", () => {
+    const j = job({ schedule: "*/15 * * * *" })
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 12, 0))).toBe(true)
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 12, 30))).toBe(true)
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 12, 31))).toBe(false)
+  })
+
+  test("list '0,30' fires on both minutes", () => {
+    const j = job({ schedule: "0,30 9 * * *" })
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 9, 0))).toBe(true)
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 9, 30))).toBe(true)
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 9, 15))).toBe(false)
+  })
+
+  test("tz: schedule matches wall-clock time in the job's timezone", () => {
+    // 06:00 UTC == 09:00 in Kyiv (UTC+3, summer) — the job says "9am Kyiv".
+    const j = job({ schedule: "0 9 * * *", tz: "Europe/Kyiv" })
+    const utc0600 = new Date(Date.UTC(2026, 6, 1, 6, 0))
+    const utc0900 = new Date(Date.UTC(2026, 6, 1, 9, 0))
+    expect(service.shouldRun(j, utc0600)).toBe(true)
+    expect(service.shouldRun(j, utc0900)).toBe(false)
+  })
+
+  test("tz: unknown timezone falls back to local instead of never firing", () => {
+    const j = job({ schedule: "* * * * *", tz: "Not/AZone" })
+    expect(service.shouldRun(j, new Date(2026, 0, 1, 12, 34))).toBe(true)
+  })
+
+  test("invalid schedule throws (caller skips the job loudly)", () => {
+    const j = job({ schedule: "abc * * * *" })
+    expect(() => service.shouldRun(j, new Date())).toThrow()
+  })
 })
