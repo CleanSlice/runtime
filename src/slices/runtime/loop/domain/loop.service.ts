@@ -297,6 +297,7 @@ export class LoopService {
               llm: this.deps.llm,
               usage: this.deps.usage,
               lastTurnStats: this.lastTurnStats,
+              tools: ctx.tools,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)

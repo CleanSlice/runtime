@@ -27,6 +27,12 @@ export interface ToolContext {
   llm?: LlmModule
   usage?: UsageModule
   lastTurnStats?: LastTurnStatsTracker
+  /**
+   * Tools visible to THIS session's caller (admin-only tools are already
+   * filtered out upstream for non-admins). Lets introspection tools like
+   * agent_status report what the current user can actually invoke.
+   */
+  tools?: Tool[]
 }
 
 export interface Tool {
