@@ -29,7 +29,7 @@ import { SecretSetTool, SecretGetTool, SecretListTool, SecretDeleteTool } from "
 import { ChannelRemoveTool, ChannelListTool, ChannelGroupsTool } from "./repositories/channel/channel.repository"
 import { ApproveUserTool } from "./repositories/access/approve.repository"
 import { SetAccessStrategyTool } from "./repositories/access/set_strategy.repository"
-import { SkillWriteTool } from "./repositories/skill/skill.repository"
+import { SkillWriteTool, SkillDeleteTool } from "./repositories/skill/skill.repository"
 import { SessionSecretsTool } from "./repositories/session/session_secrets.repository"
 import { SessionRequestLoginTool } from "./repositories/session/session_request_login.repository"
 import { SessionListTool } from "./repositories/session/session_list.repository"
@@ -73,6 +73,7 @@ export class ToolGateway implements IToolGateway {
     this.register(ApproveUserTool)
     this.register(SetAccessStrategyTool)
     this.register(SkillWriteTool)
+    this.register(SkillDeleteTool)
     this.register(SessionSecretsTool)
     this.register(SessionRequestLoginTool)
     this.register(SessionListTool)

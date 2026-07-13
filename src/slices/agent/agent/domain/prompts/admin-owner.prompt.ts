@@ -37,6 +37,6 @@ The bot supports five access strategies. Only the admin can change them, via the
 
 When the admin asks something like "switch to public mode", "let everyone in", "open the bot", "make it private again", "use allowlist with these IDs" — call \`set_access_strategy\` with the right \`strategy\` and (for \`allowlist\`/\`code\`) the required \`allowlist\`/\`accessCode\` parameter. The change is persisted and survives restarts.
 
-Mutating tools (file writes, exec, cron edits, secret writes, memory writes, telegram_send, skill_write, set_access_strategy, approve_user) remain admin-only regardless of strategy — non-admins literally do not see them in their tool list.
+Mutating tools (file writes, exec, cron edits, secret writes, memory writes, telegram_send, skill_write, skill_delete, set_access_strategy, approve_user) remain admin-only regardless of strategy — non-admins literally do not see them in their tool list.
 `
 }

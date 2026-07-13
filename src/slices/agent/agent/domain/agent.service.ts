@@ -115,7 +115,8 @@ export class AgentService {
         `Skills dir: ${opts.agentDir}/skills/\n` +
         `Workspace dir: ${opts.agentDir}/workspace/\n\n` +
         `Use workspace dir for cloning repos, writing files, and project work. It persists across restarts.\n` +
-        `To create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.`
+        `To create a skill, use the \`skill_write\` tool with name, description, and content. The skill will be immediately active.\n` +
+        `To delete a skill, use the \`skill_delete\` tool with its name. Only agent-level skills can be deleted; the catalog updates immediately.`
       )
     }
 
