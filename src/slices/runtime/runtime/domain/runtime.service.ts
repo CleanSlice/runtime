@@ -136,8 +136,31 @@ export class RuntimeService {
         const sender = fromName ?? (username ? `@${username}` : "someone")
         return `You are responding in a Telegram group chat ${groupDesc}. This message is from ${sender}.`
       }
-      const userDesc = username ? `@${username}` : "a user"
-      return `You are responding via Telegram (direct message) with ${userDesc}.`
+
+      const firstName = metadata?.firstName as string | undefined
+      const lastName = metadata?.lastName as string | undefined
+      const languageCode = metadata?.languageCode as string | undefined
+      const isPremium = metadata?.isPremium as boolean | undefined
+
+      const fullName = [firstName, lastName].filter(Boolean).join(" ")
+      const who = fullName
+        ? `${fullName}${username ? ` (@${username})` : ""}`
+        : username ? `@${username}` : "a user"
+      const notes: string[] = []
+      if (languageCode) notes.push(`their Telegram client language is "${languageCode}"`)
+      if (isPremium) notes.push("they have Telegram Premium")
+      const suffix = notes.length ? ` Note: ${notes.join("; ")}.` : ""
+
+      // Timezone: the Bot API exposes none, so we ask once and persist it in
+      // memory. Current UTC lets the agent convert to the user's local time
+      // once it knows their zone.
+      const nowUtc = new Date().toISOString().slice(0, 16).replace("T", " ")
+      const tzHint =
+        ` The current time is ${nowUtc} UTC. If you don't already know this user's timezone` +
+        ` (check your Memory / Recent Notes above), ask them once — naturally, when timing is` +
+        ` relevant — then save it via memory_save as \`[fact] User timezone: <IANA name>\` and` +
+        ` use it for any time- or date-sensitive replies.`
+      return `You are responding via Telegram (direct message) with ${who}.${suffix}${tzHint}`
     }
 
     if (channel === "bridle") return "You are responding via the Bridle web embed."

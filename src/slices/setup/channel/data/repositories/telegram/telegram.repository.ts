@@ -21,7 +21,15 @@ interface TelegramUpdate {
   update_id: number
   message?: {
     message_id: number
-    from?: { id: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean }
+    from?: {
+      id: number
+      username?: string
+      first_name?: string
+      last_name?: string
+      language_code?: string   // client UI language, e.g. "en", "ru" — base code only, no region
+      is_premium?: boolean     // has Telegram Premium
+      is_bot?: boolean
+    }
     chat: TelegramChat
     text?: string
     date: number
@@ -378,6 +386,10 @@ export class TelegramRepository {
                 chatId: msg!.chat.id,
                 username: msg!.from?.username,
                 fromUserId: msg!.from?.id,
+                firstName: msg!.from?.first_name,
+                lastName: msg!.from?.last_name,
+                languageCode: msg!.from?.language_code,
+                isPremium: msg!.from?.is_premium,
                 channel: isGroup ? "group" : "dm",
               }
 
