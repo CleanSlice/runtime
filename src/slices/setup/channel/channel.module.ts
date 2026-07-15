@@ -3,6 +3,7 @@ import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
 import type { BridleSyncHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
+import type { SessionActivity } from "../../agent/session/domain/activity"
 import { migrateLegacyChannelFiles, type ChannelFileType } from "./data/channelFiles"
 import {
   type ITelegramFile,
@@ -119,6 +120,17 @@ export class ChannelModule {
     const bridle = this.service.get("bridle")
     if (bridle instanceof ChannelGateway) {
       bridle.sendDebug(to, payload)
+    }
+  }
+
+  /**
+   * Emit a live session-activity signal to the bridle hub (Phase 3 realtime
+   * chat index). No-op when bridle isn't configured / connected.
+   */
+  reportSessionActivity(activity: SessionActivity): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.reportActivity(activity)
     }
   }
 

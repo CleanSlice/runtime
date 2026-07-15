@@ -155,7 +155,7 @@ export class LoopService {
             id: randomUUID(),
             type: "user",
             ts: Date.now(),
-            data: { text: CONTINUATION_PROMPT, from: ctx.from },
+            data: { text: CONTINUATION_PROMPT, from: ctx.from, transient: true },
           }
           await this.deps.session.append(sessionId, continueEvent)
           history.push(continueEvent)
@@ -171,7 +171,7 @@ export class LoopService {
             id: randomUUID(),
             type: "assistant",
             ts: Date.now(),
-            data: { text: response.text },
+            data: { text: response.text, transient: true },
           }
           await this.deps.session.append(sessionId, partialEvent)
           history.push(partialEvent)
@@ -181,7 +181,7 @@ export class LoopService {
             id: randomUUID(),
             type: "user",
             ts: Date.now(),
-            data: { text: buildAnchoredContinuationPrompt(lastSnippet), from: ctx.from },
+            data: { text: buildAnchoredContinuationPrompt(lastSnippet), from: ctx.from, transient: true },
           }
           await this.deps.session.append(sessionId, continueEvent)
           history.push(continueEvent)

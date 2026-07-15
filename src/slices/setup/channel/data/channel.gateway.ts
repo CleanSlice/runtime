@@ -1,6 +1,7 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
 import type { ChannelConfig, IChannelGroup, Message, MessagePart } from "../domain/channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
+import type { SessionActivity } from "../../../agent/session/domain/activity"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
 import { BridleRepository, type BridleSyncHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
@@ -74,6 +75,13 @@ export class ChannelGateway implements IChannelGateway {
   sendDebug(to: string, payload: IBridleDebugPayload): void {
     if (this.repository instanceof BridleRepository) {
       this.repository.sendDebug(to, payload)
+    }
+  }
+
+  /** Emit a live session-activity signal — only effective on a bridle channel. */
+  reportActivity(activity: SessionActivity): void {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.reportActivity(activity)
     }
   }
 

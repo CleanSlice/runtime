@@ -300,6 +300,11 @@ export class AgentRuntime {
   /** Connect to messaging channels and start listening. */
   private async connectChannels(): Promise<void> {
     this.channel.onMessage(msg => this.handleMessage(msg))
+    // Live chat-index signals: every persisted user/assistant turn is reported
+    // to the hub over the agent socket (no-op when bridle isn't connected).
+    this.session.setActivityReporter({
+      report: activity => this.channel.reportSessionActivity(activity),
+    })
     await this.channel.start()
   }
 
