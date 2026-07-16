@@ -8,6 +8,7 @@ import {
   type IMessageUiSubmitPart,
 } from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
+import type { SessionActivity } from "../../../../../agent/session/domain/activity"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
 import { createLogger } from "../../../../logger"
@@ -236,6 +237,16 @@ export class BridleRepository implements IChannelGateway {
   /** Whether the hub has told us debug is on for this bot. */
   isDebugEnabled(): boolean {
     return this.debugEnabled
+  }
+
+  /**
+   * Emit a live session-activity signal to the hub (Phase 3 realtime chat
+   * index). Best-effort: silent no-op when the socket is offline — the ranch
+   * S3 reconcile is the safety net.
+   */
+  reportActivity(activity: SessionActivity): void {
+    if (!this.socket?.connected) return
+    this.socket.emit("session_activity", activity)
   }
 
   onMessage(handler: (msg: Message) => Promise<void>): void {

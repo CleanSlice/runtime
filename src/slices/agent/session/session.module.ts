@@ -3,6 +3,7 @@ import type { ILlmGateway } from "../../setup/llm/domain/llm.gateway"
 import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
 import { CompactionService } from "./domain/compaction.service"
+import type { IActivityReporter } from "./domain/activity"
 
 export interface SessionConfig {
   compactionThreshold?: number
@@ -30,6 +31,10 @@ export class SessionModule {
 
   touch(sessionId: string): void {
     this.service.touch(sessionId)
+  }
+
+  setActivityReporter(reporter: IActivityReporter): void {
+    this.service.setActivityReporter(reporter)
   }
 
   async append(sessionId: string, event: Event): Promise<void> {

@@ -1,5 +1,6 @@
 export * from "./domain/session.types"
 export * from "./domain/session.gateway"
 export * from "./domain/session.service"
+export * from "./domain/activity"
 export * from "./data/session.gateway"
 export * from "./session.module"
