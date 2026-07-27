@@ -85,12 +85,22 @@ export class S3SyncService implements ISyncGateway {
     if (this.s3) return this.s3
     const { S3Client } = await getS3Module()
     const endpoint = this.s3Config.endpoint ?? process.env.S3_ENDPOINT
+
+    // Only pass explicit credentials when a real access key is present. On
+    // Kubernetes with an IAM role (IRSA), no AWS_ACCESS_KEY_ID env var exists —
+    // passing empty-string credentials would OVERRIDE the SDK's default
+    // credential provider chain (which resolves the IRSA web-identity token /
+    // instance profile), producing "authorization header is malformed; a
+    // non-empty Access Key (AKID) must be provided". Omitting `credentials`
+    // lets the default chain do its job.
+    const accessKeyId = this.s3Config.accessKeyId ?? process.env.AWS_ACCESS_KEY_ID
+    const secretAccessKey = this.s3Config.secretAccessKey ?? process.env.AWS_SECRET_ACCESS_KEY
+
     this.s3 = new S3Client({
       region: this.s3Config.region ?? process.env.AWS_REGION ?? "us-east-1",
-      credentials: {
-        accessKeyId: this.s3Config.accessKeyId ?? process.env.AWS_ACCESS_KEY_ID ?? "",
-        secretAccessKey: this.s3Config.secretAccessKey ?? process.env.AWS_SECRET_ACCESS_KEY ?? "",
-      },
+      ...(accessKeyId && secretAccessKey
+        ? { credentials: { accessKeyId, secretAccessKey } }
+        : {}),
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     })
     return this.s3
