@@ -207,7 +207,11 @@ export class CommandService {
       return { handled: true }
     }
     const user = this.deps.access.getUser(ctx.from) ?? this.deps.access.registerPending(ctx.from)
-    await send(`👋 Hi! To get access, send this code to the bot owner:\n\n🔑 *${user.accessCode}*`)
+    if (!user.accessCode) {
+      await send(`👋 Hi! You're not in the allowlist yet. Contact the bot owner for access.`)
+    } else {
+      await send(`👋 Hi! To get access, send this code to the bot owner:\\n\\n🔑 *${user.accessCode}*`)
+    }  
     return { handled: true }
   }
 }
