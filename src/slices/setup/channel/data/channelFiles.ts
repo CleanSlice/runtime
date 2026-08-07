@@ -52,6 +52,45 @@ export async function deleteChannelJson(
   return true
 }
 
+// ── Channel status file ───────────────────────────────────────
+// `data/channels/status.json` — the runtime's report of live channel state,
+// written on every start success/failure, replace, and removal. Runtime is
+// the ONLY writer; the platform reads it (merged into GET /agents/:id/channels)
+// so the admin UI can show connected/disconnected + reason instead of
+// guessing from config presence. Absence of the file or of a key means
+// "unknown", never "disconnected". Rides the same S3 sync as the config files.
+
+export interface IChannelStatusEntry {
+  connected: boolean
+  error?: string       // start-failure reason, present only when disconnected
+  updatedAt: number    // unix ms of the last state change
+}
+
+export type IChannelStatusFile = Record<string, IChannelStatusEntry>
+
+export function channelStatusPath(agentDir: string): string {
+  return join(channelsDirPath(agentDir), "status.json")
+}
+
+export async function loadChannelStatus(agentDir: string): Promise<IChannelStatusFile> {
+  return (await readJson<IChannelStatusFile>(channelStatusPath(agentDir))) ?? {}
+}
+
+/**
+ * Read-modify-write a single channel's status entry. Pass null to drop the
+ * entry (channel removed — its state is no longer known, not "disconnected").
+ */
+export async function updateChannelStatus(
+  agentDir: string,
+  type: string,
+  entry: IChannelStatusEntry | null,
+): Promise<void> {
+  const file = await loadChannelStatus(agentDir)
+  if (entry === null) delete file[type]
+  else file[type] = entry
+  await writeJsonAtomic(channelStatusPath(agentDir), file)
+}
+
 // ── Legacy migration ──────────────────────────────────────────
 // Pre-0.23 layouts stored everything in flat files:
 //   data/channels.json         { telegram: {botToken,...}, slack: {...} }

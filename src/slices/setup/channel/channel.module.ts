@@ -4,20 +4,28 @@ import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
 import type { BridleSyncHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
 import type { SessionActivity } from "../../agent/session/domain/activity"
-import { migrateLegacyChannelFiles, type ChannelFileType } from "./data/channelFiles"
+import { existsSync } from "fs"
+import {
+  migrateLegacyChannelFiles,
+  updateChannelStatus,
+  type ChannelFileType,
+} from "./data/channelFiles"
 import {
   type ITelegramFile,
   loadTelegramFile,
   saveTelegramFile,
+  telegramFilePath,
   updateTelegramFile,
-  deleteTelegramFile,
 } from "./data/repositories/telegram/telegramFile"
 import {
   type ISlackFile,
   loadSlackFile,
   saveSlackFile,
-  deleteSlackFile,
+  slackFilePath,
 } from "./data/repositories/slack/slackFile"
+import { createLogger } from "../logger"
+
+const log = createLogger("channels")
 
 export type { BridleSyncHandler, IBridleDebugPayload }
 export type { ChannelFileType }
@@ -49,12 +57,22 @@ export class ChannelModule {
   // <agentDir>/data/channels/<type>.json. Without it, the module is in
   // legacy/mock mode and write methods throw.
   private agentDir?: string
+  // Credential fingerprint per channel type — lets reconcileFromDisk tell
+  // "same config, leave it alone" from "token changed, replace the gateway"
+  // without the gateways having to expose their secrets.
+  private activeKeys = new Map<string, string>()
+  // Mock channels mean a test/paddock harness — reconcile must never mix
+  // real file/env channels into those runs.
+  private hasMock = false
 
   constructor(configs: ChannelConfig[], agentDir?: string) {
     this.service = new ChannelService()
     this.agentDir = agentDir
     for (const cfg of configs) {
       this.service.add(new ChannelGateway(cfg, agentDir))
+      if (cfg.type === "mock") this.hasMock = true
+      const key = configKey(cfg)
+      if (key) this.activeKeys.set(cfg.type, key)
     }
   }
 
@@ -71,14 +89,21 @@ export class ChannelModule {
     const slack = await loadSlackFile(agentDir)
     const configs: ChannelConfig[] = []
 
-    if (telegram.botToken) {
+    // A tombstone (`removed: true`) blocks the env fallback: the pod env
+    // keeps the old token until the next redeploy, and without the tombstone
+    // a restart would resurrect an explicitly removed channel. A file with
+    // no token but no tombstone (e.g. groups-only, bot configured via env)
+    // still falls through to env.
+    if (telegram.botToken && !telegram.removed) {
       configs.push({ type: "telegram", token: telegram.botToken })
       applyTelegramToEnv(telegram)
-    } else if (process.env.TELEGRAM_BOT_TOKEN) {
+    } else if (!telegram.removed && process.env.TELEGRAM_BOT_TOKEN) {
       configs.push({ type: "telegram", token: process.env.TELEGRAM_BOT_TOKEN })
     }
 
-    if (slack.botToken && slack.appToken) {
+    if (slack.removed) {
+      // explicitly removed — skip both file and env
+    } else if (slack.botToken && slack.appToken) {
       configs.push({
         type: "slack",
         botToken: slack.botToken,
@@ -99,6 +124,43 @@ export class ChannelModule {
     }
 
     return configs
+  }
+
+  /**
+   * Re-resolve file/env channel configs and reconcile the registered set —
+   * called after the S3 pull lands persisted state (restoreState), BEFORE
+   * channels start. At construction time a fresh container filesystem has no
+   * data/channels/* yet, so a chat-configured bot resolved to nothing and
+   * stayed dead after every restart; this closes that race. Only registers
+   * gateways — the subsequent ChannelService.start() starts everything once.
+   */
+  async reconcileFromDisk(): Promise<void> {
+    if (!this.agentDir || this.hasMock) return
+    const resolved = await ChannelModule.resolveBootConfigs(this.agentDir)
+    for (const type of ["telegram", "slack"] as const) {
+      const live = new Set(this.service.listNames())
+      const cfg = resolved.find(c => c.type === type)
+      if (!cfg) {
+        // Tombstoned or config gone from every source — nothing may run.
+        if (live.has(type)) {
+          await this.service.removeAndStop(type)
+          this.activeKeys.delete(type)
+          await this.writeStatusGone(type)
+          log.info(`${type} deregistered after state pull (removed or unconfigured)`)
+        }
+        continue
+      }
+      const key = configKey(cfg)!
+      if (live.has(type)) {
+        if (this.activeKeys.get(type) === key) continue
+        await this.service.removeAndStop(type)
+        log.info(`${type} credentials changed on disk — replacing gateway`)
+      } else {
+        log.info(`${type} config landed with pulled state — registering`)
+      }
+      this.service.add(new ChannelGateway(cfg, this.agentDir))
+      this.activeKeys.set(type, key)
+    }
   }
 
   /**
@@ -148,7 +210,13 @@ export class ChannelModule {
   }
 
   async start(): Promise<void> {
-    await this.service.start()
+    const results = await this.service.start()
+    // Persist live state per channel so the platform (admin Channels tab)
+    // sees connected/disconnected + reason instead of guessing from config
+    // presence. The file rides the regular S3 sync.
+    for (const r of results) {
+      await this.writeStatus(r.name, r.ok, r.error)
+    }
   }
 
   async stop(): Promise<void> {
@@ -186,6 +254,7 @@ export class ChannelModule {
       botToken: entry.botToken,
       botName: entry.botName,
       adminIds: entry.adminIds,
+      removed: undefined, // setting credentials clears a prior tombstone
     })
     try {
       await this.service.removeAndStop("telegram")
@@ -194,10 +263,13 @@ export class ChannelModule {
         token: entry.botToken,
       }, this.agentDir)
       await this.service.addAndStart(gateway)
+      this.activeKeys.set("telegram", entry.botToken)
       applyTelegramToEnv(entry)
+      await this.writeStatus("telegram", true)
     } catch (err) {
       // Roll the file back so list() doesn't lie about state.
       await saveTelegramFile(this.agentDir!, prev)
+      await this.writeStatus("telegram", false, (err as Error).message)
       throw err
     }
   }
@@ -214,25 +286,35 @@ export class ChannelModule {
         appToken: entry.appToken,
       })
       await this.service.addAndStart(gateway)
+      this.activeKeys.set("slack", `${entry.botToken}\n${entry.appToken}`)
       process.env.SLACK_BOT_TOKEN = entry.botToken
       process.env.SLACK_APP_TOKEN = entry.appToken
+      await this.writeStatus("slack", true)
     } catch (err) {
       await saveSlackFile(this.agentDir!, prev)
+      await this.writeStatus("slack", false, (err as Error).message)
       throw err
     }
   }
 
   async removeChannel(type: ChannelFileType): Promise<boolean> {
     this.requireAgentDir("removeChannel")
-    // Removing a channel wipes its whole file — for telegram that includes
-    // the group registry (groups belong to that bot token; a future bot
+    const path = type === "telegram"
+      ? telegramFilePath(this.agentDir!)
+      : slackFilePath(this.agentDir!)
+    const hadFile = existsSync(path)
+    // Tombstone instead of delete: the pod env keeps the old token until the
+    // next redeploy, and a missing file would let the env fallback resurrect
+    // the channel on restart. Credentials and the telegram group registry are
+    // dropped on purpose (groups belong to that bot token; a future bot
     // rebuilds its own from my_chat_member updates).
-    const removed = type === "telegram"
-      ? await deleteTelegramFile(this.agentDir!)
-      : await deleteSlackFile(this.agentDir!)
+    if (type === "telegram") await saveTelegramFile(this.agentDir!, { removed: true })
+    else await saveSlackFile(this.agentDir!, { removed: true })
+    this.activeKeys.delete(type)
     // A live channel may still exist even with no file (env-sourced).
     const stopped = await this.service.removeAndStop(type)
-    return removed || stopped
+    await this.writeStatusGone(type)
+    return hadFile || stopped
   }
 
   /**
@@ -246,7 +328,10 @@ export class ChannelModule {
     const liveNames = new Set(this.service.listNames())
     const out: IChannelInfo[] = []
 
-    if (telegram.botToken) {
+    if (telegram.removed) {
+      // Explicitly removed — hide it even while the pod env still carries
+      // the old token (until the next redeploy re-renders the env).
+    } else if (telegram.botToken) {
       out.push({
         type: "telegram",
         source: "file",
@@ -266,7 +351,9 @@ export class ChannelModule {
       })
     }
 
-    if (slack.botToken && slack.appToken) {
+    if (slack.removed) {
+      // see the telegram tombstone note above
+    } else if (slack.botToken && slack.appToken) {
       out.push({
         type: "slack",
         source: "file",
@@ -303,6 +390,43 @@ export class ChannelModule {
         `[channels] ${op} requires agentDir — module was constructed without it (legacy/mock mode)`,
       )
     }
+  }
+
+  /**
+   * Best-effort status persistence — a failed write must never take a
+   * channel (or boot) down with it. `connected: null` is expressed by
+   * dropping the entry (pass null via writeStatusGone).
+   */
+  private async writeStatus(type: string, connected: boolean, error?: string): Promise<void> {
+    if (!this.agentDir || this.hasMock) return
+    try {
+      await updateChannelStatus(this.agentDir, type, {
+        connected,
+        ...(error ? { error } : {}),
+        updatedAt: Date.now(),
+      })
+    } catch (err) {
+      log.warn(`failed to persist ${type} status`, err)
+    }
+  }
+
+  /** Drop a channel's status entry — its state is unknown, not disconnected. */
+  private async writeStatusGone(type: string): Promise<void> {
+    if (!this.agentDir || this.hasMock) return
+    try {
+      await updateChannelStatus(this.agentDir, type, null)
+    } catch (err) {
+      log.warn(`failed to drop ${type} status`, err)
+    }
+  }
+}
+
+/** Credential fingerprint for reconcile diffing; undefined for mock/bridle. */
+function configKey(cfg: ChannelConfig): string | undefined {
+  switch (cfg.type) {
+    case "telegram": return cfg.token
+    case "slack": return `${cfg.botToken}\n${cfg.appToken}`
+    default: return undefined
   }
 }
 

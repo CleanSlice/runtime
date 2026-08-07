@@ -305,6 +305,16 @@ export class AgentRuntime {
     this.session.setActivityReporter({
       report: activity => this.channel.reportSessionActivity(activity),
     })
+    // Channel configs were resolved before restoreState() pulled S3 state —
+    // on a fresh container fs the per-channel files weren't on disk yet, so
+    // file-configured channels (chat-configured Telegram) resolved to nothing
+    // and stayed dead after every restart. Reconcile against the pulled state
+    // before starting; a reconcile failure degrades to the pre-pull set.
+    try {
+      await this.channel.reconcileFromDisk()
+    } catch (err) {
+      s3Log.warn(`channel reconcile after pull failed — starting with boot-time channel set. Error: ${(err as Error).message}`)
+    }
     await this.channel.start()
   }
 

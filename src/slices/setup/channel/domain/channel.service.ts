@@ -5,6 +5,12 @@ import { createLogger } from "../../logger"
 
 const log = createLogger("channel")
 
+export interface IChannelStartResult {
+  name: string
+  ok: boolean
+  error?: string
+}
+
 export class ChannelService {
   private channels: IChannelGateway[] = []
   private handler?: (msg: Message) => Promise<void>
@@ -21,13 +27,18 @@ export class ChannelService {
     }
   }
 
-  async start(): Promise<void> {
+  async start(): Promise<IChannelStartResult[]> {
     const results = await Promise.allSettled(this.channels.map(ch => ch.start()))
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].status === "rejected") {
-        log.error(`${this.channels[i].name} failed to start`, (results[i] as PromiseRejectedResult).reason)
+    return results.map((result, i) => {
+      const name = this.channels[i].name
+      if (result.status === "rejected") {
+        log.error(`${name} failed to start`, result.reason)
+        const reason = result.reason
+        const error = reason instanceof Error ? reason.message : String(reason)
+        return { name, ok: false, error }
       }
-    }
+      return { name, ok: true }
+    })
   }
 
   async stop(): Promise<void> {

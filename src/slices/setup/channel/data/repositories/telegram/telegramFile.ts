@@ -29,6 +29,11 @@ export interface ITelegramFile {
   botToken?: string
   botName?: string
   adminIds?: string          // comma-separated Telegram chat ids treated as admins
+  // Tombstone: channel was explicitly removed. Mutually exclusive with
+  // credentials — a removed-file must not fall back to TELEGRAM_* env vars
+  // (the pod env keeps the old token until the next redeploy, and without
+  // the tombstone a restart would resurrect the deleted channel).
+  removed?: boolean
   groups?: Record<string, ITelegramGroupEntry>
 }
 

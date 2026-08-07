@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { channelFilePath, migrateLegacyChannelFiles } from "./channelFiles"
+import {
+  channelFilePath,
+  channelStatusPath,
+  loadChannelStatus,
+  migrateLegacyChannelFiles,
+  updateChannelStatus,
+} from "./channelFiles"
 import { loadTelegramFile } from "./repositories/telegram/telegramFile"
 import { loadSlackFile } from "./repositories/slack/slackFile"
 
@@ -81,5 +87,25 @@ describe("migrateLegacyChannelFiles", () => {
     const telegram = await loadTelegramFile(dir)
     expect(telegram.groups?.["-100"]?.type).toBe("group")
     expect(existsSync(legacyGroups)).toBe(false)
+  })
+})
+
+describe("channel status file", () => {
+  test("missing file → empty, update/read/drop round-trip", async () => {
+    const dir = agentDir()
+    expect(await loadChannelStatus(dir)).toEqual({})
+
+    await updateChannelStatus(dir, "telegram", { connected: true, updatedAt: 100 })
+    await updateChannelStatus(dir, "bridle", { connected: false, error: "socket closed", updatedAt: 200 })
+
+    const status = await loadChannelStatus(dir)
+    expect(status.telegram).toEqual({ connected: true, updatedAt: 100 })
+    expect(status.bridle?.error).toBe("socket closed")
+    expect(existsSync(channelStatusPath(dir))).toBe(true)
+
+    // null drops the entry (removed channel = unknown, not disconnected)
+    await updateChannelStatus(dir, "telegram", null)
+    expect((await loadChannelStatus(dir)).telegram).toBeUndefined()
+    expect((await loadChannelStatus(dir)).bridle).toBeDefined()
   })
 })
