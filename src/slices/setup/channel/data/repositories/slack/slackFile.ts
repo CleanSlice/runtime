@@ -10,6 +10,9 @@ import {
 export interface ISlackFile {
   botToken?: string
   appToken?: string
+  // Tombstone: channel was explicitly removed — blocks the SLACK_* env
+  // fallback on restart (see ITelegramFile.removed).
+  removed?: boolean
 }
 
 export function slackFilePath(agentDir: string): string {

@@ -17,6 +17,23 @@ function gateway(
   }
 }
 
+describe("ChannelService.start", () => {
+  test("returns per-channel outcomes, isolating failures", async () => {
+    const service = new ChannelService()
+    service.add(gateway("telegram"))
+    const broken = gateway("slack")
+    broken.start = () => Promise.reject(new Error("401 invalid_auth"))
+    service.add(broken)
+
+    const results = await service.start()
+
+    expect(results).toEqual([
+      { name: "telegram", ok: true },
+      { name: "slack", ok: false, error: "401 invalid_auth" },
+    ])
+  })
+})
+
 describe("ChannelService.listGroups", () => {
   test("aggregates groups per channel, skipping channels without the concept", async () => {
     const service = new ChannelService()
