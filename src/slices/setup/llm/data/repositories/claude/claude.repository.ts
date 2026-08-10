@@ -64,6 +64,28 @@ function cacheStats(usage: unknown): { cacheWrite: number; cacheRead: number } {
   return { cacheWrite: u.cache_creation_input_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0 }
 }
 
+/** Anthropic pricing multipliers relative to the base input-token rate. */
+const CACHE_READ_MULTIPLIER = 0.1
+const CACHE_WRITE_1H_MULTIPLIER = 2 // 1h TTL writes; 5m TTL would be 1.25
+
+/**
+ * Billing-equivalent input tokens. Anthropic bills cached prefix reads at
+ * 0.1× the input rate and 1h-TTL writes at 2×, but reports them outside
+ * `input_tokens`. Downstream cost accounting (usage.json → ranch panel)
+ * multiplies inputTokens by the flat input rate, so we fold cache traffic in
+ * at its price ratio — dollars stay exact without a reporting-schema change.
+ * The per-call log line keeps the raw split for debugging.
+ */
+export function billableInputTokens(usage: unknown): number {
+  const u = (usage ?? {}) as { input_tokens?: number | null } & Record<string, unknown>
+  const { cacheWrite, cacheRead } = cacheStats(usage)
+  return Math.round(
+    (u.input_tokens ?? 0) +
+    cacheRead * CACHE_READ_MULTIPLIER +
+    cacheWrite * CACHE_WRITE_1H_MULTIPLIER
+  )
+}
+
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
 function stripThinking(text: string): string {
   return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
@@ -569,9 +591,9 @@ export class ClaudeRepository implements ILlmGateway {
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             stopReason: (stopReason ?? "end_turn") as ModelResponse["stopReason"],
             usage: streamUsage ? {
-              inputTokens: streamUsage.input_tokens,
+              inputTokens: billableInputTokens(streamUsage),
               outputTokens: streamUsage.output_tokens,
-              totalTokens: streamUsage.input_tokens + streamUsage.output_tokens,
+              totalTokens: billableInputTokens(streamUsage) + streamUsage.output_tokens,
               credentialId: `oauth-${attemptIndex}`,
               model,
             } : undefined,
@@ -676,9 +698,9 @@ export class ClaudeRepository implements ILlmGateway {
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             stopReason: response.stop_reason as ModelResponse["stopReason"],
             usage: response.usage ? {
-              inputTokens: response.usage.input_tokens,
+              inputTokens: billableInputTokens(response.usage),
               outputTokens: response.usage.output_tokens,
-              totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+              totalTokens: billableInputTokens(response.usage) + response.usage.output_tokens,
               credentialId: `oauth-${attemptIndex}`,
               model,
             } : undefined,

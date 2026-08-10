@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   EXTENDED_CACHE_TTL_BETA,
+  billableInputTokens,
   buildApiKeyBetaHeader,
   buildOauthBetaHeader,
   buildSystemParam,
@@ -38,5 +39,36 @@ describe("beta headers", () => {
 
   test("beta flag is the documented extended-TTL identifier", () => {
     expect(EXTENDED_CACHE_TTL_BETA).toBe("extended-cache-ttl-2025-04-11")
+  })
+})
+
+describe("billableInputTokens", () => {
+  test("without cache activity equals raw input tokens (pre-caching behavior)", () => {
+    expect(billableInputTokens({ input_tokens: 24_600, output_tokens: 105 })).toBe(24_600)
+    expect(billableInputTokens({ input_tokens: 24_600, cache_creation_input_tokens: null, cache_read_input_tokens: null })).toBe(24_600)
+  })
+
+  test("cache reads fold in at 0.1× the input rate", () => {
+    // Observed live: in=11, cache_read=8025 → 11 + 802.5 ≈ 814 billing-equivalent
+    expect(billableInputTokens({ input_tokens: 11, cache_read_input_tokens: 8025 })).toBe(814)
+  })
+
+  test("1h-TTL cache writes fold in at 2× the input rate", () => {
+    // Observed live: in=11, cache_write=8025 → 11 + 16050 = 16061
+    expect(billableInputTokens({ input_tokens: 11, cache_creation_input_tokens: 8025 })).toBe(16_061)
+  })
+
+  test("mixed usage sums all three components", () => {
+    expect(billableInputTokens({
+      input_tokens: 100,
+      cache_read_input_tokens: 1000,
+      cache_creation_input_tokens: 2000,
+    })).toBe(100 + 100 + 4000)
+  })
+
+  test("missing or null fields are treated as zero", () => {
+    expect(billableInputTokens({})).toBe(0)
+    expect(billableInputTokens(undefined)).toBe(0)
+    expect(billableInputTokens({ input_tokens: null, cache_read_input_tokens: 500 })).toBe(50)
   })
 })
