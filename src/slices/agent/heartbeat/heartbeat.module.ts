@@ -7,16 +7,35 @@ const DEFAULT_PROMPT = `Read .agent/HEARTBEAT.md if it exists. Follow it strictl
 
 const log = createLogger("heartbeat")
 
+export const DEFAULT_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000
+
+/**
+ * Guard for config-sourced intervals: agent.config.json values pass through
+ * unvalidated, and a 0/negative interval would tick continuously — the exact
+ * cost runaway this module is supposed to prevent.
+ */
+export function resolveIntervalMs(candidate: number | undefined): number {
+  if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+    return candidate
+  }
+  if (candidate !== undefined) {
+    log.warn(`invalid heartbeat interval (${String(candidate)}), falling back to ${DEFAULT_HEARTBEAT_INTERVAL_MS / 60000}min`)
+  }
+  return DEFAULT_HEARTBEAT_INTERVAL_MS
+}
+
 export class HeartbeatModule {
   private service: HeartbeatService
   private handler?: HeartbeatHandler
   private interval?: ReturnType<typeof setInterval>
+  private intervalMs: number
 
   constructor(
     private agentDir: string,
-    private intervalMs = 30 * 60 * 1000,
+    intervalMs?: number,
     private prompt = DEFAULT_PROMPT,
   ) {
+    this.intervalMs = resolveIntervalMs(intervalMs)
     this.service = new HeartbeatService(new HeartbeatGateway(agentDir))
   }
 
