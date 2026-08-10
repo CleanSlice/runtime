@@ -28,6 +28,42 @@ function contextWindowFor(model: string): number {
 
 const log = createLogger("llm")
 
+/** Extended cache TTL beta — enables `{ttl: "1h"}` on cache_control breakpoints. */
+export const EXTENDED_CACHE_TTL_BETA = "extended-cache-ttl-2025-04-11"
+
+export function buildOauthBetaHeader(): string {
+  return `oauth-2025-04-20,claude-code-20250219,${EXTENDED_CACHE_TTL_BETA}`
+}
+
+export function buildApiKeyBetaHeader(): string {
+  return EXTENDED_CACHE_TTL_BETA
+}
+
+/**
+ * System prompt as a cache-marked content block. Tools render before system in
+ * the prompt prefix, so this single breakpoint caches tool definitions and the
+ * system prompt together. The 1h TTL (refreshed on every hit) keeps the entry
+ * warm across default 30-min heartbeat ticks; cache misses and prompts below
+ * the model's cacheable minimum silently process at full price.
+ */
+export function buildSystemParam(systemPrompt: string): Array<{
+  type: "text"
+  text: string
+  cache_control: { type: "ephemeral"; ttl: "1h" }
+}> {
+  return [{
+    type: "text",
+    text: systemPrompt,
+    cache_control: { type: "ephemeral", ttl: "1h" },
+  }]
+}
+
+/** Cache token counts from a response usage payload, absent fields → 0. */
+function cacheStats(usage: unknown): { cacheWrite: number; cacheRead: number } {
+  const u = (usage ?? {}) as { cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null }
+  return { cacheWrite: u.cache_creation_input_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0 }
+}
+
 /** Strip <thinking>...</thinking> blocks that some models emit as raw text */
 function stripThinking(text: string): string {
   return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim()
@@ -229,10 +265,13 @@ export class ClaudeRepository implements ILlmGateway {
       if (key.startsWith("sk-ant-oat")) {
         oauthClients.push(new AnthropicCtor({
           authToken: key,
-          defaultHeaders: { "anthropic-beta": "oauth-2025-04-20,claude-code-20250219" },
+          defaultHeaders: { "anthropic-beta": buildOauthBetaHeader() },
         }))
       } else if (!apiKeyClient) {
-        apiKeyClient = new AnthropicCtor({ apiKey: key })
+        apiKeyClient = new AnthropicCtor({
+          apiKey: key,
+          defaultHeaders: { "anthropic-beta": buildApiKeyBetaHeader() },
+        })
       }
     }
 
@@ -467,7 +506,7 @@ export class ClaudeRepository implements ILlmGateway {
             streamResponse = await this.getClient().messages.stream({
               model,
               max_tokens: this.maxTokens,
-              system: systemPrompt,
+              system: buildSystemParam(systemPrompt),
               messages,
               ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
             })
@@ -521,6 +560,10 @@ export class ClaudeRepository implements ILlmGateway {
 
           // Success — clear any prior 429 streak on this token.
           this.markHealthy(attemptIndex)
+          if (streamUsage) {
+            const { cacheWrite, cacheRead } = cacheStats(streamUsage)
+            log.info(`usage[${model}] in=${streamUsage.input_tokens} out=${streamUsage.output_tokens} cache_write=${cacheWrite} cache_read=${cacheRead}`)
+          }
           return {
             text: stripThinking(accumulated),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -602,7 +645,7 @@ export class ClaudeRepository implements ILlmGateway {
             response = await this.getClient().messages.create({
               model,
               max_tokens: this.maxTokens,
-              system: systemPrompt,
+              system: buildSystemParam(systemPrompt),
               messages,
               ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
             })
@@ -624,6 +667,10 @@ export class ClaudeRepository implements ILlmGateway {
             })
 
           this.markHealthy(attemptIndex)
+          if (response.usage) {
+            const { cacheWrite, cacheRead } = cacheStats(response.usage)
+            log.info(`usage[${model}] in=${response.usage.input_tokens} out=${response.usage.output_tokens} cache_write=${cacheWrite} cache_read=${cacheRead}`)
+          }
           return {
             text: stripThinking(text),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
