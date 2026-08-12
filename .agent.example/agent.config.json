@@ -23,7 +23,7 @@
   "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded. review: background self-improvement pass — every everyTurns turns, durable facts from the conversation are promoted into MEMORY.md via the auxiliary LLM. Set review.enabled false or everyTurns 0 to disable.",
   "memory": {
     "limits": {
-      "soul": 6000,
+      "soul": 12000,
       "user": 1375,
       "memory": 2200,
       "heartbeat": 1000,
