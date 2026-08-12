@@ -32,7 +32,7 @@ export interface MemoryLimits {
  * yesterday + today, so the injected window is ~2× this value).
  */
 export const DEFAULT_MEMORY_LIMITS: MemoryLimits = {
-  soul: 6000,
+  soul: 12000,
   user: 1375,
   memory: 2200,
   heartbeat: 1000,
