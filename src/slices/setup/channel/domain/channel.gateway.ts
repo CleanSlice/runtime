@@ -13,6 +13,12 @@ export interface IChannelGateway {
    */
   streamSend?(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void>
   /**
+   * Ephemeral "agent is working" signal for the channel's UI. Optional —
+   * only channels with a live typing affordance (bridle) implement it.
+   * Best-effort: implementations must never throw on a dead connection.
+   */
+  sendTyping?(to: string): Promise<void>
+  /**
    * Groups/rooms/channels the bot works in, in a channel-agnostic shape.
    * Optional — channels without the concept (bridle) don't implement it.
    * Telegram serves its persisted registry; Slack queries the API live.

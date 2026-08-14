@@ -221,6 +221,16 @@ export class BridleRepository implements IChannelGateway {
   }
 
   /**
+   * Bare typing signal so the browser lights its thinking indicator before
+   * the first LLM byte and during tool phases. Best-effort: silent no-op
+   * when the socket is offline.
+   */
+  async sendTyping(to: string): Promise<void> {
+    if (!this.socket?.connected) return
+    this.socket.emit("typing", { clientId: to, ts: Date.now() })
+  }
+
+  /**
    * Best-effort debug emission. Silent no-op if the socket is offline — debug
    * traces are always disposable; we never want to block the chat path.
    */

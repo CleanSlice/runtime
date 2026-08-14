@@ -64,6 +64,14 @@ export class ChannelGateway implements IChannelGateway {
     })
   }
 
+  /** Best-effort typing signal — only effective when the repository supports it. */
+  sendTyping(to: string): Promise<void> {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.sendTyping(to)
+    }
+    return Promise.resolve()
+  }
+
   /** Register a sync handler — only effective when this is a bridle channel. */
   onSync(handler: BridleSyncHandler): void {
     if (this.repository instanceof BridleRepository) {

@@ -98,6 +98,9 @@ export class RuntimeService {
           tools: visibleTools,
           send,
           streamSend: (ch, to, streamer) => this.deps.channel.streamSend(ch, to, streamer),
+          sendTyping: !isInternal && msg.channel !== "internal"
+            ? () => { void this.deps.channel.sendTyping(msg.channel, msg.from) }
+            : undefined,
           agentConfig: this.deps.config,
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
           access: this.deps.access,

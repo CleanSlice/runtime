@@ -110,6 +110,17 @@ export class ChannelService {
     await ch.send(to, text, parts)
   }
 
+  /** Best-effort typing signal — no-op when the channel doesn't support it. */
+  async sendTyping(channel: string, to: string): Promise<void> {
+    const ch = this.channels.find(c => c.name === channel)
+    if (!ch?.sendTyping) return
+    try {
+      await ch.sendTyping(to)
+    } catch (err) {
+      log.warn(`${channel} sendTyping failed`, err)
+    }
+  }
+
   async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)

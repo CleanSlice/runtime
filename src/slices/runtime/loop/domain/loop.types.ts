@@ -31,6 +31,13 @@ export interface ILoopContext {
   tools: Tool[]
   send: (text: string, parts?: MessagePart[]) => Promise<void>
   streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<void>
+  /**
+   * Best-effort "agent is working" signal to the originating channel's UI.
+   * Fired at turn start and before each tool batch so the user never stares
+   * at a dead chat during tool-only phases. Undefined for internal turns and
+   * for channels without a typing affordance.
+   */
+  sendTyping?: () => void
   agentConfig: import("../../init").IAgentConfig
   reloadSkills: () => Promise<void>
   access?: AccessModule

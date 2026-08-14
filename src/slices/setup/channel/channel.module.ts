@@ -240,6 +240,11 @@ export class ChannelModule {
     await this.service.streamSend(channel, to, streamer)
   }
 
+  /** Best-effort typing signal to a channel's UI — no-op for channels without one. */
+  async sendTyping(channel: string, to: string): Promise<void> {
+    await this.service.sendTyping(channel, to)
+  }
+
   // ── Runtime channel mutation ────────────────────────────────────────────
   // Tools call these to let the agent configure its own channels mid-session.
   // Persist-first, connect-second so a successful tool call survives restart;

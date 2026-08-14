@@ -68,6 +68,11 @@ export class LoopService {
     let errorLimitHit = false
     let accumulatedText = ""
 
+    // Light the channel's thinking indicator immediately — the first LLM byte
+    // can be seconds away (prompt build + model latency), and tool-only
+    // iterations would otherwise leave the UI dead until the final response.
+    ctx.sendTyping?.()
+
     while (continueLoop) {
       if (task.controller.signal.aborted) {
         rlog.info(`cancelled`)
@@ -127,6 +132,9 @@ export class LoopService {
       }
 
       if (response.toolCalls && response.toolCalls.length > 0 && !errorLimitHit) {
+        // Keep the indicator alive while tools run — streamSend's own typing
+        // only covers the LLM call, not the tool execution that follows.
+        ctx.sendTyping?.()
         const iterationHadError = await this.executeToolCalls(ctx, response, iterations)
 
         if (iterationHadError) {
