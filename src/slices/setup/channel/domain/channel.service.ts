@@ -1,5 +1,5 @@
 import type { IChannelGateway } from "./channel.gateway"
-import type { IChannelGroup, Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { createLogger } from "../../logger"
 
@@ -118,6 +118,17 @@ export class ChannelService {
       await ch.sendTyping(to)
     } catch (err) {
       log.warn(`${channel} sendTyping failed`, err)
+    }
+  }
+
+  /** Best-effort thinking-step publish — no-op when the channel doesn't support it. */
+  async sendThinking(channel: string, to: string, turnId: string, step?: IThinkingStep): Promise<void> {
+    const ch = this.channels.find(c => c.name === channel)
+    if (!ch?.sendThinking) return
+    try {
+      await ch.sendThinking(to, turnId, step)
+    } catch (err) {
+      log.warn(`${channel} sendThinking failed`, err)
     }
   }
 

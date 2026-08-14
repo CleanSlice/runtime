@@ -1,4 +1,4 @@
-import type { IChannelGroup, Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./channel.types"
 
 export interface IChannelGateway {
   readonly name: string
@@ -18,6 +18,12 @@ export interface IChannelGateway {
    * Best-effort: implementations must never throw on a dead connection.
    */
   sendTyping?(to: string): Promise<void>
+  /**
+   * Publish a live thinking-timeline update: a step, or (with `step`
+   * omitted) the terminal turn-completion signal. Optional — only channels
+   * whose UI renders thinking (bridle) implement it. Best-effort.
+   */
+  sendThinking?(to: string, turnId: string, step?: IThinkingStep): Promise<void>
   /**
    * Groups/rooms/channels the bot works in, in a channel-agnostic shape.
    * Optional — channels without the concept (bridle) don't implement it.

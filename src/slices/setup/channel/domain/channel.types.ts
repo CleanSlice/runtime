@@ -112,6 +112,22 @@ export type MessagePart =
   | IMessageUiPart
   | IMessageUiSubmitPart
 
+// ── Thinking (live reasoning steps) ───────────────────────────
+
+/**
+ * One published unit of agent work inside a live thinking timeline —
+ * channel-agnostic shape emitted via `IChannelGateway.sendThinking`.
+ * `active` before the work starts, `done` (same `id`) when it finishes.
+ * Labels/detail are shown to end users: humanized names and reasoning
+ * prose only, never raw tool params or prompts.
+ */
+export interface IThinkingStep {
+  id: string
+  label: string
+  detail?: string
+  state: "active" | "done"
+}
+
 // ── Message ───────────────────────────────────────────────────
 
 export interface Message {
@@ -130,7 +146,7 @@ export interface Message {
    * channels without the concept (Telegram, email) leave this undefined —
    * agents should default to text when checking.
    *
-   * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`.
+   * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`, `"thinking"`.
    */
   capabilities?: string[]
   /**

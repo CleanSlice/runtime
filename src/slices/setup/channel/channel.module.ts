@@ -1,4 +1,4 @@
-import type { IChannelGroup, Message, MessagePart } from "./domain/channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./domain/channel.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
@@ -243,6 +243,11 @@ export class ChannelModule {
   /** Best-effort typing signal to a channel's UI — no-op for channels without one. */
   async sendTyping(channel: string, to: string): Promise<void> {
     await this.service.sendTyping(channel, to)
+  }
+
+  /** Best-effort thinking-step publish — no-op for channels without thinking UI. */
+  async sendThinking(channel: string, to: string, turnId: string, step?: IThinkingStep): Promise<void> {
+    await this.service.sendThinking(channel, to, turnId, step)
   }
 
   // ── Runtime channel mutation ────────────────────────────────────────────

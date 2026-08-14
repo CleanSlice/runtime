@@ -2,6 +2,7 @@ import type { IChannelGateway } from "../../../domain/channel.gateway"
 import {
   MessagePartTypes,
   buildMessage,
+  type IThinkingStep,
   type Message,
   type MessagePart,
   type IMessageUiPart,
@@ -228,6 +229,25 @@ export class BridleRepository implements IChannelGateway {
   async sendTyping(to: string): Promise<void> {
     if (!this.socket?.connected) return
     this.socket.emit("typing", { clientId: to, ts: Date.now() })
+  }
+
+  /**
+   * Publish one thinking-timeline update: a step (`active`/`done`) or, with
+   * `step` omitted, the terminal turn-completion event. Callers must gate on
+   * the triggering message's `capabilities` including `"thinking"` — old
+   * SDKs and non-browser clients can't render these. Payload is visitor-
+   * facing: humanized labels and reasoning prose only, never tool params.
+   * Best-effort: silent no-op when the socket is offline.
+   */
+  async sendThinking(to: string, turnId: string, step?: IThinkingStep): Promise<void> {
+    if (!this.socket?.connected) return
+    this.socket.emit("thinking", {
+      type: "thinking",
+      clientId: to,
+      turnId,
+      ...(step ? { step } : { done: true }),
+      ts: Date.now(),
+    })
   }
 
   /**

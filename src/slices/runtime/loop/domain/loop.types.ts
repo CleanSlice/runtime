@@ -3,7 +3,7 @@ import type { Tool } from "../../../agent/tool"
 import type { Task } from "../../../agent/task/domain/task.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule, IBridleDebugPayload } from "../../../setup/channel"
-import type { MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { IThinkingStep, MessagePart } from "../../../setup/channel/domain/channel.types"
 
 export interface ILoopConfig {
   maxIterations: number
@@ -38,6 +38,13 @@ export interface ILoopContext {
    * for channels without a typing affordance.
    */
   sendTyping?: () => void
+  /**
+   * Best-effort thinking-timeline publish: a step update, or (with `step`
+   * omitted) the terminal turn-completion signal. Wired only when the
+   * triggering message advertised the `thinking` capability — undefined
+   * means the client can't render it, so the loop skips emission entirely.
+   */
+  sendThinking?: (turnId: string, step?: IThinkingStep) => void
   agentConfig: import("../../init").IAgentConfig
   reloadSkills: () => Promise<void>
   access?: AccessModule

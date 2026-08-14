@@ -1,5 +1,5 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
-import type { ChannelConfig, IChannelGroup, Message, MessagePart } from "../domain/channel.types"
+import type { ChannelConfig, IChannelGroup, IThinkingStep, Message, MessagePart } from "../domain/channel.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../agent/session/domain/activity"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
@@ -67,7 +67,15 @@ export class ChannelGateway implements IChannelGateway {
   /** Best-effort typing signal — only effective when the repository supports it. */
   sendTyping(to: string): Promise<void> {
     if (this.repository instanceof BridleRepository) {
-      this.repository.sendTyping(to)
+      void this.repository.sendTyping(to)
+    }
+    return Promise.resolve()
+  }
+
+  /** Best-effort thinking-step publish — only effective on a bridle channel. */
+  sendThinking(to: string, turnId: string, step?: IThinkingStep): Promise<void> {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.sendThinking(to, turnId, step)
     }
     return Promise.resolve()
   }
