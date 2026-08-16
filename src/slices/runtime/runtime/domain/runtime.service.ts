@@ -98,6 +98,14 @@ export class RuntimeService {
           tools: visibleTools,
           send,
           streamSend: (ch, to, streamer) => this.deps.channel.streamSend(ch, to, streamer),
+          sendTyping: !isInternal && msg.channel !== "internal"
+            ? () => { void this.deps.channel.sendTyping(msg.channel, msg.from) }
+            : undefined,
+          // Capability-gated: only clients that advertised `thinking` on the
+          // triggering message get live reasoning steps (research D6).
+          sendThinking: !isInternal && msg.channel !== "internal" && msg.capabilities?.includes("thinking")
+            ? (turnId, step) => { void this.deps.channel.sendThinking(msg.channel, msg.from, turnId, step) }
+            : undefined,
           agentConfig: this.deps.config,
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
           access: this.deps.access,

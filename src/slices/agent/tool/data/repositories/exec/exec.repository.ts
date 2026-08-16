@@ -11,6 +11,13 @@ export const ExecTool: Tool = {
   description: "Execute a shell command and return stdout/stderr",
   schema,
   adminOnly: true,
+  // First token only — arguments may carry secrets/paths (FR-008).
+  stepLabel(params: unknown): string | undefined {
+    const p = schema.safeParse(params)
+    if (!p.success) return undefined
+    const bin = p.data.command.trim().split(/\s+/)[0]?.split("/").pop()
+    return bin ? `Run ${bin}` : undefined
+  },
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { command } = schema.parse(params)
     const proc = Bun.spawn(["sh", "-c", command], {

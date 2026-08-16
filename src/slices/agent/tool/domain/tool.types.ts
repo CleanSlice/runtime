@@ -57,5 +57,14 @@ export interface Tool {
   inputSchema?: Record<string, unknown>
   /** When true, only admin users can call this tool. Mutating tools should be marked admin-only. */
   adminOnly?: boolean
+  /**
+   * Visitor-facing thinking-step label for a call with these params — a
+   * short, safe phrase like "Read SOUL.md" or "Run bun". This rides the
+   * un-gated `thinking` wire event to end users, so return a curated
+   * extract only (basenames, hostnames, verbs) — NEVER raw params, full
+   * paths, commands, or headers. Returning undefined (or throwing) falls
+   * back to the humanized tool name.
+   */
+  stepLabel?(params: unknown): string | undefined
   execute(params: unknown, ctx: ToolContext): Promise<unknown>
 }

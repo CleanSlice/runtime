@@ -36,6 +36,27 @@ function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
 }
 
+/** `search_kb` → "Search kb" — visitor-facing thinking-step label from a tool name. */
+function humanizeToolName(name: string): string {
+  const words = name.replace(/[_-]+/g, " ").trim()
+  return words ? words[0].toUpperCase() + words.slice(1) : name
+}
+
+/**
+ * Visitor-facing step label: the tool's own safe extract when it provides
+ * one, else the humanized tool name. A label builder must never break the
+ * loop — anything thrown or empty falls back silently.
+ */
+function buildStepLabel(tool: Tool | undefined, call: { name: string; params: unknown }): string {
+  try {
+    const custom = tool?.stepLabel?.(call.params)
+    if (custom && custom.trim()) return custom.trim().slice(0, 80)
+  } catch {
+    // fall through to the generic name
+  }
+  return humanizeToolName(call.name)
+}
+
 function isDebugEnabled(deps: LoopServiceDeps): boolean {
   // Order: explicit env override > NODE_ENV=development > runtime hub-pushed flag.
   // Env is checked first so a developer running locally can force debug on
@@ -67,6 +88,19 @@ export class LoopService {
     let consecutiveErrors = 0
     let errorLimitHit = false
     let accumulatedText = ""
+
+    // Light the channel's thinking indicator immediately — the first LLM byte
+    // can be seconds away (prompt build + model latency), and tool-only
+    // iterations would otherwise leave the UI dead until the final response.
+    ctx.sendTyping?.()
+
+    // One thinking timeline per turn — every step event references it.
+    const turnId = randomUUID()
+    let thinkingStepsEmitted = false
+    // On streaming channels the interleaved text of a tool-call iteration
+    // already reaches the client as its own bubble; repeating it as step
+    // detail would show it twice. Attach detail only when it doesn't stream.
+    const streamsToClient = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()
 
     while (continueLoop) {
       if (task.controller.signal.aborted) {
@@ -127,7 +161,17 @@ export class LoopService {
       }
 
       if (response.toolCalls && response.toolCalls.length > 0 && !errorLimitHit) {
-        const iterationHadError = await this.executeToolCalls(ctx, response, iterations)
+        // Keep the indicator alive while tools run — streamSend's own typing
+        // only covers the LLM call, not the tool execution that follows.
+        ctx.sendTyping?.()
+        if (ctx.sendThinking) thinkingStepsEmitted = true
+        const iterationHadError = await this.executeToolCalls(
+          ctx,
+          response,
+          iterations,
+          turnId,
+          streamsToClient ? undefined : (response.text || undefined),
+        )
 
         if (iterationHadError) {
           consecutiveErrors++
@@ -197,6 +241,10 @@ export class LoopService {
       }
     }
 
+    // Close the thinking timeline so capable clients collapse the block.
+    // Runs on every exit path — completion, cancellation, LLM error breaks.
+    if (thinkingStepsEmitted) ctx.sendThinking?.(turnId)
+
     // If error limit was hit but no final response was generated, send fallback
     if (errorLimitHit && accumulatedText === "") {
       await ctx.send("⚠️ Multiple attempts failed. The requested resource may be unavailable.")
@@ -251,17 +299,35 @@ export class LoopService {
     ctx: ILoopContext,
     response: import("../../../setup/llm/domain/llm.types").ModelResponse,
     iterations: number,
+    turnId: string,
+    iterationDetail?: string,
   ): Promise<boolean> {
     const { task, sessionId, history } = ctx
     const tid = task.id.slice(0, 6)
     const rlog = log.child(tid)
     let iterationHadError = false
+    // The iteration's interleaved reasoning text rides on its first step only.
+    let firstStepOfIteration = true
 
     for (const call of response.toolCalls!) {
       if (task.controller.signal.aborted) break
       const iterTag = iterations > 1 ? ` #${iterations}` : ""
       rlog.info(`${iterTag} llm → ${call.name}`)
       this.deps.activity.updateStep(`tool_call: ${call.name}`)
+
+      const tool = this.deps.tools.find(t => t.name === call.name)
+      if (!tool) rlog.warn(`unknown tool: ${call.name}`)
+
+      // Visitor-facing step: the tool's safe label extract (or its humanized
+      // name) + optional reasoning prose. Raw params stay off the wire —
+      // this event is not admin-gated.
+      const thinkingStep = {
+        id: randomUUID(),
+        label: buildStepLabel(tool, call),
+        ...(firstStepOfIteration && iterationDetail ? { detail: iterationDetail } : {}),
+      }
+      firstStepOfIteration = false
+      ctx.sendThinking?.(turnId, { ...thinkingStep, state: "active" })
 
       const toolUseId = randomUUID()
       const callEvent: Event = {
@@ -273,8 +339,6 @@ export class LoopService {
       await this.deps.session.append(sessionId, callEvent)
       history.push(callEvent)
 
-      const tool = this.deps.tools.find(t => t.name === call.name)
-      if (!tool) rlog.warn(`unknown tool: ${call.name}`)
       let result: unknown
 
       if (tool && tool.adminOnly && !ctx.isAdmin) {
@@ -324,6 +388,8 @@ export class LoopService {
       }
       await this.deps.session.append(sessionId, resultEvent)
       history.push(resultEvent)
+
+      ctx.sendThinking?.(turnId, { ...thinkingStep, state: "done" })
     }
 
     return iterationHadError
