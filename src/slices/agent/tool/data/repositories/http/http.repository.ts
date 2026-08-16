@@ -12,6 +12,16 @@ export const HttpTool: Tool = {
   name: "http",
   description: "Make an HTTP request and return the response",
   schema,
+  // Hostname only — paths/queries may carry tokens (FR-008).
+  stepLabel(params: unknown): string | undefined {
+    const p = schema.safeParse(params)
+    if (!p.success) return undefined
+    try {
+      return `Fetch ${new URL(p.data.url).hostname}`
+    } catch {
+      return undefined
+    }
+  },
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { url, method, body, headers } = schema.parse(params)
     const controller = new AbortController()

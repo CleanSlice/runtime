@@ -13,6 +13,15 @@ export const WebSearchTool: Tool = {
   name: "web_search",
   description: "Search the web using Brave Search and return results",
   schema,
+  // The query is model-authored conversation context — same trust level as
+  // the reasoning prose we already show; truncate to keep the row short.
+  stepLabel(params: unknown): string | undefined {
+    const p = schema.safeParse(params)
+    if (!p.success) return undefined
+    const q = p.data.query.trim()
+    if (!q) return undefined
+    return `Search "${q.length > 50 ? `${q.slice(0, 50)}…` : q}"`
+  },
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { query, count } = schema.parse(params)
     const url = `${BRAVE_SEARCH_URL}?q=${encodeURIComponent(query)}&count=${count}`

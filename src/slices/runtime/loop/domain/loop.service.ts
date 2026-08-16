@@ -42,6 +42,21 @@ function humanizeToolName(name: string): string {
   return words ? words[0].toUpperCase() + words.slice(1) : name
 }
 
+/**
+ * Visitor-facing step label: the tool's own safe extract when it provides
+ * one, else the humanized tool name. A label builder must never break the
+ * loop — anything thrown or empty falls back silently.
+ */
+function buildStepLabel(tool: Tool | undefined, call: { name: string; params: unknown }): string {
+  try {
+    const custom = tool?.stepLabel?.(call.params)
+    if (custom && custom.trim()) return custom.trim().slice(0, 80)
+  } catch {
+    // fall through to the generic name
+  }
+  return humanizeToolName(call.name)
+}
+
 function isDebugEnabled(deps: LoopServiceDeps): boolean {
   // Order: explicit env override > NODE_ENV=development > runtime hub-pushed flag.
   // Env is checked first so a developer running locally can force debug on
@@ -300,11 +315,15 @@ export class LoopService {
       rlog.info(`${iterTag} llm → ${call.name}`)
       this.deps.activity.updateStep(`tool_call: ${call.name}`)
 
-      // Visitor-facing step: humanized tool name + optional reasoning prose.
-      // Raw params stay off the wire — this event is not admin-gated.
+      const tool = this.deps.tools.find(t => t.name === call.name)
+      if (!tool) rlog.warn(`unknown tool: ${call.name}`)
+
+      // Visitor-facing step: the tool's safe label extract (or its humanized
+      // name) + optional reasoning prose. Raw params stay off the wire —
+      // this event is not admin-gated.
       const thinkingStep = {
         id: randomUUID(),
-        label: humanizeToolName(call.name),
+        label: buildStepLabel(tool, call),
         ...(firstStepOfIteration && iterationDetail ? { detail: iterationDetail } : {}),
       }
       firstStepOfIteration = false
@@ -320,8 +339,6 @@ export class LoopService {
       await this.deps.session.append(sessionId, callEvent)
       history.push(callEvent)
 
-      const tool = this.deps.tools.find(t => t.name === call.name)
-      if (!tool) rlog.warn(`unknown tool: ${call.name}`)
       let result: unknown
 
       if (tool && tool.adminOnly && !ctx.isAdmin) {
