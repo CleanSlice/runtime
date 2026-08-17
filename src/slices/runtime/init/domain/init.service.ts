@@ -9,4 +9,9 @@ export class InitService {
     this.gateway.scaffold(agentDir, exampleDir)
     return this.gateway.loadConfig(agentDir)
   }
+
+  /** Re-read agent.config.json from disk, without touching scaffolding. */
+  reloadConfig(agentDir: string): IAgentConfig {
+    return this.gateway.loadConfig(agentDir)
+  }
 }

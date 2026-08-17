@@ -65,12 +65,14 @@ export class AgentRuntime {
   private channelConfigs: RuntimeConfig["channels"]
   private s3sync?: S3SyncService
   private access: AccessModule
+  private init: InitModule
 
   /**
    * Dependency injection — instantiates and wires all modules.
    * No I/O happens here; everything is lazy until start().
    */
   constructor(config: RuntimeConfig) {
+    this.init = config.init
     this.config = config.init.config
     this.channelConfigs = config.channels
     const agentDir = config.init.agentDir
@@ -272,6 +274,17 @@ export class AgentRuntime {
         `Subsequent changes will be pushed when S3 is reachable. Error: ${(err as Error).message}`,
       )
     }
+    // agent.config.json was loaded before the S3 pull (disk was empty /
+    // stale — the constructor's scaffold() step copies .agent.example's
+    // config as a placeholder on a fresh container), so it may not match the
+    // just-pulled real config. reload() merges the fresh values into `this.
+    // config` IN PLACE, so slices holding a direct reference to a nested
+    // piece of it (MemoryModule → memory.limits / memory.review) pick up the
+    // restored values automatically. Slices that captured a plain number at
+    // construction (heartbeat's intervalMs) need an explicit refresh.
+    this.init.reload()
+    this.heartbeat.setIntervalMs(this.config.heartbeat.intervalMin * 60_000)
+
     // AccessModule was constructed before the S3 pull (disk was empty / stale),
     // so its in-memory strategy may not match the just-pulled access.json.
     this.access.reload()

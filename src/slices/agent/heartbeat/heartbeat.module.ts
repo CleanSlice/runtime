@@ -43,6 +43,24 @@ export class HeartbeatModule {
     this.handler = handler
   }
 
+  /**
+   * Update the interval after construction — needed because `intervalMs` is
+   * captured as a plain number, not an object reference, so it can't pick up
+   * a config reload (e.g. after an S3 restore) on its own. Safe to call
+   * before or after `start()`; restarts the timer if already running so the
+   * new interval takes effect immediately rather than after one more tick.
+   */
+  setIntervalMs(ms: number): void {
+    const resolved = resolveIntervalMs(ms)
+    if (resolved === this.intervalMs) return
+    this.intervalMs = resolved
+    log.info(`interval updated to ${resolved / 60000}min`)
+    if (this.interval) {
+      clearInterval(this.interval)
+      this.interval = setInterval(() => this.run(), this.intervalMs)
+    }
+  }
+
   start(): void {
     setTimeout(() => this.run(), 5000)
     this.interval = setInterval(() => this.run(), this.intervalMs)
