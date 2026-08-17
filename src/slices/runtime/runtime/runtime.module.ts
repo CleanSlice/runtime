@@ -66,6 +66,7 @@ export class AgentRuntime {
   private s3sync?: S3SyncService
   private access: AccessModule
   private init: InitModule
+  private loop: LoopModule
 
   /**
    * Dependency injection — instantiates and wires all modules.
@@ -153,7 +154,7 @@ export class AgentRuntime {
     // ── Runtime slices (orchestration) ─────────────────────────────
 
     // LLM ↔ tools execution loop
-    const loop = new LoopModule(
+    this.loop = new LoopModule(
       { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools },
       { maxIterations: this.config.maxIterations },
     )
@@ -169,7 +170,7 @@ export class AgentRuntime {
     this.runtimeService = new RuntimeService({
       session: this.session, agent, skills: this.skills, secrets,
       memory: this.memory, channel: this.channel, activity: activityService,
-      llm: this.llm, loop, tasks, tools, access,
+      llm: this.llm, loop: this.loop, tasks, tools, access,
       agentDir, config: this.config,
     })
 
@@ -279,11 +280,17 @@ export class AgentRuntime {
     // config as a placeholder on a fresh container), so it may not match the
     // just-pulled real config. reload() merges the fresh values into `this.
     // config` IN PLACE, so slices holding a direct reference to a nested
-    // piece of it (MemoryModule → memory.limits / memory.review) pick up the
-    // restored values automatically. Slices that captured a plain number at
-    // construction (heartbeat's intervalMs) need an explicit refresh.
+    // piece of it (MemoryModule → memory.limits / memory.review, and any
+    // live read of `this.config.*` — taskLabelLength, tools.*, s3.syncIntervalSec)
+    // pick up the restored values automatically. Slices that instead captured
+    // a plain value (not an object reference) at construction need an
+    // explicit refresh — heartbeat's intervalMs, session's compaction
+    // thresholds, the loop's maxIterations, and the router's stop-phrase set.
     this.init.reload()
     this.heartbeat.setIntervalMs(this.config.heartbeat.intervalMin * 60_000)
+    this.session.updateCompactionConfig(this.config.session)
+    this.loop.updateMaxIterations(this.config.maxIterations)
+    this.router.updateStopPhrases(new Set(this.config.stopPhrases.map(p => p.toLowerCase())))
 
     // AccessModule was constructed before the S3 pull (disk was empty / stale),
     // so its in-memory strategy may not match the just-pulled access.json.

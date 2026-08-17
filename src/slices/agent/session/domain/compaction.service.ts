@@ -51,6 +51,13 @@ export class CompactionService {
     private compactionBytesThreshold: number,
   ) {}
 
+  /** Update the thresholds used by future compact() calls. */
+  updateConfig(compactionThreshold: number, recentKeep: number, compactionBytesThreshold: number): void {
+    this.compactionThreshold = compactionThreshold
+    this.recentKeep = recentKeep
+    this.compactionBytesThreshold = compactionBytesThreshold
+  }
+
   async compact(sessionId: string, llm: ILlmGateway): Promise<void> {
     if (this.compacting.has(sessionId)) {
       log.info(`skipping compaction for ${sessionId}: already in progress`)

@@ -11,6 +11,12 @@ export interface SessionConfig {
   compactionBytesThreshold?: number
 }
 
+export const SESSION_CONFIG_DEFAULTS: Required<SessionConfig> = {
+  compactionThreshold: 60,
+  recentKeep: 20,
+  compactionBytesThreshold: 200_000,
+}
+
 export class SessionModule {
   private service: SessionService
   private compaction: CompactionService
@@ -19,9 +25,22 @@ export class SessionModule {
     this.service = new SessionService(new SessionGateway(agentDir))
     this.compaction = new CompactionService(
       this.service,
-      config?.compactionThreshold ?? 60,
-      config?.recentKeep ?? 20,
-      config?.compactionBytesThreshold ?? 200_000,
+      config?.compactionThreshold ?? SESSION_CONFIG_DEFAULTS.compactionThreshold,
+      config?.recentKeep ?? SESSION_CONFIG_DEFAULTS.recentKeep,
+      config?.compactionBytesThreshold ?? SESSION_CONFIG_DEFAULTS.compactionBytesThreshold,
+    )
+  }
+
+  /**
+   * Refresh the compaction thresholds after construction — needed because
+   * they're captured as plain numbers, not an object reference, so they
+   * can't pick up a config reload (e.g. after an S3 restore) on their own.
+   */
+  updateCompactionConfig(config?: SessionConfig): void {
+    this.compaction.updateConfig(
+      config?.compactionThreshold ?? SESSION_CONFIG_DEFAULTS.compactionThreshold,
+      config?.recentKeep ?? SESSION_CONFIG_DEFAULTS.recentKeep,
+      config?.compactionBytesThreshold ?? SESSION_CONFIG_DEFAULTS.compactionBytesThreshold,
     )
   }
 

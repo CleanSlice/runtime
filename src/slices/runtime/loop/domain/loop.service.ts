@@ -77,6 +77,11 @@ export class LoopService {
     this.config = { ...LOOP_DEFAULTS, ...config }
   }
 
+  /** Update maxIterations after construction (e.g. after an agent.config.json reload). */
+  updateMaxIterations(maxIterations: number): void {
+    this.config.maxIterations = maxIterations
+  }
+
   async run(ctx: ILoopContext): Promise<ILoopResult> {
     const { task, sessionId, history, tools } = ctx
     const tid = task.id.slice(0, 6)

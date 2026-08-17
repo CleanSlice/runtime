@@ -26,6 +26,11 @@ interface BotDeps {
 export class BotService {
   constructor(private deps: BotDeps) {}
 
+  /** Update the stop-phrase set after construction (e.g. after an agent.config.json reload). */
+  updateStopPhrases(stopPhrases: Set<string>): void {
+    this.deps.stopPhrases = stopPhrases
+  }
+
   async route(msg: Message, sessionId: string): Promise<RouteResult> {
     const send = (text: string, parts?: import("../../../setup/channel/domain/channel.types").MessagePart[]) =>
       this.deps.channel.send(msg.channel, msg.from, text, parts)

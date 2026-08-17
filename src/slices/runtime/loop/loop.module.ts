@@ -27,4 +27,9 @@ export class LoopModule {
   constructor(deps: LoopModuleDeps, config?: Partial<ILoopConfig>) {
     this.service = new LoopService(deps, config)
   }
+
+  /** Update maxIterations after construction (e.g. after an agent.config.json reload). */
+  updateMaxIterations(maxIterations: number): void {
+    this.service.updateMaxIterations(maxIterations)
+  }
 }
