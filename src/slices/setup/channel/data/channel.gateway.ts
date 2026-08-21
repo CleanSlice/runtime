@@ -4,7 +4,7 @@ import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../agent/session/domain/activity"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
-import { BridleRepository, type BridleSyncHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
+import { BridleRepository, type BridleSyncHandler, type BridleSessionClearHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
@@ -84,6 +84,13 @@ export class ChannelGateway implements IChannelGateway {
   onSync(handler: BridleSyncHandler): void {
     if (this.repository instanceof BridleRepository) {
       this.repository.onSync(handler)
+    }
+  }
+
+  /** Register a session-clear handler — only effective when this is a bridle channel. */
+  onSessionClear(handler: BridleSessionClearHandler): void {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.onSessionClear(handler)
     }
   }
 

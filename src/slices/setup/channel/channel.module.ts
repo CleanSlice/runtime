@@ -2,7 +2,7 @@ import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./domai
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
-import type { BridleSyncHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
+import type { BridleSyncHandler, BridleSessionClearHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
 import type { SessionActivity } from "../../agent/session/domain/activity"
 import { existsSync } from "fs"
 import {
@@ -27,7 +27,7 @@ import { createLogger } from "../logger"
 
 const log = createLogger("channels")
 
-export type { BridleSyncHandler, IBridleDebugPayload }
+export type { BridleSyncHandler, BridleSessionClearHandler, IBridleDebugPayload }
 export type { ChannelFileType }
 
 // Config entries as the channel_* tools pass them in — the persisted files
@@ -171,6 +171,19 @@ export class ChannelModule {
     const bridle = this.service.get("bridle")
     if (bridle instanceof ChannelGateway) {
       bridle.onSync(handler)
+    }
+  }
+
+  /**
+   * Register a handler that runs when the bridle hub asks the agent to drop
+   * its local copy of a session (sent after the hub archives/deletes that
+   * channel's persisted transcript). No-op when the bridle channel isn't
+   * configured.
+   */
+  onBridleSessionClear(handler: BridleSessionClearHandler): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.onSessionClear(handler)
     }
   }
 

@@ -189,6 +189,13 @@ export class AgentRuntime {
       const s3sync = this.s3sync
       this.channel.onBridleSync(async () => ({ pushed: await s3sync.push() }))
     }
+
+    // Bridle-hub-initiated "forget this conversation" — sent after the hub
+    // archives/deletes a channel's persisted transcript (embed's "New chat").
+    // Without this, the agent's own local session file/in-memory cache still
+    // has the full history and the S3 watcher re-uploads it on the next
+    // local change, resurrecting what the hub just archived.
+    this.channel.onBridleSessionClear((channel) => this.session.clear("bridle", channel))
   }
 
   /** Boot the agent: restore state, connect channels, start background jobs. */

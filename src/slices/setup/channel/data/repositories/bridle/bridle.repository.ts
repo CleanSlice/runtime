@@ -140,6 +140,14 @@ function messagePartsToWireParts(parts: MessagePart[]): WirePart[] {
 export type BridleSyncHandler = () => Promise<{ pushed: number }>
 
 /**
+ * Callback invoked when the hub asks the agent to drop its local copy of a
+ * session — sent after the hub archives/deletes that channel's persisted
+ * transcript, so the agent's own local `.jsonl` (and in-memory session
+ * cache) don't resurrect the "deleted" history on the next S3 push.
+ */
+export type BridleSessionClearHandler = (channel: string) => void
+
+/**
  * Snapshot of an LLM round-trip for the admin debug panel. Sent over the
  * "debug" wire event; the hub only relays it to admin clients.
  */
@@ -178,6 +186,7 @@ export class BridleRepository implements IChannelGateway {
 
   private handler?: (msg: Message) => Promise<void>
   private syncHandler?: BridleSyncHandler
+  private sessionClearHandler?: BridleSessionClearHandler
   private socket: Socket | null = null
   private apiUrl: string
   /**
@@ -198,6 +207,17 @@ export class BridleRepository implements IChannelGateway {
    */
   onSync(handler: BridleSyncHandler): void {
     this.syncHandler = handler
+  }
+
+  /**
+   * Register a handler to run when the hub sends a `session_clear` command
+   * (channel: the visitor's clientId/sub). Wired to SessionModule.clear() so
+   * the agent's local file + in-memory cache actually drop the conversation
+   * the hub just archived, instead of silently keeping it and re-pushing it
+   * back to S3 on the next local change.
+   */
+  onSessionClear(handler: BridleSessionClearHandler): void {
+    this.sessionClearHandler = handler
   }
 
   async start(): Promise<void> {
@@ -456,6 +476,14 @@ export class BridleRepository implements IChannelGateway {
           error: (err as Error)?.message ?? "Unknown sync error",
         })
       }
+    })
+
+    this.socket.on("session_clear", (data: unknown) => {
+      const msg = data as { channel?: string }
+      const channel = msg?.channel
+      if (!channel) return
+      log.info(`session_clear requested by hub for channel=${channel}`)
+      this.sessionClearHandler?.(channel)
     })
 
     this.socket.on("connect_error", (err) => {

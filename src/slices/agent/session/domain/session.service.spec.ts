@@ -12,6 +12,17 @@ function noopGateway(): ISessionGateway {
   }
 }
 
+function trackingGateway() {
+  const cleared: string[] = []
+  const gateway: ISessionGateway = {
+    append: async () => {},
+    read: async () => [],
+    rewrite: async () => {},
+    clear: (sessionId: string) => cleared.push(sessionId),
+  }
+  return { gateway, cleared }
+}
+
 function evt(over: Partial<Event>): Event {
   return { id: "e1", type: "user", ts: 1000, data: { text: "hi" }, ...over }
 }
@@ -68,5 +79,41 @@ describe("SessionService activity emit", () => {
   test("does nothing when no reporter is wired", async () => {
     const svc = new SessionService(noopGateway())
     await expect(svc.append("bridle:admin", evt({}))).resolves.toBeUndefined()
+  })
+})
+
+describe("SessionService.clear", () => {
+  test("evicts the in-memory session so the next getOrCreate returns a fresh one", () => {
+    const { gateway } = trackingGateway()
+    const svc = new SessionService(gateway)
+
+    const before = svc.getOrCreate("bridle", "user-1")
+    expect(svc.getOrCreate("bridle", "user-1")).toBe(before) // cached, same instance
+
+    svc.clear("bridle", "user-1")
+
+    const after = svc.getOrCreate("bridle", "user-1")
+    expect(after).not.toBe(before) // stale in-memory session was dropped
+  })
+
+  test("delegates to the gateway to drop the persisted file", () => {
+    const { gateway, cleared } = trackingGateway()
+    const svc = new SessionService(gateway)
+
+    svc.getOrCreate("bridle", "user-1")
+    svc.clear("bridle", "user-1")
+
+    expect(cleared).toEqual(["bridle:user-1"])
+  })
+
+  test("clearing one session leaves other sessions untouched", () => {
+    const { gateway } = trackingGateway()
+    const svc = new SessionService(gateway)
+
+    const other = svc.getOrCreate("bridle", "user-2")
+    svc.getOrCreate("bridle", "user-1")
+    svc.clear("bridle", "user-1")
+
+    expect(svc.getOrCreate("bridle", "user-2")).toBe(other)
   })
 })
