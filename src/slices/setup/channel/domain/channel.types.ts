@@ -130,6 +130,21 @@ export interface IThinkingStep {
 
 // ── Message ───────────────────────────────────────────────────
 
+/**
+ * Metadata of a stored chat attachment (the hub keeps the bytes; `id`
+ * addresses them via the API's download route). Persisted verbatim into the
+ * session transcript so a replay can re-link a message to its files —
+ * without it, an attached image exists only as inline base64 in the parts
+ * and vanishes from any transcript-based view. Never carries file contents.
+ */
+export interface IMessageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  kind: "image" | "text" | "binary"
+}
+
 export interface Message {
   id: string
   role: MessageRoleTypes
@@ -157,6 +172,12 @@ export interface Message {
    * in the visitor's browser. Channels without the concept leave it undefined.
    */
   prompt?: string
+  /**
+   * Stored-attachment references for files that arrived with this message.
+   * Channels that upload through the hub (bridle) set it; others leave it
+   * undefined. Persisted into the session transcript alongside the text.
+   */
+  attachments?: IMessageAttachment[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -196,6 +217,8 @@ export function buildMessage(fields: {
   capabilities?: string[]
   /** Integrator context from the embed's `data-prompt` (see Message.prompt). */
   prompt?: string
+  /** Stored-attachment references (see Message.attachments). */
+  attachments?: IMessageAttachment[]
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -227,6 +250,7 @@ export function buildMessage(fields: {
     ts: fields.ts,
     ...(fields.capabilities?.length ? { capabilities: fields.capabilities } : {}),
     ...(fields.prompt ? { prompt: fields.prompt } : {}),
+    ...(fields.attachments?.length ? { attachments: fields.attachments } : {}),
     metadata: fields.metadata,
   }
 }
