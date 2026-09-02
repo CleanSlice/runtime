@@ -182,7 +182,14 @@ export class RuntimeService {
       id: randomUUID(),
       type: "user",
       ts: Date.now(),
-      data: { text: msg.text, from: msg.from },
+      // Attachment references persist with the turn so transcript replays
+      // can re-link the stored files. LLM prompt builders read only
+      // data.text / data.images, so the extra key never reaches the model.
+      data: {
+        text: msg.text,
+        from: msg.from,
+        ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
+      },
     }
     await this.deps.session.append(sessionId, userEvent)
 

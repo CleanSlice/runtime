@@ -2,6 +2,7 @@ import type { IChannelGateway } from "../../../domain/channel.gateway"
 import {
   MessagePartTypes,
   buildMessage,
+  type IMessageAttachment,
   type IThinkingStep,
   type Message,
   type MessagePart,
@@ -106,6 +107,40 @@ function summarizeUiSubmits(parts: MessagePart[]): string {
       return `[form submitted] uiId=${s.uiId}${pairs.length ? " · " + pairs.join(" · ") : ""}`
     })
     .join("\n")
+}
+
+const ATTACHMENT_KINDS = new Set(["image", "text", "binary"])
+
+/**
+ * Validate the hub's `attachments` metadata array down to exactly the fields
+ * the transcript persists. Strict on identity (id/name/mimeType/kind must be
+ * usable or the entry is dropped) but lenient on size, because a missing
+ * number only degrades a label while a malformed reference is unusable.
+ * Exported for its spec.
+ */
+export function sanitizeWireAttachments(raw: unknown): IMessageAttachment[] {
+  if (!Array.isArray(raw)) return []
+  const out: IMessageAttachment[] = []
+  for (const entry of raw) {
+    const a = entry as Record<string, unknown>
+    if (
+      typeof a?.id !== "string" ||
+      typeof a?.name !== "string" ||
+      typeof a?.mimeType !== "string" ||
+      typeof a?.kind !== "string" ||
+      !ATTACHMENT_KINDS.has(a.kind)
+    ) {
+      continue
+    }
+    out.push({
+      id: a.id,
+      name: a.name,
+      mimeType: a.mimeType,
+      size: typeof a.size === "number" && Number.isFinite(a.size) ? a.size : 0,
+      kind: a.kind as IMessageAttachment["kind"],
+    })
+  }
+  return out
 }
 
 /** Convert runtime MessagePart[] → bridle wire parts. Mirrors the
@@ -432,6 +467,12 @@ export class BridleRepository implements IChannelGateway {
       // wouldn't otherwise know the user did anything).
       const text = wireText.trim() ? wireText : summarizeUiSubmits(parts)
 
+      // Stored-attachment references from the hub — metadata only; the
+      // bytes already arrived inside `parts` (images as base64) or stay on
+      // the hub (binary). Carried onto the Message so the session transcript
+      // can re-link the files on replay.
+      const attachments = sanitizeWireAttachments(msg.attachments)
+
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
         text,
@@ -441,6 +482,7 @@ export class BridleRepository implements IChannelGateway {
         parts,
         ...(capabilities ? { capabilities } : {}),
         ...(prompt ? { prompt } : {}),
+        ...(attachments.length ? { attachments } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })
