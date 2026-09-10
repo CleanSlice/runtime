@@ -7,6 +7,11 @@ import { z } from "zod"
 import type { Tool } from "../../../agent/tool"
 import { IMcpGateway } from "../domain/mcp.gateway"
 import type { IMcpServerConfig } from "../domain/mcp.types"
+import {
+  RuntimeMcpOauthProvider,
+  mcpOauthSecretKey,
+  type ISecretStore,
+} from "./mcpOauth.provider"
 import { createLogger } from "../../logger"
 
 const log = createLogger("mcp")
@@ -21,17 +26,46 @@ const CLIENT_INFO = { name: "cleanslice-runtime", version: "1.0.0" }
 export class McpGateway extends IMcpGateway {
   private clients = new Map<string, Client>()
 
+  /**
+   * @param secrets per-agent secret store — required for `oauth` MCP servers
+   * (the runtime reads/refreshes their token bundle). Optional so non-OAuth
+   * setups wire the gateway with no dependency.
+   */
+  constructor(private readonly secrets?: ISecretStore) {
+    super()
+  }
+
   async connect(cfg: IMcpServerConfig): Promise<Tool[]> {
     if (cfg.enabled === false) {
       log.info(`${cfg.name}: disabled, skipping`)
       return []
     }
+
+    // OAuth servers: when the agent has no stored token yet, don't try to
+    // connect — expose a `${name}__connect` tool the agent can call to hand
+    // the user a login link (CLEAN-75). The real tools replace it once the
+    // token lands. Any failure below (e.g. a dead refresh token) also falls
+    // back to the connect tool so the user can re-authorize.
+    const isOauth = cfg.authType === "oauth"
+    const fallback = (): Tool[] => (isOauth ? [this.makeConnectTool(cfg)] : [])
+    if (isOauth) {
+      if (!cfg.id || !this.secrets) {
+        log.warn(`${cfg.name}: oauth server missing id or secret store`)
+        return []
+      }
+      const hasToken = Boolean(await this.secrets.get(mcpOauthSecretKey(cfg.id)))
+      if (!hasToken) {
+        log.info(`${cfg.name}: oauth not connected — offering connect tool`)
+        return [this.makeConnectTool(cfg)]
+      }
+    }
+
     let transport: Transport
     try {
       transport = this.buildTransport(cfg)
     } catch (err) {
       log.warn(`${cfg.name}: bad transport config — ${(err as Error).message}`)
-      return []
+      return fallback()
     }
 
     const client = new Client(CLIENT_INFO)
@@ -39,7 +73,7 @@ export class McpGateway extends IMcpGateway {
       await client.connect(transport)
     } catch (err) {
       log.warn(`${cfg.name}: connect failed — ${(err as Error).message}`)
-      return []
+      return fallback()
     }
     this.clients.set(cfg.name, client)
 
@@ -48,12 +82,59 @@ export class McpGateway extends IMcpGateway {
       listed = (await client.listTools()) as typeof listed
     } catch (err) {
       log.warn(`${cfg.name}: tools/list failed — ${(err as Error).message}`)
-      return []
+      return fallback()
     }
 
     const wrapped = listed.tools.map((t) => this.wrapTool(cfg.name, client, t))
     log.info(`${cfg.name}: registered ${wrapped.length} tools`)
     return wrapped
+  }
+
+  /**
+   * Synthetic tool offered for an OAuth MCP the agent hasn't connected yet.
+   * Calling it asks ranch to start the OAuth handshake and returns a login URL
+   * for the agent to hand the user. After the user finishes, the real MCP
+   * tools take its place (on the `mcp_connected` reload / next boot).
+   */
+  private makeConnectTool(cfg: IMcpServerConfig): Tool {
+    const serverId = cfg.id as string
+    return {
+      name: `${cfg.name}__connect`,
+      description:
+        `Connect the "${cfg.name}" service. Call this when the user wants to use ` +
+        `${cfg.name} but it isn't connected yet. Returns a link — send it to the ` +
+        `user and ask them to open it and log in. Once they finish, ${cfg.name}'s ` +
+        `tools become available.`,
+      schema: z.object({}),
+      inputSchema: { type: "object", properties: {} },
+      execute: async () => {
+        const base = (process.env.RANCH_API_URL ?? process.env.API_URL)?.replace(/\/+$/, "")
+        const key = process.env.BRIDLE_API_KEY ?? process.env.INTERNAL_API_KEY
+        const agentId = process.env.AGENT_ID ?? process.env.BRIDLE_AGENT_ID
+        if (!base || !key || !agentId) {
+          return { error: "Connect unavailable (RANCH_API_URL / BRIDLE_API_KEY / AGENT_ID missing)" }
+        }
+        try {
+          const res = await fetch(`${base}/mcp-servers/${serverId}/oauth/start`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-bridle-api-key": key },
+            body: JSON.stringify({ agentId }),
+          })
+          if (!res.ok) {
+            return { error: `Could not start connect (${res.status})` }
+          }
+          const body = (await res.json()) as { data?: { authorizeUrl?: string }; authorizeUrl?: string }
+          const authorizeUrl = body.data?.authorizeUrl ?? body.authorizeUrl
+          if (!authorizeUrl) return { error: "Connect start returned no URL" }
+          return {
+            authorizeUrl,
+            instructions: `Send the user this link and ask them to open it and log in to connect ${cfg.name}. Tell them to return to the chat when done.`,
+          }
+        } catch (err) {
+          return { error: `Connect failed: ${(err as Error).message}` }
+        }
+      },
+    }
   }
 
   async closeAll(): Promise<void> {
@@ -102,6 +183,15 @@ export class McpGateway extends IMcpGateway {
 
     if (cfg.transport === "streamableHttp") {
       if (!cfg.url) throw new Error("url required for streamableHttp transport")
+      // OAuth servers carry no static header — the SDK's authProvider attaches
+      // the bearer and refreshes it on 401 from the stored refresh token.
+      if (cfg.authType === "oauth") {
+        if (!cfg.id) throw new Error("oauth MCP server missing id")
+        if (!this.secrets) throw new Error("oauth MCP server requires a secret store")
+        return new StreamableHTTPClientTransport(new URL(cfg.url), {
+          authProvider: new RuntimeMcpOauthProvider(cfg.id, this.secrets),
+        })
+      }
       return new StreamableHTTPClientTransport(new URL(cfg.url), {
         requestInit: { headers },
       })

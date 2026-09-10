@@ -106,6 +106,12 @@ export interface IAgentConfig {
  * `agent.config.json#mcps` and `MCP_SERVERS_B64` env values.
  */
 export interface IMcpServerConfig {
+  /**
+   * Server id (Ranch McpServer.id). Optional for local/dev entries. For
+   * `oauth` servers the runtime keys the per-agent token secret by it
+   * (`mcpOauth:<id>`).
+   */
+  id?: string
   /** Unique key. MCP tools are namespaced as `${name}__${toolName}`. */
   name: string
   /**
@@ -125,9 +131,12 @@ export interface IMcpServerConfig {
   /**
    * How to authenticate the connection. `bearer` adds an `Authorization:
    * Bearer <authValue>` header. `header` interprets `authValue` as a literal
-   * `Header-Name: value` line. `none` sends no auth header.
+   * `Header-Name: value` line. `none` sends no auth header. `oauth` holds no
+   * static credential — the runtime refreshes its own bearer from the
+   * per-agent token secret (`mcpOauth:<id>`), obtained via the in-chat Connect
+   * flow. See CLEAN-75.
    */
-  authType?: "none" | "bearer" | "header"
+  authType?: "none" | "bearer" | "header" | "oauth"
   authValue?: string | null
 
   /** Default true. Set to false to keep the entry registered but skip connect. */
