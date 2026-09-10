@@ -67,6 +67,7 @@ import type { LlmConfig } from "./slices/setup/llm/llm.module"
 import { ToolGateway } from "./slices/agent/tool/data/tool.gateway"
 import { InitModule } from "./slices/runtime/init"
 import { McpModule } from "./slices/setup/mcp"
+import { SecretModule } from "./slices/setup/secret/secret.module"
 
 /**
  * Build an LlmConfig from a (provider, model, fallbackModel, apiKey) tuple.
@@ -143,7 +144,12 @@ const toolGateway = new ToolGateway()
 //      YAML manifest (see ranch/k8s/templates/agent-workflow.yaml).
 // The runtime never talks to a specific platform's API directly. Tools are
 // merged into the global list passed to AgentRuntime below.
-const mcp = new McpModule()
+// Per-agent secret store — used by `oauth` MCP servers to read/refresh their
+// token bundle (CLEAN-75). Same store the tool layer uses.
+const mcpSecrets = new SecretModule(
+  process.env.CLEANSLICE_AGENT_DIR ?? ".agent",
+)
+const mcp = new McpModule(mcpSecrets)
 const mcpServersJson = process.env.MCP_SERVERS_B64
   ? Buffer.from(process.env.MCP_SERVERS_B64, "base64").toString("utf8")
   : undefined

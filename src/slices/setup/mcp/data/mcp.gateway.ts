@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { Tool } from "../../../agent/tool"
 import { IMcpGateway } from "../domain/mcp.gateway"
 import type { IMcpServerConfig } from "../domain/mcp.types"
+import { RuntimeMcpOauthProvider, type ISecretStore } from "./mcpOauth.provider"
 import { createLogger } from "../../logger"
 
 const log = createLogger("mcp")
@@ -20,6 +21,15 @@ const CLIENT_INFO = { name: "cleanslice-runtime", version: "1.0.0" }
  */
 export class McpGateway extends IMcpGateway {
   private clients = new Map<string, Client>()
+
+  /**
+   * @param secrets per-agent secret store — required for `oauth` MCP servers
+   * (the runtime reads/refreshes their token bundle). Optional so non-OAuth
+   * setups wire the gateway with no dependency.
+   */
+  constructor(private readonly secrets?: ISecretStore) {
+    super()
+  }
 
   async connect(cfg: IMcpServerConfig): Promise<Tool[]> {
     if (cfg.enabled === false) {
@@ -102,6 +112,15 @@ export class McpGateway extends IMcpGateway {
 
     if (cfg.transport === "streamableHttp") {
       if (!cfg.url) throw new Error("url required for streamableHttp transport")
+      // OAuth servers carry no static header — the SDK's authProvider attaches
+      // the bearer and refreshes it on 401 from the stored refresh token.
+      if (cfg.authType === "oauth") {
+        if (!cfg.id) throw new Error("oauth MCP server missing id")
+        if (!this.secrets) throw new Error("oauth MCP server requires a secret store")
+        return new StreamableHTTPClientTransport(new URL(cfg.url), {
+          authProvider: new RuntimeMcpOauthProvider(cfg.id, this.secrets),
+        })
+      }
       return new StreamableHTTPClientTransport(new URL(cfg.url), {
         requestInit: { headers },
       })
