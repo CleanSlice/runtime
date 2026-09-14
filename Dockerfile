@@ -1,7 +1,7 @@
 FROM oven/bun:1.3-alpine AS base
 WORKDIR /app
 
-# System packages: browser, CLI tools, networking
+# System packages: browser, CLI tools, networking, scripting
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -14,7 +14,27 @@ RUN apk add --no-cache \
     curl \
     jq \
     bash \
-    git
+    git \
+    python3 \
+    py3-pip
+
+# Spreadsheet parsing for files the agent fetched ITSELF — from an ERP over
+# curl, the browser tools, an MCP server. Chat attachments are a different
+# path: those are parsed server-side and read back through Ranch's
+# `query_attachment`, which resolves an id in the bridle attachment store and
+# therefore cannot see a file the agent downloaded on its own.
+#
+# --break-system-packages is required, not cosmetic: Alpine marks the system
+# python as externally managed (PEP 668), so a plain `pip3 install` fails the
+# build with "error: externally-managed-environment".
+#
+# Installed here rather than left to the agent: `pip install` at runtime lands
+# in /home/agent/.local and is lost on the next container restart.
+#
+# Pinned so a rebuild cannot silently change the parser. openpyxl pulls only
+# et-xmlfile; `apk add py3-openpyxl` would drag in pandas and pillow (59
+# packages, 194 MiB against 66 MiB for this route).
+RUN pip3 install --no-cache-dir --break-system-packages openpyxl==3.1.5
 
 # Use system Chromium — skip Playwright's own browser download
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
