@@ -64,6 +64,22 @@ export interface IAgentConfig {
     webFetch: {
       maxChars: number
     }
+    /**
+     * Cap on the string fields of tool_call / tool_result events handed to
+     * the model. The full payload stays on disk; only the in-memory copy is
+     * trimmed. Must clear a `query_attachment` read — the tool exists so the
+     * model can pull exact cells out of a spreadsheet, and a cap below its
+     * result size hands back the same guesswork the preview already forced.
+     */
+    maxOutputChars: number
+  }
+
+  /** Caps on user message text reaching the model. See messageTruncation.ts. */
+  message: {
+    /** Ordinary user messages. */
+    maxChars: number
+    /** User messages carrying an attachment — the API inlines a preview. */
+    maxCharsWithAttachments: number
   }
 
   /** Words/phrases that immediately cancel all running tasks. Case-insensitive. */
@@ -189,6 +205,14 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     webFetch: {
       maxChars: 8000,
     },
+    maxOutputChars: 16_000,
+  },
+
+  message: {
+    maxChars: 4000,
+    // Clears the API's 40 000-char spreadsheet preview budget with room for
+    // the person's own text and the block's header.
+    maxCharsWithAttachments: 48_000,
   },
 
   stopPhrases: [

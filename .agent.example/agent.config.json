@@ -53,6 +53,13 @@
   "_comment_syncSkills": "Sync skills from .agent.example on restart. User-created skills are never deleted.",
   "syncSkills": true,
 
+  "_comment_message": "Caps on user message text handed to the model. maxCharsWithAttachments is deliberately far larger: a chat attachment arrives as a bounded preview the API already trimmed, and cutting it twice leaves the model a fragment of the file.",
+  "message": {
+    "maxChars": 4000,
+    "maxCharsWithAttachments": 48000
+  },
+
+  "_comment_tools": "maxOutputChars caps tool_call/tool_result payloads handed to the model; the full payload stays on disk. Keep it above a typical query_attachment read, or the model goes back to estimating from the preview.",
   "tools": {
     "spawnAgent": {
       "timeoutMin": 5,
@@ -63,6 +70,7 @@
     },
     "webFetch": {
       "maxChars": 8000
-    }
+    },
+    "maxOutputChars": 16000
   }
 }
