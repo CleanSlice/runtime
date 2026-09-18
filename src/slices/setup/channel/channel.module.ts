@@ -249,8 +249,8 @@ export class ChannelModule {
     return this.service.listGroups(channel)
   }
 
-  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
-    await this.service.streamSend(channel, to, streamer)
+  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+    return this.service.streamSend(channel, to, streamer)
   }
 
   /** Best-effort typing signal to a channel's UI — no-op for channels without one. */
