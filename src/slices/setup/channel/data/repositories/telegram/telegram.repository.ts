@@ -249,7 +249,7 @@ export class TelegramRepository {
    * Stream text to Telegram: sends placeholder "…", then edits every ~500ms as chunks arrive.
    * streamer is a function that calls onChunk(accumulatedText) and returns final text.
    */
-  async streamSend(chatId: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+  async streamSend(chatId: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
     const messageId = await this.sendPlaceholder(chatId)
     if (!messageId) {
       // Fallback: just get the full text and send

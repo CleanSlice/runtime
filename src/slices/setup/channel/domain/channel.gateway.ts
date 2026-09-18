@@ -11,7 +11,7 @@ export interface IChannelGateway {
    * onStream is called with a function that accepts accumulated text.
    * Returns when streaming is complete.
    */
-  streamSend?(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void>
+  streamSend?(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void>
   /**
    * Ephemeral "agent is working" signal for the channel's UI. Optional —
    * only channels with a live typing affordance (bridle) implement it.

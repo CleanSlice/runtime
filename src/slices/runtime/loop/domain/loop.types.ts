@@ -30,7 +30,7 @@ export interface ILoopContext {
   history: Event[]
   tools: Tool[]
   send: (text: string, parts?: MessagePart[]) => Promise<void>
-  streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<void>
+  streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<string | void>
   /**
    * Best-effort "agent is working" signal to the originating channel's UI.
    * Fired at turn start and before each tool batch so the user never stares
@@ -67,4 +67,17 @@ export interface ILoopResult {
   text: string
   /** Whether the error limit was hit */
   errorLimitHit: boolean
+}
+
+/**
+ * One bubble of an agent turn as the person saw it on a streaming channel:
+ * the wire message id, its text, and when it was finalized. Stored on the
+ * turn's assistant event as `data.messages` so a transcript replay can show
+ * the same bubbles, under the same ids, instead of one glued paragraph.
+ * Display-only: prompt builders and the compactor read `data.text`.
+ */
+export interface IAssistantBubble {
+  id: string
+  text: string
+  ts: number
 }

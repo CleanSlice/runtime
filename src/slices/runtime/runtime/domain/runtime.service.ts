@@ -180,7 +180,12 @@ export class RuntimeService {
   private async buildHistory(msg: Message, sessionId: string, taskId: string): Promise<Event[]> {
     // Append user message as shared context
     const userEvent: Event = {
-      id: randomUUID(),
+      // On bridle the message id is minted by the person's browser and rides
+      // the whole way here. Keeping it as the event id makes the bubble on
+      // screen and the transcript entry one message, so a reload can tell
+      // "already saved" from "never arrived" without guessing by text
+      // (CLEAN-102). Other channels' ids are not unique across a session.
+      id: msg.channel === "bridle" && msg.id ? msg.id : randomUUID(),
       type: "user",
       ts: Date.now(),
       // Attachment references persist with the turn so transcript replays
