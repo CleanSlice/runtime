@@ -338,7 +338,7 @@ export class BridleRepository implements IChannelGateway {
     this.handler = handler
   }
 
-  async streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+  async streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
     const messageId = randomUUID()
 
     if (!this.socket?.connected) {
@@ -378,6 +378,10 @@ export class BridleRepository implements IChannelGateway {
     const interval = setInterval(flush, 100)
 
     let finalText = ""
+    // Set only when a bubble really went out under `messageId`. The loop
+    // stores it with the turn so a transcript replay can rebuild the same
+    // bubbles the person watched, under the same ids (CLEAN-102).
+    let emittedBubble = false
     try {
       finalText = await streamer((accumulated: string) => {
         pendingText = accumulated
@@ -397,12 +401,14 @@ export class BridleRepository implements IChannelGateway {
           messageId,
           ts: Date.now(),
         })
+        emittedBubble = true
       }
       log.info(
         `stream end (messageId=${messageId.slice(0, 8)}, ` +
         `chunks=${chunksEmitted}, length=${finalText.length}${isSilentReply(finalText) ? ", silent" : ""})`,
       )
     }
+    return emittedBubble ? messageId : undefined
   }
 
   private connect(): void {

@@ -54,7 +54,7 @@ export class ChannelGateway implements IChannelGateway {
     this.repository.onMessage(handler)
   }
 
-  streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<void> {
+  streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
     if ('streamSend' in this.repository && typeof this.repository.streamSend === 'function') {
       return this.repository.streamSend(to, streamer)
     }

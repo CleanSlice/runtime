@@ -17,6 +17,7 @@ import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
+import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -179,7 +180,12 @@ export class RuntimeService {
   private async buildHistory(msg: Message, sessionId: string, taskId: string): Promise<Event[]> {
     // Append user message as shared context
     const userEvent: Event = {
-      id: randomUUID(),
+      // On bridle the message id is minted by the person's browser and rides
+      // the whole way here. Keeping it as the event id makes the bubble on
+      // screen and the transcript entry one message, so a reload can tell
+      // "already saved" from "never arrived" without guessing by text
+      // (CLEAN-102). Other channels' ids are not unique across a session.
+      id: msg.channel === "bridle" && msg.id ? msg.id : randomUUID(),
       type: "user",
       ts: Date.now(),
       // Attachment references persist with the turn so transcript replays
@@ -204,17 +210,21 @@ export class RuntimeService {
       }
     }
 
-    // Truncate very long user messages to avoid slow LLM processing
-    const MAX_USER_MSG_CHARS = 4000
+    // Truncate very long user messages to avoid slow LLM processing. A turn
+    // that carried an attachment gets a much larger cap: the API already
+    // bounded that preview on its way in, and cutting it again left the model
+    // a fragment of sheet one. See messageTruncation.ts.
+    //
+    // `attachments` is read off the persisted event, not the live Message, so
+    // a replayed history keeps the same cap it was written under.
+    const messageLimits = this.deps.config.message
     for (const evt of history) {
       if (evt.type === "user") {
         const d = evt.data as Record<string, unknown>
         const text = d.text as string | undefined
-        if (text && text.length > MAX_USER_MSG_CHARS) {
-          const head = text.slice(0, MAX_USER_MSG_CHARS / 2)
-          const tail = text.slice(-500)
-          d.text = `${head}\n\n[… ${text.length - MAX_USER_MSG_CHARS + 500} characters truncated — message was very long/repetitive …]\n\n${tail}`
-        }
+        if (!text) continue
+        const hasAttachments = Array.isArray(d.attachments) && d.attachments.length > 0
+        d.text = truncateUserText(text, limitForUserEvent(hasAttachments, messageLimits))
       }
     }
 
@@ -223,10 +233,14 @@ export class RuntimeService {
     // them blows the model's context window even when the event COUNT is well
     // below the compaction threshold. The full payload stays on disk for
     // retrieval — only the in-memory copy handed to the model is trimmed.
-    const MAX_TOOL_OUTPUT_CHARS = 4000
+    //
+    // The cap has to clear a `query_attachment` read: that tool is how the
+    // model gets exact cells once the inline preview runs out, so trimming
+    // its result puts it back to estimating.
+    const maxToolOutputChars = this.deps.config.tools.maxOutputChars
     for (const evt of history) {
       if (evt.type === "tool_call" || evt.type === "tool_result") {
-        evt.data = truncateStrings(evt.data, MAX_TOOL_OUTPUT_CHARS)
+        evt.data = truncateStrings(evt.data, maxToolOutputChars)
       }
     }
 

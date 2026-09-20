@@ -6,7 +6,7 @@ import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { VoiceModule } from "../../../bot/voice/voice.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
-import type { ILoopContext, ILoopConfig, ILoopResult } from "./loop.types"
+import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
@@ -93,6 +93,12 @@ export class LoopService {
     let consecutiveErrors = 0
     let errorLimitHit = false
     let accumulatedText = ""
+    // What the person actually saw: on a streaming channel every iteration
+    // with text went out as its own bubble, under its own id. The turn is
+    // still stored as ONE assistant event (the model-facing history must not
+    // change shape), but it carries these boundaries — without them a replay
+    // glues "Let me check:" and "Done!" into "Let me check:Done!" (CLEAN-102).
+    const bubbles: IAssistantBubble[] = []
 
     // Light the channel's thinking indicator immediately — the first LLM byte
     // can be seconds away (prompt build + model latency), and tool-only
@@ -125,7 +131,11 @@ export class LoopService {
       let response
       const llmStartMs = Date.now()
       try {
-        response = await this.callLlm(ctx)
+        let bubbleId: string | undefined
+        response = await this.callLlm(ctx, (id) => { bubbleId = id })
+        if (bubbleId && response.text) {
+          bubbles.push({ id: bubbleId, text: response.text, ts: Date.now() })
+        }
         if (response.usage) this.deps.usage.add(response.usage)
         const elapsedMs = Date.now() - llmStartMs
         this.maybeEmitDebug(ctx, response, elapsedMs)
@@ -241,7 +251,7 @@ export class LoopService {
 
         // Send only when the loop is done (all continuations complete)
         if (!continueLoop && accumulatedText) {
-          await this.sendFinalResponse(ctx, accumulatedText, iterations)
+          await this.sendFinalResponse(ctx, accumulatedText, iterations, bubbles)
         }
       }
     }
@@ -279,7 +289,9 @@ export class LoopService {
     }
   }
 
-  private async callLlm(ctx: ILoopContext) {
+  /** `onBubble` fires with the wire message id when the channel showed this
+   *  call's text as a bubble of its own (streaming channels that mint ids). */
+  private async callLlm(ctx: ILoopContext, onBubble?: (messageId: string) => void) {
     const { channel, isInternal, systemPrompt, history, tools } = ctx
     const channelOk = canStreamOnChannel(channel, isInternal)
     const llmOk = this.deps.llm.canStream()
@@ -291,10 +303,11 @@ export class LoopService {
     )
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
-      await ctx.streamSend(channel, ctx.from, async (onChunk) => {
+      const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
         streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
         return streamedResponse.text ?? ""
       })
+      if (messageId) onBubble?.(messageId)
       if (streamedResponse) return streamedResponse
     }
     return this.deps.llm.complete(systemPrompt, history, tools)
@@ -430,7 +443,7 @@ export class LoopService {
     }
   }
 
-  private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number): Promise<void> {
+  private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number, bubbles: IAssistantBubble[] = []): Promise<void> {
     const tid = ctx.task.id.slice(0, 6)
     const rlog = log.child(tid)
     const iterTag = iterations > 1 ? ` #${iterations}` : ""
@@ -452,7 +465,9 @@ export class LoopService {
       id: randomUUID(),
       type: "assistant",
       ts: Date.now(),
-      data: { text: fullText },
+      // `text` stays the whole turn — it is what every LLM prompt builder and
+      // the compactor read. `messages` is display-only: the bubbles as sent.
+      data: { text: fullText, ...(bubbles.length ? { messages: bubbles } : {}) },
     }
     await this.deps.session.append(ctx.sessionId, assistantEvent)
 
