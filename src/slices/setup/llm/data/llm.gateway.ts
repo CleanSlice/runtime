@@ -4,9 +4,11 @@ import { ClaudeRepository } from "./repositories/claude/claude.repository"
 import { ClaudeCliRepository } from "./repositories/claudecli/claudecli.repository"
 import { DeepSeekRepository } from "./repositories/deepseek/deepseek.repository"
 import { GoogleRepository } from "./repositories/google/google.repository"
+import { GroqRepository } from "./repositories/groq/groq.repository"
 import { MistralRepository } from "./repositories/mistral/mistral.repository"
 import { OpenAiRepository } from "./repositories/openai/openai.repository"
 import { OpenRouterRepository } from "./repositories/openrouter/openrouter.repository"
+import { XaiRepository } from "./repositories/xai/xai.repository"
 
 export class LlmGateway implements ILlmGateway {
   private repository: ILlmGateway
@@ -52,6 +54,13 @@ export class LlmGateway implements ILlmGateway {
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })
+      case "groq":
+        return new GroqRepository({
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.GROQ_API_KEY ?? "",
+          model: config.model ?? "llama-3.3-70b-versatile",
+          baseUrl: config.baseUrl,
+          maxTokens: config.maxTokens,
+        })
       case "mistral":
         return new MistralRepository({
           apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.MISTRAL_API_KEY ?? "",
@@ -70,6 +79,13 @@ export class LlmGateway implements ILlmGateway {
         return new OpenRouterRepository({
           apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "",
           model: config.model ?? "anthropic/claude-sonnet-4",
+          baseUrl: config.baseUrl,
+          maxTokens: config.maxTokens,
+        })
+      case "xai":
+        return new XaiRepository({
+          apiKey: config.apiKey ?? process.env.LLM_API_KEY ?? process.env.XAI_API_KEY ?? "",
+          model: config.model ?? "grok-4",
           baseUrl: config.baseUrl,
           maxTokens: config.maxTokens,
         })

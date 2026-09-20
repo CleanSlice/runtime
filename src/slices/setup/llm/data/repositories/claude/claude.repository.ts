@@ -53,6 +53,11 @@ export function buildSystemParam(systemPrompt: string): Array<{
 }> {
   return [{
     type: "text",
+    text: "You are Claude Code, Anthropic's official CLI for Claude.",
+    cache_control: { type: "ephemeral", ttl: "1h" },
+  },
+  {
+    type: "text",
     text: systemPrompt,
     cache_control: { type: "ephemeral", ttl: "1h" },
   }]

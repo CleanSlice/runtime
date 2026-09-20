@@ -203,15 +203,15 @@ export class CommandService {
 
   private async handleStart(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
     if (this.deps.access.isAllowed(ctx.from)) {
-      await send(`👋 Hi! I'm your AI agent.\n\nSend me any message to get started.\nUse /help to see available commands.`)
+      await send(`👋 Привіт! Я твій AI-агент.\n\nНадішли будь-яке повідомлення, щоб почати.\nВикористовуй /help, щоб побачити доступні команди.`)
       return { handled: true }
     }
     const user = this.deps.access.getUser(ctx.from) ?? this.deps.access.registerPending(ctx.from)
     if (!user.accessCode) {
-      await send(`👋 Hi! You're not in the allowlist yet. Contact the bot owner for access.`)
+      await send(`👋 Привіт! Тебе ще немає у списку доступу. Звернися до власника бота, щоб отримати доступ.`)
     } else {
-      await send(`👋 Hi! To get access, send this code to the bot owner:\n\n🔑 *${user.accessCode}*`)
-    }  
+      await send(`👋 Привіт! Щоб отримати доступ, надішли цей код власнику бота:\n\n🔑 *${user.accessCode}*`)
+    }
     return { handled: true }
   }
 }

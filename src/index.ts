@@ -96,6 +96,13 @@ function buildLlmConfig(
         fallbackModel,
         apiKey: apiKey ?? process.env.GOOGLE_API_KEY,
       }
+    case "groq":
+      return {
+        provider: "groq",
+        model: model ?? "llama-3.3-70b-versatile",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.GROQ_API_KEY,
+      }
     case "mistral":
       return {
         provider: "mistral",
@@ -116,6 +123,13 @@ function buildLlmConfig(
         model: model ?? "anthropic/claude-sonnet-4",
         fallbackModel,
         apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
+      }
+    case "xai":
+      return {
+        provider: "xai",
+        model: model ?? "grok-4",
+        fallbackModel,
+        apiKey: apiKey ?? process.env.XAI_API_KEY,
       }
     case "anthropic":
     case "claude":
