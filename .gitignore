@@ -5,3 +5,6 @@ dist/
 *.sqlite
 .agent/users/
 .paddock/reports/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
