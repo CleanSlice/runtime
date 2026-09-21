@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
 import {
+  ClaudeRepository,
   EXTENDED_CACHE_TTL_BETA,
   billableInputTokens,
   buildApiKeyBetaHeader,
@@ -8,8 +9,8 @@ import {
 } from "./claude.repository"
 
 describe("buildSystemParam", () => {
-  test("wraps the prompt in a single cache-marked text block with 1h TTL", () => {
-    const param = buildSystemParam("You are a helpful agent.")
+  test("API key: wraps the prompt in a single cache-marked text block with 1h TTL", () => {
+    const param = buildSystemParam("You are a helpful agent.", { oauth: false })
 
     expect(param).toEqual([
       {
@@ -20,9 +21,64 @@ describe("buildSystemParam", () => {
     ])
   })
 
+  test("OAuth: the Claude Code identity line leads, the prompt carries the only breakpoint", () => {
+    const param = buildSystemParam("You are a helpful agent.", { oauth: true })
+
+    expect(param).toEqual([
+      {
+        type: "text",
+        text: "You are Claude Code, Anthropic's official CLI for Claude.",
+      },
+      {
+        type: "text",
+        text: "You are a helpful agent.",
+        cache_control: { type: "ephemeral", ttl: "1h" },
+      },
+    ])
+  })
+
   test("preserves prompt bytes exactly (prefix stability is the cache key)", () => {
     const prompt = "line1\n\n  indented\nюникод ✓\t"
-    expect(buildSystemParam(prompt)[0].text).toBe(prompt)
+    expect(buildSystemParam(prompt, { oauth: false }).at(-1)?.text).toBe(prompt)
+    expect(buildSystemParam(prompt, { oauth: true }).at(-1)?.text).toBe(prompt)
+  })
+})
+
+describe("system param per credential", () => {
+  // Stand-in for the SDK: records what each client would put on the wire.
+  const requests: Array<{ system: Array<{ text: string }> }> = []
+  mock.module("@anthropic-ai/sdk", () => ({
+    default: class {
+      messages = {
+        create: async (params: { system: Array<{ text: string }> }) => {
+          requests.push({ system: params.system })
+          return {
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
+        },
+      }
+    },
+  }))
+
+  const systemTextsFor = async (apiKey: string): Promise<string[]> => {
+    requests.length = 0
+    const repo = new ClaudeRepository({ model: "claude-test", apiKey })
+    await repo.complete("You are a helpful agent.", [], [])
+    expect(requests).toHaveLength(1)
+    return requests[0].system.map(b => b.text)
+  }
+
+  test("an OAuth token sends the identity line ahead of the prompt", async () => {
+    expect(await systemTextsFor("sk-ant-oat01-test")).toEqual([
+      "You are Claude Code, Anthropic's official CLI for Claude.",
+      "You are a helpful agent.",
+    ])
+  })
+
+  test("an API key sends the prompt alone", async () => {
+    expect(await systemTextsFor("sk-ant-api03-test")).toEqual(["You are a helpful agent."])
   })
 })
 

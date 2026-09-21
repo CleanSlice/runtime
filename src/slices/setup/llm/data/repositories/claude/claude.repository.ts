@@ -31,6 +31,9 @@ const log = createLogger("llm")
 /** Extended cache TTL beta — enables `{ttl: "1h"}` on cache_control breakpoints. */
 export const EXTENDED_CACHE_TTL_BETA = "extended-cache-ttl-2025-04-11"
 
+/** First system block Anthropic expects from an OAuth (Claude Code) credential. */
+const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude."
+
 export function buildOauthBetaHeader(): string {
   return `oauth-2025-04-20,claude-code-20250219,${EXTENDED_CACHE_TTL_BETA}`
 }
@@ -45,22 +48,24 @@ export function buildApiKeyBetaHeader(): string {
  * system prompt together. The 1h TTL (refreshed on every hit) keeps the entry
  * warm across default 30-min heartbeat ticks; cache misses and prompts below
  * the model's cacheable minimum silently process at full price.
+ *
+ * OAuth (sk-ant-oat*) requests ride the Claude Code beta and must open with
+ * its identity line; API-key requests send the prompt alone. The identity
+ * block sits before the breakpoint, so it is cached along with the rest.
  */
-export function buildSystemParam(systemPrompt: string): Array<{
+export function buildSystemParam(systemPrompt: string, { oauth }: { oauth: boolean }): Array<{
   type: "text"
   text: string
-  cache_control: { type: "ephemeral"; ttl: "1h" }
+  cache_control?: { type: "ephemeral"; ttl: "1h" }
 }> {
-  return [{
-    type: "text",
-    text: "You are Claude Code, Anthropic's official CLI for Claude.",
-    cache_control: { type: "ephemeral", ttl: "1h" },
-  },
-  {
-    type: "text",
-    text: systemPrompt,
-    cache_control: { type: "ephemeral", ttl: "1h" },
-  }]
+  return [
+    ...(oauth ? [{ type: "text" as const, text: CLAUDE_CODE_IDENTITY }] : []),
+    {
+      type: "text",
+      text: systemPrompt,
+      cache_control: { type: "ephemeral", ttl: "1h" },
+    },
+  ]
 }
 
 /** Cache token counts from a response usage payload, absent fields → 0. */
@@ -236,6 +241,7 @@ const PRIMARY_RETRY_AFTER_MS = 2 * 60 * 1000 // 2 minutes
 export class ClaudeRepository implements ILlmGateway {
   private clients: Anthropic[] = []   // OAuth pool (index 0 = primary, 1,2... = fallbacks)
   private apiKeyClient: Anthropic | undefined  // API key client (last resort)
+  private oauthClients = new Set<Anthropic>()  // clients that must send the Claude Code identity line
   private currentClientIndex = 0
   private tokenStates: TokenState[] = []  // per-client rate-limit state, parallel to clients
   private model: string
@@ -324,6 +330,7 @@ export class ClaudeRepository implements ILlmGateway {
     }
 
     this.clients = oauthClients
+    this.oauthClients = new Set(oauthClients)
     this.apiKeyClient = apiKeyClient
 
     if (this.clients.length === 0 && this.apiKeyClient) {
@@ -530,10 +537,11 @@ export class ClaudeRepository implements ILlmGateway {
 
           let streamResponse
           try {
-            streamResponse = await this.getClient().messages.stream({
+            const client = this.getClient()
+            streamResponse = await client.messages.stream({
               model,
               max_tokens: this.maxTokens,
-              system: buildSystemParam(systemPrompt),
+              system: buildSystemParam(systemPrompt, { oauth: this.oauthClients.has(client) }),
               messages,
               ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
             })
@@ -669,10 +677,11 @@ export class ClaudeRepository implements ILlmGateway {
           const attemptIndex = this.currentClientIndex
           let response
           try {
-            response = await this.getClient().messages.create({
+            const client = this.getClient()
+            response = await client.messages.create({
               model,
               max_tokens: this.maxTokens,
-              system: buildSystemParam(systemPrompt),
+              system: buildSystemParam(systemPrompt, { oauth: this.oauthClients.has(client) }),
               messages,
               ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
             })
