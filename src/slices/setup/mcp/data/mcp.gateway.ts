@@ -146,14 +146,19 @@ export class McpGateway extends IMcpGateway {
     this.oauth.set(cfg.id, server)
     this.armIdleSweep()
 
-    const seed = await this.anyBundleSubject(cfg.id)
-    if (seed === undefined) {
+    const seeds = await this.bundleSubjects(cfg.id)
+    if (seeds.length === 0) {
       log.info(`${cfg.name}: oauth not connected — offering connect tool`)
       return [this.makeConnectTool(server)]
     }
-    const listed = await this.listWithSubject(server, seed)
-    if (!listed) return [this.makeConnectTool(server)]
-    return this.oauthTools(server)
+    // Any live bundle will do for the listing; one whose grant died (seen
+    // live: a newer login with the same account replaced it) is skipped, not
+    // the end of it — the next person's bundle lists the tools just as well.
+    for (const seed of seeds) {
+      if (await this.listWithSubject(server, seed)) return this.oauthTools(server)
+    }
+    log.info(`${cfg.name}: no stored login could list tools — offering connect tool`)
+    return [this.makeConnectTool(server)]
   }
 
   /**
@@ -225,6 +230,7 @@ export class McpGateway extends IMcpGateway {
     } catch (err) {
       log.warn(`${server.cfg.name}: tools/list failed — ${(err as Error).message}`)
       await this.evict(server, subject)
+      if (isAuthFailure(err)) server.dead.add(subject)
       return null
     }
   }
@@ -234,19 +240,20 @@ export class McpGateway extends IMcpGateway {
    * with at boot: the agent-wide one is tried first (it is the bundle a
    * Connect from the Rancher chat wrote), then whoever connected personally.
    */
-  private async anyBundleSubject(serverId: string): Promise<string | undefined> {
-    if (!this.secrets) return undefined
-    if (await this.secrets.get(mcpOauthSecretKey(serverId))) return serverId
-    if (!this.secrets.list) return undefined
+  private async bundleSubjects(serverId: string): Promise<string[]> {
+    if (!this.secrets) return []
+    const out: string[] = []
+    if (await this.secrets.get(mcpOauthSecretKey(serverId))) out.push(serverId)
+    if (!this.secrets.list) return out
     try {
       for (const name of await this.secrets.list()) {
         const subject = subjectOfSecretKey(serverId, name)
-        if (subject) return subject
+        if (subject) out.push(subject)
       }
     } catch (err) {
       log.debug(`secret listing failed — ${(err as Error).message}`)
     }
-    return undefined
+    return out
   }
 
   /** The client for a tool call: the caller's subject, or nothing usable. */
@@ -278,6 +285,9 @@ export class McpGateway extends IMcpGateway {
       await client.connect(transport)
     } catch (err) {
       log.warn(`${server.cfg.name}: connect for ${subject} failed — ${(err as Error).message}`)
+      // A refused login is not a network hiccup: stop retrying the bundle
+      // and let the connect tool hand out a fresh link.
+      if (isAuthFailure(err)) server.dead.add(subject)
       return null
     }
     server.clients.set(subject, { client, provider, lastUsed: Date.now() })
