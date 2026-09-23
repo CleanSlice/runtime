@@ -167,10 +167,6 @@ const mcp = new McpModule(mcpSecrets)
 const mcpServersJson = process.env.MCP_SERVERS_B64
   ? Buffer.from(process.env.MCP_SERVERS_B64, "base64").toString("utf8")
   : undefined
-const mcpTools = await mcp.loadAll({
-  fromConfig: init.config.mcps ?? [],
-  fromEnv: mcpServersJson,
-})
 
 // Canonical agent-facing contract:
 //   LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODEL, LLM_API_KEY
@@ -212,7 +208,7 @@ if (llmAuxiliary) {
 // One array, shared: the runtime and the loop read it on every message, and
 // the MCP module swaps a server's tools in place when a login lands
 // (CLEAN-79) — a copy would be one they never see.
-const tools = [...toolGateway.getAll(), ...mcpTools]
+const tools = [...toolGateway.getAll()]
 
 const runtime = new AgentRuntime({
   init,
@@ -229,6 +225,19 @@ const runtime = new AgentRuntime({
 runtime.onBridleMcpConnected((event) => {
   void mcp.handleConnected(event, tools)
 })
+
+// MCP servers connect AFTER the state restore: an OAuth server's tokens live
+// in data/secrets, which on the file provider only exists locally once S3 was
+// pulled. Loading MCP first meant a freshly restarted agent offered only the
+// connect tool until someone logged in again (CLEAN-79). Channels are not up
+// yet, so no message can arrive before the tools are in place.
+await runtime.restore()
+tools.push(
+  ...(await mcp.loadAll({
+    fromConfig: init.config.mcps ?? [],
+    fromEnv: mcpServersJson,
+  })),
+)
 
 await runtime.start()
 log.ok(`🤖 agent runtime v${pkg.version} started`)

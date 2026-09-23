@@ -64,6 +64,8 @@ export class AgentRuntime {
   private activityModule: ActivityModule
   private channelConfigs: RuntimeConfig["channels"]
   private s3sync?: S3SyncService
+  /** The S3 restore ran (see `restore`); `start` then skips it. */
+  private restored = false
   private access: AccessModule
   private init: InitModule
   private loop: LoopModule
@@ -293,8 +295,19 @@ export class AgentRuntime {
    * `.agent.example` on first run, so the agent has a coherent local state).
    * Once S3 comes back, the watcher will push subsequent changes.
    */
+  /**
+   * Pull the agent's state from S3 before anything reads it. `start` does
+   * this itself; the entrypoint calls it earlier when something must see the
+   * restored files first — the MCP load, which reads the OAuth bundles Ranch
+   * stored under data/secrets (CLEAN-79). Idempotent.
+   */
+  restore(): Promise<void> {
+    return this.restoreState()
+  }
+
   private async restoreState(): Promise<void> {
-    if (!this.s3sync) return
+    if (!this.s3sync || this.restored) return
+    this.restored = true
     try {
       await this.s3sync.pull()
     } catch (err) {

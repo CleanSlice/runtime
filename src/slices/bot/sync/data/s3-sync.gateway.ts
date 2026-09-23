@@ -177,7 +177,11 @@ export class S3SyncService implements ISyncGateway {
       if (statSync(full).isDirectory()) {
         this.walkDir(full, result)
       } else {
-        result.push(rel)
+        // S3 keys and the manifest use "/" — `relative` uses the platform
+        // separator. Without this, on Windows every pulled file looked like
+        // an orphan to the sweep (deleted from S3) and was re-uploaded under
+        // a backslash key.
+        result.push(toPosix(rel))
       }
     }
     return result
@@ -319,7 +323,7 @@ export class S3SyncService implements ISyncGateway {
     try {
       this.watcher = watch(this.agentDir, { recursive: true }, (_event, filename) => {
         if (!filename) return
-        const rel = filename.toString()
+        const rel = toPosix(filename.toString())
         if (this.isSkipped(rel)) return
         this.dirty.add(rel)
         this.scheduleFlush()
@@ -392,4 +396,9 @@ export class S3SyncService implements ISyncGateway {
       this.timer = undefined
     }
   }
+}
+
+/** A local relative path in the form S3 keys and the manifest use. */
+function toPosix(rel: string): string {
+  return rel.split(sep).join("/")
 }
