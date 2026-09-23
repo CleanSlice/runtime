@@ -1,6 +1,6 @@
 import type { ISyncGateway } from "../domain/sync.gateway"
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, watch, type FSWatcher } from "fs"
-import { join, relative, sep } from "path"
+import { dirname, join, relative, sep } from "path"
 import { createLogger } from "../../../setup/logger"
 
 const log = createLogger("s3")
@@ -240,7 +240,9 @@ export class S3SyncService implements ISyncGateway {
       const relPath = key.slice(`${this.prefix}/`.length)
       if (!relPath) continue
       const localPath = join(this.agentDir, relPath)
-      const dir = localPath.substring(0, localPath.lastIndexOf("/"))
+      // `join` uses the platform separator; slicing at "/" left an empty
+      // directory on Windows and every pull died on mkdir.
+      const dir = dirname(localPath)
       mkdirSync(dir, { recursive: true })
       const body = await this.s3Get(key)
       if (body) {
