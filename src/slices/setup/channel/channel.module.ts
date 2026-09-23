@@ -2,7 +2,7 @@ import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./domai
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
-import type { BridleSyncHandler, BridleSessionClearHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
+import type { BridleSyncHandler, BridleSessionClearHandler, BridleMcpConnectedHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
 import type { SessionActivity } from "../../agent/session/domain/activity"
 import { existsSync } from "fs"
 import {
@@ -184,6 +184,18 @@ export class ChannelModule {
     const bridle = this.service.get("bridle")
     if (bridle instanceof ChannelGateway) {
       bridle.onSessionClear(handler)
+    }
+  }
+
+  /**
+   * Register a handler that runs when the bridle hub reports a finished MCP
+   * OAuth login (CLEAN-79): the MCP module brings that person's client up
+   * in the running session. No-op when the bridle channel isn't configured.
+   */
+  onBridleMcpConnected(handler: BridleMcpConnectedHandler): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.onMcpConnected(handler)
     }
   }
 

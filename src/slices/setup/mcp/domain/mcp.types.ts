@@ -14,3 +14,16 @@ export interface IMcpLoadOptions {
    */
   fromEnv?: string
 }
+
+/**
+ * Hub → agent control event: an MCP OAuth login finished and Ranch stored
+ * the token (CLEAN-75, CLEAN-80). `subject` is whose token it is — the chat
+ * user's id, a share/anon client id, or the agent id for a connection made
+ * on the agent's behalf. Mirrors ranch's IBridleMcpConnectedEvent.
+ */
+export interface IMcpConnectedEvent {
+  /** Display name of the MCP server row. */
+  server: string
+  serverId: string
+  subject: string
+}

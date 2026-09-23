@@ -209,6 +209,11 @@ if (llmAuxiliary) {
   llmLog.info(`auxiliary: ${llmAuxiliary.provider}/${"model" in llmAuxiliary ? llmAuxiliary.model ?? "default" : "default"}`)
 }
 
+// One array, shared: the runtime and the loop read it on every message, and
+// the MCP module swaps a server's tools in place when a login lands
+// (CLEAN-79) — a copy would be one they never see.
+const tools = [...toolGateway.getAll(), ...mcpTools]
+
 const runtime = new AgentRuntime({
   init,
   llm,
@@ -216,7 +221,13 @@ const runtime = new AgentRuntime({
   // channels.json wins per type; env is the fallback. Bridle stays
   // env-only — it's the bootstrap channel the runtime can't reconfigure.
   channels: await ChannelModule.resolveBootConfigs(".agent"),
-  tools: [...toolGateway.getAll(), ...mcpTools],
+  tools,
+})
+
+// A finished OAuth login (Ranch pushes `mcp_connected`) brings that person's
+// MCP client up now and makes the server's tools live without a restart.
+runtime.onBridleMcpConnected((event) => {
+  void mcp.handleConnected(event, tools)
 })
 
 await runtime.start()

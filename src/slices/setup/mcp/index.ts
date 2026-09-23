@@ -1,2 +1,2 @@
 export { McpModule } from "./mcp.module"
-export type { IMcpServerConfig, IMcpLoadOptions } from "./domain"
+export type { IMcpServerConfig, IMcpLoadOptions, IMcpConnectedEvent } from "./domain"

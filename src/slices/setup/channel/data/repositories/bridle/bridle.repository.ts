@@ -183,6 +183,18 @@ export type BridleSyncHandler = () => Promise<{ pushed: number }>
 export type BridleSessionClearHandler = (channel: string) => void
 
 /**
+ * Callback invoked when the hub reports that an MCP OAuth login finished
+ * and the token is stored (CLEAN-75/79/80). `subject` is whose token it is
+ * — the chat user's id, a share/anon client id, or the agent id for a
+ * connection made on the agent's behalf.
+ */
+export type BridleMcpConnectedHandler = (event: {
+  server: string
+  serverId: string
+  subject: string
+}) => void
+
+/**
  * Snapshot of an LLM round-trip for the admin debug panel. Sent over the
  * "debug" wire event; the hub only relays it to admin clients.
  */
@@ -222,6 +234,7 @@ export class BridleRepository implements IChannelGateway {
   private handler?: (msg: Message) => Promise<void>
   private syncHandler?: BridleSyncHandler
   private sessionClearHandler?: BridleSessionClearHandler
+  private mcpConnectedHandler?: BridleMcpConnectedHandler
   private socket: Socket | null = null
   private apiUrl: string
   /**
@@ -253,6 +266,15 @@ export class BridleRepository implements IChannelGateway {
    */
   onSessionClear(handler: BridleSessionClearHandler): void {
     this.sessionClearHandler = handler
+  }
+
+  /**
+   * Register a handler to run when the hub says an MCP OAuth login landed
+   * (`mcp_connected`). Wired to the MCP module so the person's client comes
+   * up in this session instead of on the next boot (CLEAN-79).
+   */
+  onMcpConnected(handler: BridleMcpConnectedHandler): void {
+    this.mcpConnectedHandler = handler
   }
 
   async start(): Promise<void> {
@@ -479,6 +501,11 @@ export class BridleRepository implements IChannelGateway {
       // can re-link the files on replay.
       const attachments = sanitizeWireAttachments(msg.attachments)
 
+      // The person apart from the channel (CLEAN-80): the hub attaches the
+      // console login of the socket that sent this. Owners and admins share
+      // clientId "admin"; this is what tells them apart.
+      const user = readUser(msg.user)
+
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
         text,
@@ -489,8 +516,26 @@ export class BridleRepository implements IChannelGateway {
         ...(capabilities ? { capabilities } : {}),
         ...(prompt ? { prompt } : {}),
         ...(attachments.length ? { attachments } : {}),
+        ...(user ? { user } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
+    })
+
+    this.socket.on("mcp_connected", (data: unknown) => {
+      const msg = data as { server?: unknown; serverId?: unknown; subject?: unknown }
+      if (typeof msg?.serverId !== "string" || !msg.serverId) return
+      const event = {
+        server: typeof msg.server === "string" ? msg.server : msg.serverId,
+        serverId: msg.serverId,
+        // Hubs older than CLEAN-80 send no subject: that was the agent-wide
+        // bundle, which the gateway reads under the agent's own id.
+        subject:
+          typeof msg.subject === "string" && msg.subject
+            ? msg.subject
+            : (process.env.AGENT_ID ?? process.env.BRIDLE_AGENT_ID ?? ""),
+      }
+      log.info(`mcp_connected from hub: server=${event.server} subject=${event.subject}`)
+      this.mcpConnectedHandler?.(event)
     })
 
     this.socket.on("debug_set", (data: unknown) => {
@@ -539,4 +584,20 @@ export class BridleRepository implements IChannelGateway {
     })
   }
 
+}
+
+/**
+ * The `user` the hub attaches to a message (CLEAN-80): `{ id, email? }`
+ * for a signed-in console socket, absent otherwise. Anything malformed is
+ * dropped rather than guessed — an empty id would key someone's token to
+ * nobody.
+ */
+function readUser(raw: unknown): { id: string; email?: string } | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as { id?: unknown; email?: unknown }
+  if (typeof o.id !== "string" || !o.id) return undefined
+  return {
+    id: o.id,
+    ...(typeof o.email === "string" && o.email ? { email: o.email } : {}),
+  }
 }

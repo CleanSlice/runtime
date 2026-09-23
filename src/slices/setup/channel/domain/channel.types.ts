@@ -178,6 +178,14 @@ export interface Message {
    * undefined. Persisted into the session transcript alongside the text.
    */
   attachments?: IMessageAttachment[]
+  /**
+   * The person behind the message, apart from the channel (CLEAN-80). The
+   * bridle hub attaches the console login (id = JWT sub, email for display)
+   * to every message a signed-in socket sends; owners and admins share one
+   * `from` ("admin") but each keeps their own id here. Absent for share and
+   * anonymous visitors and on channels without the concept.
+   */
+  user?: { id: string; email?: string }
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -219,6 +227,8 @@ export function buildMessage(fields: {
   prompt?: string
   /** Stored-attachment references (see Message.attachments). */
   attachments?: IMessageAttachment[]
+  /** The person behind the message (see Message.user). */
+  user?: { id: string; email?: string }
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -251,6 +261,7 @@ export function buildMessage(fields: {
     ...(fields.capabilities?.length ? { capabilities: fields.capabilities } : {}),
     ...(fields.prompt ? { prompt: fields.prompt } : {}),
     ...(fields.attachments?.length ? { attachments: fields.attachments } : {}),
+    ...(fields.user?.id ? { user: fields.user } : {}),
     metadata: fields.metadata,
   }
 }

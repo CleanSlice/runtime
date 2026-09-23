@@ -198,6 +198,15 @@ export class AgentRuntime {
     this.channel.onBridleSessionClear((channel) => this.session.clear("bridle", channel))
   }
 
+  /**
+   * Let the entrypoint react to a finished MCP OAuth login (hub
+   * `mcp_connected`, CLEAN-79). The MCP module lives in the entrypoint, not
+   * here, so the runtime only relays the hook to its bridle channel.
+   */
+  onBridleMcpConnected(handler: Parameters<ChannelModule["onBridleMcpConnected"]>[0]): void {
+    this.channel.onBridleMcpConnected(handler)
+  }
+
   /** Boot the agent: restore state, connect channels, start background jobs. */
   async start(): Promise<void> {
     await this.restoreState()
