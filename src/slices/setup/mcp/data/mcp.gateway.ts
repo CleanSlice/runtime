@@ -51,6 +51,13 @@ interface IOauthServer {
   listed: IListedTool[] | null
   /** Open clients by subject. */
   clients: Map<string, IOauthClient>
+  /**
+   * Subjects whose stored bundle the provider refused (revoked grant, dead
+   * refresh). Their calls and the connect tool point at a fresh login until
+   * `reconnect` clears the mark — otherwise the bundle on disk keeps saying
+   * "connected" while every call fails.
+   */
+  dead: Set<string>
 }
 
 /**
@@ -134,6 +141,7 @@ export class McpGateway extends IMcpGateway {
       cfg: { ...cfg, id: cfg.id },
       listed: null,
       clients: new Map(),
+      dead: new Set(),
     }
     this.oauth.set(cfg.id, server)
     this.armIdleSweep()
@@ -161,6 +169,7 @@ export class McpGateway extends IMcpGateway {
     // A fresh token replaces whatever client this subject had — the old one
     // may be holding a dead refresh.
     await this.evict(server, subject)
+    server.dead.delete(subject)
     const hadTools = server.listed !== null
     const client = await this.clientFor(server, subject)
     if (!client) {
@@ -252,6 +261,7 @@ export class McpGateway extends IMcpGateway {
    * `${name}__connect`.
    */
   private async clientFor(server: IOauthServer, subject: string): Promise<Client | null> {
+    if (server.dead.has(subject)) return null
     const cached = server.clients.get(subject)
     if (cached) {
       cached.lastUsed = Date.now()
@@ -318,7 +328,9 @@ export class McpGateway extends IMcpGateway {
       inputSchema: { type: "object", properties: {} },
       execute: async (_params, ctx) => {
         const subject = subjectOf(ctx) ?? cfg.id
-        if (this.secrets) {
+        // A bundle the provider already refused is not "connected", whatever
+        // the disk says: hand out a fresh link instead.
+        if (this.secrets && !server.dead.has(subject)) {
           const key = await resolveBundleKey(this.secrets, cfg.id, subject)
           if (key) {
             const who = await new RuntimeMcpOauthProvider(key, this.secrets).identity()
@@ -422,6 +434,8 @@ export class McpGateway extends IMcpGateway {
           if (oauthServer && isAuthFailure(err)) {
             const subject = subjectOf(ctx) ?? oauthServer.cfg.id
             await this.evict(oauthServer, subject)
+            oauthServer.dead.add(subject)
+            log.warn(`${serverName}: login for ${subject} refused — ${message}`)
             return {
               error: `${serverName}'s login for this person has expired or was revoked.`,
               next: `Call ${serverName}__connect to give them a fresh login link.`,
@@ -485,11 +499,19 @@ export class McpGateway extends IMcpGateway {
   }
 }
 
-/** The SDK's own auth failure, or our provider refusing to re-authorize. */
+/**
+ * The SDK's own auth failure, our provider refusing to re-authorize, or the
+ * provider's server saying the grant is gone. The last one arrives as an
+ * ordinary tool error — Silpo answers "Grant not found" once a newer login
+ * with the same account replaced this one (seen live) — so the message is
+ * matched too, on the wordings OAuth servers use for a dead grant or token.
+ */
 export function isAuthFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false
   if (err.name === "UnauthorizedError") return true
   const code = (err as { code?: unknown }).code
   if (code === 401 || code === 403) return true
-  return /reconnect from the chat|unauthorized|401/i.test(err.message)
+  return /reconnect from the chat|unauthori[sz]ed|\b401\b|invalid[_ ]grant|grant (not found|revoked|expired)|invalid[_ ]token|token (expired|revoked|not found)/i.test(
+    err.message,
+  )
 }

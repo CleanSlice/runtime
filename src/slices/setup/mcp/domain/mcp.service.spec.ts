@@ -149,3 +149,27 @@ describe("whose token a call uses", () => {
     expect(await resolveBundleKey(secrets, "srv-1", "user-b")).toBeNull()
   })
 })
+
+describe("isAuthFailure", () => {
+  const { isAuthFailure } = require("../data/mcp.gateway") as typeof import("../data/mcp.gateway")
+  const named = (name: string) => Object.assign(new Error("x"), { name })
+  const coded = (code: number) => Object.assign(new Error("HTTP"), { code })
+
+  it("recognises the SDK's and the provider's own refusals", () => {
+    expect(isAuthFailure(named("UnauthorizedError"))).toBe(true)
+    expect(isAuthFailure(coded(401))).toBe(true)
+    expect(isAuthFailure(new Error("MCP OAuth token expired or revoked — the user must reconnect from the chat"))).toBe(true)
+  })
+
+  it("recognises a dead grant reported as a plain tool error (seen live with Silpo)", () => {
+    expect(isAuthFailure(new Error("MCP Silpo.silpo_get_my_profile failed: Grant not found"))).toBe(true)
+    expect(isAuthFailure(new Error("invalid_grant"))).toBe(true)
+    expect(isAuthFailure(new Error("Token expired"))).toBe(true)
+  })
+
+  it("leaves ordinary tool errors alone", () => {
+    expect(isAuthFailure(new Error("MCP error -32602: branchId and deliveryType are required"))).toBe(false)
+    expect(isAuthFailure(new Error("ECONNRESET"))).toBe(false)
+    expect(isAuthFailure("not an error")).toBe(false)
+  })
+})
