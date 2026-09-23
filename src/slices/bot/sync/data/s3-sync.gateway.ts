@@ -224,9 +224,17 @@ export class S3SyncService implements ISyncGateway {
    * from .agent.example on first run) are intentionally left out so the next
    * push() sweep uploads them.
    */
-  async pull(): Promise<void> {
+  /**
+   * Copy S3 → local. Without `subdir` the whole agent state (boot restore);
+   * with one, only that folder — e.g. `data/secrets` when the hub says a
+   * token just landed (CLEAN-79): Ranch's file-provider secret gateway
+   * writes to this same bucket, and a running agent otherwise sees the new
+   * bundle only on its next boot.
+   */
+  async pull(subdir?: string): Promise<void> {
     let count = 0
-    const keys = await this.s3List(`${this.prefix}/`)
+    const scope = subdir ? `${this.prefix}/${subdir.replace(/^\/|\/$/g, "")}/` : `${this.prefix}/`
+    const keys = await this.s3List(scope)
 
     for (const key of keys) {
       const relPath = key.slice(`${this.prefix}/`.length)

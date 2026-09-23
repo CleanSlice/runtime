@@ -204,7 +204,19 @@ export class AgentRuntime {
    * here, so the runtime only relays the hook to its bridle channel.
    */
   onBridleMcpConnected(handler: Parameters<ChannelModule["onBridleMcpConnected"]>[0]): void {
-    this.channel.onBridleMcpConnected(handler)
+    this.channel.onBridleMcpConnected((event) => {
+      // With SECRET_PROVIDER=file Ranch wrote the bundle into the agent's S3
+      // state, not onto this disk; the boot-time restore is the only other
+      // time we read it. Refresh just the secrets folder before the MCP
+      // module looks for the token. Best-effort: without S3 (standalone
+      // agent) the store is already local and there is nothing to pull.
+      const refresh = this.s3sync
+        ? this.s3sync.pull("data/secrets").catch((err) =>
+            s3Log.warn(`secrets pull before mcp_connected failed — ${(err as Error).message}`),
+          )
+        : Promise.resolve()
+      void refresh.then(() => handler(event))
+    })
   }
 
   /** Boot the agent: restore state, connect channels, start background jobs. */
