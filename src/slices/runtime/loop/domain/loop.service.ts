@@ -369,6 +369,7 @@ export class LoopService {
               sessionId,
               agentDir: ctx.agentDir,
               from: ctx.from,
+              ...(ctx.user ? { user: ctx.user } : {}),
               channel: ctx.channel,
               send: ctx.send,
               agentConfig: ctx.agentConfig,

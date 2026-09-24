@@ -4,7 +4,7 @@ import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../agent/session/domain/activity"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
 import { SlackRepository } from "./repositories/slack/slack.repository"
-import { BridleRepository, type BridleSyncHandler, type BridleSessionClearHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
+import { BridleRepository, type BridleSyncHandler, type BridleSessionClearHandler, type BridleMcpConnectedHandler, type IBridleDebugPayload } from "./repositories/bridle/bridle.repository"
 
 export class ChannelGateway implements IChannelGateway {
   readonly name: string
@@ -91,6 +91,13 @@ export class ChannelGateway implements IChannelGateway {
   onSessionClear(handler: BridleSessionClearHandler): void {
     if (this.repository instanceof BridleRepository) {
       this.repository.onSessionClear(handler)
+    }
+  }
+
+  /** Register an mcp_connected handler — only effective when this is a bridle channel. */
+  onMcpConnected(handler: BridleMcpConnectedHandler): void {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.onMcpConnected(handler)
     }
   }
 

@@ -1,6 +1,6 @@
 import type { ISyncGateway } from "../domain/sync.gateway"
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, watch, type FSWatcher } from "fs"
-import { join, relative, sep } from "path"
+import { dirname, join, relative, sep } from "path"
 import { createLogger } from "../../../setup/logger"
 
 const log = createLogger("s3")
@@ -177,7 +177,11 @@ export class S3SyncService implements ISyncGateway {
       if (statSync(full).isDirectory()) {
         this.walkDir(full, result)
       } else {
-        result.push(rel)
+        // S3 keys and the manifest use "/" — `relative` uses the platform
+        // separator. Without this, on Windows every pulled file looked like
+        // an orphan to the sweep (deleted from S3) and was re-uploaded under
+        // a backslash key.
+        result.push(toPosix(rel))
       }
     }
     return result
@@ -224,15 +228,25 @@ export class S3SyncService implements ISyncGateway {
    * from .agent.example on first run) are intentionally left out so the next
    * push() sweep uploads them.
    */
-  async pull(): Promise<void> {
+  /**
+   * Copy S3 → local. Without `subdir` the whole agent state (boot restore);
+   * with one, only that folder — e.g. `data/secrets` when the hub says a
+   * token just landed (CLEAN-79): Ranch's file-provider secret gateway
+   * writes to this same bucket, and a running agent otherwise sees the new
+   * bundle only on its next boot.
+   */
+  async pull(subdir?: string): Promise<void> {
     let count = 0
-    const keys = await this.s3List(`${this.prefix}/`)
+    const scope = subdir ? `${this.prefix}/${subdir.replace(/^\/|\/$/g, "")}/` : `${this.prefix}/`
+    const keys = await this.s3List(scope)
 
     for (const key of keys) {
       const relPath = key.slice(`${this.prefix}/`.length)
       if (!relPath) continue
       const localPath = join(this.agentDir, relPath)
-      const dir = localPath.substring(0, localPath.lastIndexOf("/"))
+      // `join` uses the platform separator; slicing at "/" left an empty
+      // directory on Windows and every pull died on mkdir.
+      const dir = dirname(localPath)
       mkdirSync(dir, { recursive: true })
       const body = await this.s3Get(key)
       if (body) {
@@ -309,7 +323,7 @@ export class S3SyncService implements ISyncGateway {
     try {
       this.watcher = watch(this.agentDir, { recursive: true }, (_event, filename) => {
         if (!filename) return
-        const rel = filename.toString()
+        const rel = toPosix(filename.toString())
         if (this.isSkipped(rel)) return
         this.dirty.add(rel)
         this.scheduleFlush()
@@ -382,4 +396,9 @@ export class S3SyncService implements ISyncGateway {
       this.timer = undefined
     }
   }
+}
+
+/** A local relative path in the form S3 keys and the manifest use. */
+function toPosix(rel: string): string {
+  return rel.split(sep).join("/")
 }

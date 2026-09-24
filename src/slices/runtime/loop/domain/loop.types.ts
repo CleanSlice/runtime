@@ -24,6 +24,8 @@ export interface ILoopContext {
   sessionId: string
   agentDir: string
   from: string
+  /** The person behind the message, apart from `from` (CLEAN-80); see Message.user. */
+  user?: { id: string; email?: string }
   channel: string
   isInternal: boolean
   systemPrompt: string

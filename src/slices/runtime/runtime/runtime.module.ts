@@ -64,6 +64,8 @@ export class AgentRuntime {
   private activityModule: ActivityModule
   private channelConfigs: RuntimeConfig["channels"]
   private s3sync?: S3SyncService
+  /** The S3 restore ran (see `restore`); `start` then skips it. */
+  private restored = false
   private access: AccessModule
   private init: InitModule
   private loop: LoopModule
@@ -198,6 +200,27 @@ export class AgentRuntime {
     this.channel.onBridleSessionClear((channel) => this.session.clear("bridle", channel))
   }
 
+  /**
+   * Let the entrypoint react to a finished MCP OAuth login (hub
+   * `mcp_connected`, CLEAN-79). The MCP module lives in the entrypoint, not
+   * here, so the runtime only relays the hook to its bridle channel.
+   */
+  onBridleMcpConnected(handler: Parameters<ChannelModule["onBridleMcpConnected"]>[0]): void {
+    this.channel.onBridleMcpConnected((event) => {
+      // With SECRET_PROVIDER=file Ranch wrote the bundle into the agent's S3
+      // state, not onto this disk; the boot-time restore is the only other
+      // time we read it. Refresh just the secrets folder before the MCP
+      // module looks for the token. Best-effort: without S3 (standalone
+      // agent) the store is already local and there is nothing to pull.
+      const refresh = this.s3sync
+        ? this.s3sync.pull("data/secrets").catch((err) =>
+            s3Log.warn(`secrets pull before mcp_connected failed — ${(err as Error).message}`),
+          )
+        : Promise.resolve()
+      void refresh.then(() => handler(event))
+    })
+  }
+
   /** Boot the agent: restore state, connect channels, start background jobs. */
   async start(): Promise<void> {
     await this.restoreState()
@@ -272,8 +295,19 @@ export class AgentRuntime {
    * `.agent.example` on first run, so the agent has a coherent local state).
    * Once S3 comes back, the watcher will push subsequent changes.
    */
+  /**
+   * Pull the agent's state from S3 before anything reads it. `start` does
+   * this itself; the entrypoint calls it earlier when something must see the
+   * restored files first — the MCP load, which reads the OAuth bundles Ranch
+   * stored under data/secrets (CLEAN-79). Idempotent.
+   */
+  restore(): Promise<void> {
+    return this.restoreState()
+  }
+
   private async restoreState(): Promise<void> {
-    if (!this.s3sync) return
+    if (!this.s3sync || this.restored) return
+    this.restored = true
     try {
       await this.s3sync.pull()
     } catch (err) {

@@ -1,4 +1,5 @@
 export { IMcpGateway } from "./mcp.gateway"
-export { McpService } from "./mcp.service"
+export type { IMcpReconnectResult } from "./mcp.gateway"
+export { McpService, swapServerTools, countFor } from "./mcp.service"
 export { McpFetcher } from "./mcp.fetcher"
-export type { IMcpServerConfig, IMcpLoadOptions } from "./mcp.types"
+export type { IMcpServerConfig, IMcpLoadOptions, IMcpConnectedEvent } from "./mcp.types"

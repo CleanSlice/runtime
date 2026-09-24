@@ -12,6 +12,15 @@ export interface ToolContext {
   agentDir: string
   from?: string   // chat id (e.g. Telegram user id)
   channel?: string
+  /**
+   * The person behind the message, apart from the channel (CLEAN-80): the
+   * console login the bridle hub attached (id = JWT sub, email for display).
+   * Owners and admins share one `from` ("admin") but each carries their own
+   * id here, so per-person state — an MCP OAuth token — keys on it. Absent
+   * on channels without the concept and for share/anonymous visitors, whose
+   * `from` is already theirs alone.
+   */
+  user?: { id: string; email?: string }
   // `parts` is the rich-content escape hatch: pass [{type:"image", base64,
   // mediaType}, ...] to attach images/files to the same message. Channels
   // that don't support rich parts (telegram via this hook — telegram has

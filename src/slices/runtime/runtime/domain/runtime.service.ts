@@ -92,6 +92,7 @@ export class RuntimeService {
           sessionId,
           agentDir: this.deps.agentDir,
           from: msg.from,
+          ...(msg.user ? { user: msg.user } : {}),
           channel: msg.channel,
           isInternal,
           systemPrompt,
