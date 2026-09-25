@@ -21,6 +21,13 @@ export interface ToolContext {
    * `from` is already theirs alone.
    */
   user?: { id: string; email?: string }
+  /**
+   * The browser origin the person is sitting in (CLEAN-120), forwarded by
+   * the bridle hub from the socket's handshake. A tool that sends someone
+   * away — an OAuth login — uses it to bring them back to the same console.
+   * Absent on other channels.
+   */
+  origin?: string
   // `parts` is the rich-content escape hatch: pass [{type:"image", base64,
   // mediaType}, ...] to attach images/files to the same message. Channels
   // that don't support rich parts (telegram via this hook — telegram has

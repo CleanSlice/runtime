@@ -505,6 +505,7 @@ export class BridleRepository implements IChannelGateway {
       // console login of the socket that sent this. Owners and admins share
       // clientId "admin"; this is what tells them apart.
       const user = readUser(msg.user)
+      const origin = readOrigin(msg.origin)
 
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
@@ -517,6 +518,7 @@ export class BridleRepository implements IChannelGateway {
         ...(prompt ? { prompt } : {}),
         ...(attachments.length ? { attachments } : {}),
         ...(user ? { user } : {}),
+        ...(origin ? { origin } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })
@@ -592,6 +594,22 @@ export class BridleRepository implements IChannelGateway {
  * dropped rather than guessed — an empty id would key someone's token to
  * nobody.
  */
+/**
+ * The browser origin the hub attaches to a message (CLEAN-120). Only an
+ * http(s) origin proper is kept — no path, no credentials — because the
+ * only thing built from it is a link handed back to the person's browser.
+ */
+export function readOrigin(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || !raw) return undefined
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
+    return url.origin
+  } catch {
+    return undefined
+  }
+}
+
 function readUser(raw: unknown): { id: string; email?: string } | undefined {
   if (!raw || typeof raw !== "object") return undefined
   const o = raw as { id?: unknown; email?: unknown }
