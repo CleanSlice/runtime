@@ -190,7 +190,18 @@ export class McpGateway extends IMcpGateway {
     const hadTools = server.listed !== null
     const client = await this.clientFor(server, subject)
     if (!client) {
-      log.warn(`${server.cfg.name}: mcp_connected for ${subject} but no bundle found`)
+      // Two different failures used to share one line (CLEAN-122): the
+      // bundle really missing, and a bundle the provider refused to open —
+      // that one was already logged by clientFor, so say so instead of
+      // sending the reader to look for a secret that is there.
+      const stored = this.secrets
+        ? await resolveBundleKey(this.secrets, server.cfg.id, subject)
+        : null
+      log.warn(
+        stored
+          ? `${server.cfg.name}: mcp_connected for ${subject} but the stored login could not be opened (see the connect error above)`
+          : `${server.cfg.name}: mcp_connected for ${subject} but no bundle found`,
+      )
       return { serverName: server.cfg.name, tools: null }
     }
     if (hadTools) {
