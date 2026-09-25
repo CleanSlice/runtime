@@ -218,7 +218,10 @@ async function withRetry<T>(
       if (status === 401 || status === 403) throw err
       // 400 = model not available or bad request — stop retrying, let caller try fallback
       if (status === 400) {
-        log.warn(`${label} got 400 (model unavailable?), will try fallback`)
+        const tooLong = /prompt is too long/i.test(String((err as { message?: unknown })?.message ?? ""))
+        log.warn(tooLong
+          ? `${label} got 400: prompt is too long for the model's context window`
+          : `${label} got 400 (model unavailable?), will try fallback`)
         return { ok: false, lastError: err, wasOverloaded: false, wasBadRequest: true, retries, rateLimited: wasRateLimited }
       }
       const overloaded = isOverloadedError(err)

@@ -158,7 +158,11 @@ export class AgentRuntime {
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
       { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools },
-      { maxIterations: this.config.maxIterations },
+      {
+        maxIterations: this.config.maxIterations,
+        maxToolOutputChars: this.config.tools.maxOutputChars,
+        contextBudgetChars: this.config.session.contextBudgetChars,
+      },
     )
 
     // Message intake router — access check → commands → dispatch

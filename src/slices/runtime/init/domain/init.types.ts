@@ -29,6 +29,13 @@ export interface IAgentConfig {
      */
     compactionBytesThreshold: number
     recentKeep: number
+    /**
+     * The most serialized history (chars) handed to the model in one call,
+     * whatever compaction did or failed to do. Oldest events are left out
+     * first; a leading summary and the latest user message always stay
+     * (CLEAN-124). ~4 chars per token: 400 000 is ~100k tokens.
+     */
+    contextBudgetChars: number
   }
 
   /**
@@ -182,6 +189,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     compactionThreshold: 60,
     compactionBytesThreshold: 200_000,
     recentKeep: 20,
+    contextBudgetChars: 400_000,
   },
 
   memory: {

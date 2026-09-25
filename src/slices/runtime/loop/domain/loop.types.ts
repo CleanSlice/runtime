@@ -10,10 +10,16 @@ export interface ILoopConfig {
   maxConsecutiveErrors: number
   maxContinuations: number
   toolTimeout: number
+  /** Total serialized size a tool result may take in the model's context (CLEAN-124). */
+  maxToolOutputChars: number
+  /** Most serialized history handed to the model in one call (CLEAN-124). */
+  contextBudgetChars: number
 }
 
 export const LOOP_DEFAULTS: ILoopConfig = {
   maxIterations: 25,
+  maxToolOutputChars: 16_000,
+  contextBudgetChars: 400_000,
   maxConsecutiveErrors: 3,
   maxContinuations: 4,
   toolTimeout: 120_000,

@@ -3,7 +3,8 @@ import type { MemoryEntry, MemoryReviewConfig } from "./memory.types"
 import type { Event } from "../../../setup/event"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { SessionModule } from "../../session/session.module"
-import { estimateEventsBytes } from "../../session/domain/compaction.service"
+import { estimateEventsBytes, trimForSummary, SUMMARY_INPUT_MAX_CHARS } from "../../session/domain/compaction.service"
+import { fitEventsToBudget } from "../../session/domain/contextBudget"
 import { DEFAULT_MEMORY_REVIEW, MEMORY_LEARNED_HEADING } from "./memory.types"
 import { buildAdminOwnerPrompt } from "../../agent/domain/prompts/admin-owner.prompt"
 import { buildMemoryFlushPrompt, buildMemoryReviewPrompt } from "../../agent/domain/prompts/error-hint.prompt"
@@ -106,7 +107,10 @@ export class MemoryService {
       // Memory flush + compaction are background summarization tasks — route
       // through the auxiliary LLM (cheaper model, no contention with the
       // main session's prompt cache). Falls back to main when no aux is set.
-      const response = await llm.auxComplete(buildMemoryFlushPrompt(existing), events, [])
+      // Bounded like compaction's input (CLEAN-124): this call must not be
+      // the one that fails on the very session it is meant to shrink.
+      const bounded = fitEventsToBudget(events.map(trimForSummary), SUMMARY_INPUT_MAX_CHARS).events
+      const response = await llm.auxComplete(buildMemoryFlushPrompt(existing), bounded, [])
 
       const text = response.text?.trim()
       if (text && text !== "NOTHING") {
