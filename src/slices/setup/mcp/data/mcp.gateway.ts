@@ -65,6 +65,18 @@ interface IOauthServer {
  * to the message, else the channel identity — which on Telegram is already
  * the person, and on a share link or an anonymous widget is the browser.
  */
+/**
+ * Where the OAuth callback page should send the person afterwards
+ * (CLEAN-120): the chat with this agent in the console they came from.
+ * Only for a signed-in person on a known origin — a share visitor or an
+ * anonymous widget has no console page to go back to, and ranch would
+ * refuse an origin it does not own anyway.
+ */
+export function returnToFor(ctx: Pick<ToolContext, "user" | "origin">, agentId: string): string | undefined {
+  if (!ctx.user?.id || !ctx.origin) return undefined
+  return `${ctx.origin}/agents/${encodeURIComponent(agentId)}`
+}
+
 export function subjectOf(ctx: Pick<ToolContext, "from" | "user">): string | undefined {
   return ctx.user?.id ?? ctx.from
 }
@@ -361,6 +373,7 @@ export class McpGateway extends IMcpGateway {
         if (!base || !key || !agentId) {
           return { error: "Connect unavailable (RANCH_API_URL / BRIDLE_API_KEY / AGENT_ID missing)" }
         }
+        const returnTo = returnToFor(ctx, agentId)
         try {
           const res = await fetch(`${base}/mcp-servers/${cfg.id}/oauth/start`, {
             method: "POST",
@@ -369,6 +382,7 @@ export class McpGateway extends IMcpGateway {
               agentId,
               subject,
               ...(ctx.user?.email ? { email: ctx.user.email } : {}),
+              ...(returnTo ? { returnTo } : {}),
             }),
           })
           if (!res.ok) {
@@ -379,7 +393,9 @@ export class McpGateway extends IMcpGateway {
           if (!authorizeUrl) return { error: "Connect start returned no URL" }
           return {
             authorizeUrl,
-            instructions: `Send the person this link and ask them to open it and log in to connect ${cfg.name} to their own account. Tell them to return to the chat when done; ${cfg.name}'s tools will work for them right away.`,
+            instructions: returnTo
+              ? `Send the person this link and ask them to open it and log in to connect ${cfg.name} to their own account. The page brings them back to this chat on its own when they are done; ${cfg.name}'s tools will work for them right away.`
+              : `Send the person this link and ask them to open it and log in to connect ${cfg.name} to their own account. Tell them to return to the chat when done; ${cfg.name}'s tools will work for them right away.`,
           }
         } catch (err) {
           return { error: `Connect failed: ${(err as Error).message}` }

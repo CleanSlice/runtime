@@ -11,7 +11,7 @@ import {
   subjectOfSecretKey,
   type ISecretStore,
 } from "../data/mcpOauth.provider"
-import { subjectOf } from "../data/mcp.gateway"
+import { returnToFor, subjectOf } from "../data/mcp.gateway"
 
 /**
  * The live-registry half of CLEAN-79/81: a login swaps a server's tools in
@@ -171,5 +171,22 @@ describe("isAuthFailure", () => {
     expect(isAuthFailure(new Error("MCP error -32602: branchId and deliveryType are required"))).toBe(false)
     expect(isAuthFailure(new Error("ECONNRESET"))).toBe(false)
     expect(isAuthFailure("not an error")).toBe(false)
+  })
+})
+
+/**
+ * Where the login sends the person afterwards (CLEAN-120): back to this
+ * agent's chat in the console they came from — and nowhere for a visitor
+ * without a console page.
+ */
+describe("returnToFor", () => {
+  it("points a signed-in person at the agent chat on their own console", () => {
+    expect(returnToFor({ user: { id: "u1" }, origin: "https://admin.ranch.test" }, "agent-1"))
+      .toBe("https://admin.ranch.test/agents/agent-1")
+  })
+
+  it("gives a share visitor or an anonymous widget nothing to return to", () => {
+    expect(returnToFor({ origin: "https://embed.test" }, "agent-1")).toBeUndefined()
+    expect(returnToFor({ user: { id: "u1" } }, "agent-1")).toBeUndefined()
   })
 })

@@ -370,6 +370,7 @@ export class LoopService {
               agentDir: ctx.agentDir,
               from: ctx.from,
               ...(ctx.user ? { user: ctx.user } : {}),
+              ...(ctx.origin ? { origin: ctx.origin } : {}),
               channel: ctx.channel,
               send: ctx.send,
               agentConfig: ctx.agentConfig,

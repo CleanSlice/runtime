@@ -186,6 +186,14 @@ export interface Message {
    * anonymous visitors and on channels without the concept.
    */
   user?: { id: string; email?: string }
+  /**
+   * The browser origin the person is sitting in (`https://admin.example.com`),
+   * recorded by the bridle hub at the handshake and forwarded on every
+   * message from that socket (CLEAN-120). Lets a tool build a link back to
+   * the page — an OAuth callback returning to the chat — without guessing
+   * which console it was. Absent on other channels.
+   */
+  origin?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -229,6 +237,8 @@ export function buildMessage(fields: {
   attachments?: IMessageAttachment[]
   /** The person behind the message (see Message.user). */
   user?: { id: string; email?: string }
+  /** Browser origin of the sending socket (see Message.origin). */
+  origin?: string
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -262,6 +272,7 @@ export function buildMessage(fields: {
     ...(fields.prompt ? { prompt: fields.prompt } : {}),
     ...(fields.attachments?.length ? { attachments: fields.attachments } : {}),
     ...(fields.user?.id ? { user: fields.user } : {}),
+    ...(fields.origin ? { origin: fields.origin } : {}),
     metadata: fields.metadata,
   }
 }

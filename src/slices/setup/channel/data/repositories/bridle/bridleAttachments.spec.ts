@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sanitizeWireAttachments } from "./bridle.repository"
+import { readOrigin, sanitizeWireAttachments } from "./bridle.repository"
 import { buildMessage } from "../../../domain/channel.types"
 
 const valid = {
@@ -70,5 +70,29 @@ describe("buildMessage attachments passthrough", () => {
       ts: 1,
     })
     expect("attachments" in msg).toBe(false)
+  })
+})
+
+/**
+ * The origin the hub forwards (CLEAN-120) is kept only as an http(s) origin
+ * proper; whatever else arrives is dropped rather than turned into a link.
+ */
+describe("readOrigin", () => {
+  test("keeps an http(s) origin and strips anything after it", () => {
+    expect(readOrigin("https://admin.ranch.test")).toBe("https://admin.ranch.test")
+    expect(readOrigin("http://localhost:3002/some/path?x=1")).toBe("http://localhost:3002")
+  })
+
+  test("drops other schemes, garbage and non-strings", () => {
+    expect(readOrigin("javascript:alert(1)")).toBeUndefined()
+    expect(readOrigin("not a url")).toBeUndefined()
+    expect(readOrigin(undefined)).toBeUndefined()
+    expect(readOrigin({ origin: "https://x" })).toBeUndefined()
+  })
+
+  test("rides on the built message only when present", () => {
+    const base = { id: "m1", text: "hi", from: "admin", channel: "bridle", ts: 1 }
+    expect(buildMessage({ ...base, origin: "https://admin.ranch.test" }).origin).toBe("https://admin.ranch.test")
+    expect("origin" in buildMessage(base)).toBe(false)
   })
 })
