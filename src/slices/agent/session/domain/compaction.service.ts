@@ -3,6 +3,7 @@ import type { ILlmGateway } from "../../../setup/llm/domain/llm.gateway"
 import type { SessionService } from "./session.service"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
+import { capPayload, fitEventsToBudget } from "./contextBudget"
 
 const log = createLogger("session")
 
@@ -10,6 +11,15 @@ const log = createLogger("session")
 // in noise. Trim leaf strings to this many chars in the COPY sent for
 // summarization; the on-disk events remain untouched.
 const SUMMARY_FIELD_MAX_CHARS = 500
+// …and one event to this much in total, however many strings it holds
+// (CLEAN-124): a catalogue of a thousand short entries is noise too.
+const SUMMARY_EVENT_MAX_CHARS = 4_000
+/**
+ * The most the archivist is handed in one call. Compaction needs the model;
+ * a session the model already refused as too long must still shrink, so
+ * the oldest of the old slice is left out rather than nothing archived.
+ */
+export const SUMMARY_INPUT_MAX_CHARS = 300_000
 
 export function truncateStrings(value: unknown, max: number, depth = 0): unknown {
   if (depth > 5) return value
@@ -30,9 +40,12 @@ export function truncateStrings(value: unknown, max: number, depth = 0): unknown
   return value
 }
 
-function trimForSummary(event: Event): Event {
+export function trimForSummary(event: Event): Event {
   if (event.type !== "tool_call" && event.type !== "tool_result") return event
-  return { ...event, data: truncateStrings(event.data, SUMMARY_FIELD_MAX_CHARS) }
+  return {
+    ...event,
+    data: capPayload(truncateStrings(event.data, SUMMARY_FIELD_MAX_CHARS), SUMMARY_EVENT_MAX_CHARS),
+  }
 }
 
 // Approximate the on-the-wire size of a session. JSON length ≈ bytes for the
@@ -78,7 +91,12 @@ export class CompactionService {
     this.compacting.add(sessionId)
     try {
       const snapshotLen = events.length
-      const toSummarize = events.slice(0, snapshotLen - this.recentKeep).map(trimForSummary)
+      const oldSlice = events.slice(0, snapshotLen - this.recentKeep).map(trimForSummary)
+      const fitted = fitEventsToBudget(oldSlice, SUMMARY_INPUT_MAX_CHARS)
+      if (fitted.dropped > 0) {
+        log.warn(`compacting ${sessionId}: ${fitted.dropped} oldest events left out of the archive to fit the model`)
+      }
+      const toSummarize = fitted.events
       const recent = events.slice(snapshotLen - this.recentKeep)
 
       const response = await llm.complete(

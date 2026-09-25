@@ -11,6 +11,7 @@ import { LOOP_DEFAULTS } from "./loop.types"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { LastTurnStatsTracker } from "./last-turn-stats.tracker"
+import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/contextBudget"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -292,7 +293,10 @@ export class LoopService {
   /** `onBubble` fires with the wire message id when the channel showed this
    *  call's text as a bubble of its own (streaming channels that mint ids). */
   private async callLlm(ctx: ILoopContext, onBubble?: (messageId: string) => void) {
-    const { channel, isInternal, systemPrompt, history, tools } = ctx
+    const { channel, isInternal, systemPrompt, tools } = ctx
+    // Tool results pile up inside one turn too; the model always gets a
+    // history that fits its window (CLEAN-124).
+    const history = fitEventsToBudget(ctx.history, this.config.contextBudgetChars).events
     const channelOk = canStreamOnChannel(channel, isInternal)
     const llmOk = this.deps.llm.canStream()
     const canStream = channelOk && llmOk
@@ -407,7 +411,10 @@ export class LoopService {
         data: { toolUseId, result },
       }
       await this.deps.session.append(sessionId, resultEvent)
-      history.push(resultEvent)
+      // The transcript keeps the full result; the model gets one that fits
+      // (CLEAN-124). Same cap the next turn's history rebuild applies.
+      const capped = capPayload(resultEvent.data, this.config.maxToolOutputChars)
+      history.push(capped === resultEvent.data ? resultEvent : { ...resultEvent, data: capped })
 
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "done" })
     }

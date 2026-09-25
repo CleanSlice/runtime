@@ -17,6 +17,7 @@ import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
+import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/contextBudget"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
@@ -239,14 +240,25 @@ export class RuntimeService {
     // The cap has to clear a `query_attachment` read: that tool is how the
     // model gets exact cells once the inline preview runs out, so trimming
     // its result puts it back to estimating.
+    //
+    // Per string first, then in total (CLEAN-124): an MCP catalogue is
+    // thousands of short strings that each pass the per-string cap and
+    // together do not.
     const maxToolOutputChars = this.deps.config.tools.maxOutputChars
     for (const evt of history) {
       if (evt.type === "tool_call" || evt.type === "tool_result") {
-        evt.data = truncateStrings(evt.data, maxToolOutputChars)
+        evt.data = capPayload(truncateStrings(evt.data, maxToolOutputChars), maxToolOutputChars)
       }
     }
 
-    return history
+    // And the whole history has a ceiling of its own, so one session that
+    // compaction could not shrink (it needs the model too, and the model
+    // refused the oversized prompt) does not fail every turn from then on.
+    const fitted = fitEventsToBudget(history, this.deps.config.session.contextBudgetChars)
+    if (fitted.dropped > 0) {
+      log.warn(`session ${sessionId}: ${fitted.dropped} events left out to fit ${this.deps.config.session.contextBudgetChars} chars`)
+    }
+    return fitted.events
   }
 
   private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string): Promise<string> {
