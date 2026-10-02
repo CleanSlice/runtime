@@ -24,6 +24,7 @@ import { CommandService } from "../../bot/command/domain/command.service"
 import { LoopModule } from "../loop/loop.module"
 import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
+import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
 
 const s3Log = createLogger("s3")
@@ -197,11 +198,15 @@ export class AgentRuntime {
     }
 
     // Bridle-hub-initiated "forget this conversation" — sent after the hub
-    // archives/deletes a channel's persisted transcript (embed's "New chat").
+    // archives/deletes a channel's persisted transcript ("New chat").
     // Without this, the agent's own local session file/in-memory cache still
     // has the full history and the S3 watcher re-uploads it on the next
-    // local change, resurrecting what the hub just archived.
-    this.channel.onBridleSessionClear((channel) => this.session.clear("bridle", channel))
+    // local change, resurrecting what the hub just archived. A turn still
+    // running for the conversation is cancelled first, so its answer cannot
+    // land in the new one (CLEAN-136).
+    this.channel.onBridleSessionClear((channel) => {
+      clearBridleSession({ tasks, router, session: this.session }, channel)
+    })
   }
 
   /**
