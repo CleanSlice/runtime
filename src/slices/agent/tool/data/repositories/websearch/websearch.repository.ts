@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
+import type { ISource } from "../../../../../runtime/loop/domain/loop.types"
 
 const BRAVE_API_KEY = "BSAarJNjvrP0D-pDvRDZ664hhl1Bp0u"
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
@@ -21,6 +22,18 @@ export const WebSearchTool: Tool = {
     const q = p.data.query.trim()
     if (!q) return undefined
     return `Search "${q.length > 50 ? `${q.slice(0, 50)}…` : q}"`
+  },
+  // Every hit is a page the model may go on to cite (CLEAN-138). Title and
+  // url only — the description is for the model, not for the reader's list.
+  sources(_params: unknown, result: unknown): ISource[] {
+    if (!Array.isArray(result)) return []
+    const out: ISource[] = []
+    for (let i = 0; i < result.length; i++) {
+      const hit = result[i] as { title?: unknown; url?: unknown } | null
+      if (!hit || typeof hit.url !== "string" || !/^https?:\/\//i.test(hit.url)) continue
+      out.push({ kind: "web", url: hit.url, title: typeof hit.title === "string" ? hit.title : null })
+    }
+    return out
   },
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {
     const { query, count } = schema.parse(params)

@@ -25,6 +25,34 @@ export const LOOP_DEFAULTS: ILoopConfig = {
   toolTimeout: 120_000,
 }
 
+/**
+ * One source an answer may cite (CLEAN-138) — the shape a tool result
+ * declares, the turn registry numbers, and the `sources` event carries to
+ * the hub. Only what a reader may see: an id and a name, or a URL and a
+ * title. No excerpts, scores or storage paths. Contract: ranch
+ * `specs/020-chat-sources/contracts/sources.md` §1.
+ */
+export type ISource =
+  | { kind: "knowledge"; id: string; name: string; knowledgeId: string; knowledgeName: string | null }
+  | { kind: "web"; url: string; title: string | null }
+
+/**
+ * What the hub relays to the browser for one cited source (contract §5).
+ * The runtime never builds this — it is here so the two halves of the wire
+ * sit next to each other: `id` and `knowledgeId` stop at the hub, the client
+ * addresses a source by `(messageId, n)`, and `canOpen` is the hub's policy
+ * answer computed on relay, never stored.
+ */
+export interface ISourceFrameEntry {
+  n: number
+  kind: ISource["kind"]
+  name: string
+  url?: string
+  knowledgeName?: string | null
+  canOpen: boolean
+  myRating?: 1 | -1
+}
+
 export interface ILoopContext {
   task: Task
   sessionId: string
@@ -39,7 +67,8 @@ export interface ILoopContext {
   systemPrompt: string
   history: Event[]
   tools: Tool[]
-  send: (text: string, parts?: MessagePart[]) => Promise<void>
+  /** Resolves to the wire message id when the channel mints one (bridle). */
+  send: (text: string, parts?: MessagePart[]) => Promise<string | void>
   streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<string | void>
   /**
    * Best-effort "agent is working" signal to the originating channel's UI.
@@ -55,6 +84,20 @@ export interface ILoopContext {
    * means the client can't render it, so the loop skips emission entirely.
    */
   sendThinking?: (turnId: string, step?: IThinkingStep) => void
+  /**
+   * Whether this turn's client can draw citations (CLEAN-138): it advertised
+   * the `sources` capability. True → tool results tell the model which
+   * numbers it may cite and every bubble is validated and renumbered. False
+   * (the default) → nothing is added and any `[^n]` the model writes anyway
+   * is stripped from the outgoing text, because there is nothing to show.
+   */
+  citeSources?: boolean
+  /**
+   * Best-effort publish of one bubble's validated citations: the corrected
+   * text and the sources it cites, in citation order. Wired only when
+   * `citeSources` is on; called only for bubbles that cite something.
+   */
+  sendSources?: (messageId: string, text: string, sources: ISource[]) => void
   agentConfig: import("../../init").IAgentConfig
   reloadSkills: () => Promise<void>
   access?: AccessModule

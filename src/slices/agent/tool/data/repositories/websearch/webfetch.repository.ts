@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
+import { fetchedPageSource } from "./pageSource"
 
 const schema = z.object({
   url: z.string().url().describe("URL to fetch and convert to readable text"),
@@ -10,6 +11,8 @@ export const WebFetchTool: Tool = {
   name: "web_fetch",
   description: "Fetch a URL and return its content as clean readable text (markdown-style). Better than browser for reading articles.",
   schema,
+  // The page that was read is the one source of this call (CLEAN-138).
+  sources: fetchedPageSource,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, maxChars } = schema.parse(params)
 

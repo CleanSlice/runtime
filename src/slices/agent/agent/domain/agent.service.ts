@@ -27,6 +27,12 @@ export interface BuildPromptOpts {
    * the conversation is happening (Telegram DM, Telegram group, Slack, etc.).
    */
   channelContext?: string
+  /**
+   * The `# Citing sources` section (CLEAN-138). Passed only when the client
+   * advertised the `sources` capability; absent, the model is never asked
+   * to cite and any marker it writes is stripped on the way out.
+   */
+  citationsPrompt?: string
 }
 
 const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
@@ -71,6 +77,7 @@ export class AgentService {
     if (opts?.channelContext) parts.push(`# Channel\n\n${opts.channelContext}`)
     if (opts?.extraHint)   parts.push(opts.extraHint)
     if (opts?.toolingPrompt) parts.push(opts.toolingPrompt)
+    if (opts?.citationsPrompt) parts.push(opts.citationsPrompt)
     if (agents)            parts.push(`# Agent Instructions\n\n${agents}`)
     if (user)              parts.push(`# User Context\n\n${user}`)
     const integratorPrompt = opts?.integratorPrompt?.trim()
@@ -134,7 +141,7 @@ export class AgentService {
     return parts.join("\n\n---\n\n")
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string }): Promise<string> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; citationsPrompt?: string }): Promise<string> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -153,6 +160,7 @@ export class AgentService {
       extraHint: opts?.extraHint,
       integratorPrompt: opts?.integratorPrompt,
       channelContext: opts?.channelContext,
+      citationsPrompt: opts?.citationsPrompt,
     })
   }
 }

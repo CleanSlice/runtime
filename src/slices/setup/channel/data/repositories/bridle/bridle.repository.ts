@@ -11,6 +11,7 @@ import {
 } from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../../../agent/session/domain/activity"
+import type { ISource } from "../../../../../runtime/loop/domain/loop.types"
 import { randomUUID } from "crypto"
 import { io, type Socket } from "socket.io-client"
 import { createLogger } from "../../../../logger"
@@ -287,15 +288,18 @@ export class BridleRepository implements IChannelGateway {
     log.info("channel stopped")
   }
 
-  async send(to: string, text: string, parts?: MessagePart[]): Promise<void> {
+  /** Resolves to the minted message id, so a `sources` event can name the bubble (CLEAN-138). */
+  async send(to: string, text: string, parts?: MessagePart[]): Promise<string> {
     const wireParts = parts ? messagePartsToWireParts(parts) : (text ? [{ type: "text" as const, text }] : [])
+    const messageId = randomUUID()
     this.socket?.emit("message", {
       clientId: to,
       text,
       parts: wireParts,
-      messageId: randomUUID(),
+      messageId,
       ts: Date.now(),
     })
+    return messageId
   }
 
   /**
@@ -323,6 +327,28 @@ export class BridleRepository implements IChannelGateway {
       clientId: to,
       turnId,
       ...(step ? { step } : { done: true }),
+      ts: Date.now(),
+    })
+  }
+
+  /**
+   * Publish one bubble's validated citations (CLEAN-138): the corrected
+   * text and the sources it cites, in citation order — index + 1 is the
+   * number in the text. Sent once per bubble, after its `stream_end` or
+   * `message`, and only when it cites something. Callers gate on the
+   * triggering message's `capabilities` including `"sources"`; the hub
+   * records it and relays it to the browser, an older hub ignores it.
+   * Payload is reader-facing: ids, names and urls, never excerpts.
+   * Best-effort: silent no-op when the socket is offline.
+   */
+  async sendSources(to: string, messageId: string, text: string, sources: ISource[]): Promise<void> {
+    if (!this.socket?.connected) return
+    this.socket.emit("sources", {
+      type: "sources",
+      clientId: to,
+      messageId,
+      text,
+      sources,
       ts: Date.now(),
     })
   }

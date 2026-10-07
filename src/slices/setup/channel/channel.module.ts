@@ -1,4 +1,5 @@
 import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./domain/channel.types"
+import type { ISource } from "../../runtime/loop/domain/loop.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
@@ -248,8 +249,9 @@ export class ChannelModule {
     await this.service.stop()
   }
 
-  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
-    await this.service.send(channel, to, text, parts)
+  /** Resolves to the wire message id when the channel mints one (bridle). */
+  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<string | void> {
+    return this.service.send(channel, to, text, parts)
   }
 
   /**
@@ -273,6 +275,11 @@ export class ChannelModule {
   /** Best-effort thinking-step publish — no-op for channels without thinking UI. */
   async sendThinking(channel: string, to: string, turnId: string, step?: IThinkingStep): Promise<void> {
     await this.service.sendThinking(channel, to, turnId, step)
+  }
+
+  /** Best-effort sources publish for one bubble (CLEAN-138) — no-op for channels without a source list. */
+  async sendSources(channel: string, to: string, messageId: string, text: string, sources: ISource[]): Promise<void> {
+    await this.service.sendSources(channel, to, messageId, text, sources)
   }
 
   // ── Runtime channel mutation ────────────────────────────────────────────
