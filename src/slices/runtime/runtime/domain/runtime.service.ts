@@ -16,6 +16,7 @@ import { ToolService } from "../../../agent/tool/domain/tool.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
+import { CITATIONS_PROMPT } from "../../../agent/agent/domain/prompts/citations"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
 import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/contextBudget"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
@@ -51,14 +52,21 @@ export class RuntimeService {
     const isAdmin = isInternal ? true : this.deps.access.isAdmin(msg.from)
     const visibleTools = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
 
+    // Hands back the wire message id when the channel mints one (bridle), so
+    // the loop can attach a bubble's sources to it (CLEAN-138).
     const send = async (
       text: string,
       parts?: import("../../../setup/channel").MessagePart[],
-    ) => {
+    ): Promise<string | void> => {
       if (msg.channel !== "internal") {
-        await this.deps.channel.send(msg.channel, msg.from, text, parts)
+        return this.deps.channel.send(msg.channel, msg.from, text, parts)
       }
     }
+
+    // Capability-gated like `thinking`: only a client that said it can draw
+    // a source list is asked to cite, told which numbers exist, and sent the
+    // `sources` event. Everyone else gets plain text (CLEAN-138, FR-036).
+    const citeSources = !isInternal && msg.channel !== "internal" && msg.capabilities?.includes("sources") === true
 
     // Bridle debug snapshots target the same browser client that sent the
     // user message. Non-bridle channels skip this — the channel module
@@ -86,7 +94,7 @@ export class RuntimeService {
 
         const history = await this.buildHistory(msg, sessionId, task.id)
         const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools)
-        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId)
+        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId, citeSources)
 
         await this.deps.loop.service.run({
           task,
@@ -109,6 +117,10 @@ export class RuntimeService {
           // triggering message get live reasoning steps (research D6).
           sendThinking: !isInternal && msg.channel !== "internal" && msg.capabilities?.includes("thinking")
             ? (turnId, step) => { void this.deps.channel.sendThinking(msg.channel, msg.from, turnId, step) }
+            : undefined,
+          citeSources,
+          sendSources: citeSources
+            ? (messageId, text, sources) => { void this.deps.channel.sendSources(msg.channel, msg.from, messageId, text, sources) }
             : undefined,
           agentConfig: this.deps.config,
           reloadSkills: () => this.deps.skills.reload().then(() => undefined),
@@ -261,7 +273,7 @@ export class RuntimeService {
     return fitted.events
   }
 
-  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string): Promise<string> {
+  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string, citeSources: boolean): Promise<string> {
     const secretKeys = await this.deps.secrets.list().catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
@@ -297,6 +309,8 @@ export class RuntimeService {
       extraHint,
       integratorPrompt: msg.prompt,
       channelContext: this.buildChannelContext(msg),
+      // Only a client that can draw sources is asked to cite (CLEAN-138).
+      ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
     })
 
     // Inject full content for always-on skills

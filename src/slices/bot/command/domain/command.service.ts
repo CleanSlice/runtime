@@ -20,7 +20,8 @@ interface CommandDeps {
   llm: LlmModule
 }
 
-type SendFn = (text: string) => Promise<void>
+// Commands only await the send; the id a channel may hand back is not theirs to use.
+type SendFn = (text: string) => Promise<string | void>
 
 export class CommandService {
   constructor(private deps: CommandDeps) {}

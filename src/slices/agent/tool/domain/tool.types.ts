@@ -6,6 +6,7 @@ import type { MessagePart } from "../../../setup/channel/domain/channel.types"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
+import type { ISource } from "../../../runtime/loop/domain/loop.types"
 
 export interface ToolContext {
   sessionId: string
@@ -82,5 +83,16 @@ export interface Tool {
    * back to the humanized tool name.
    */
   stepLabel?(params: unknown): string | undefined
+  /**
+   * The sources this call consulted, read off its RAW result (before any
+   * context-budget cap), so an answer built on them can cite them
+   * (CLEAN-138). Built-ins that fetch the web implement it; tools whose
+   * result already carries a top-level `sources` array in the contract
+   * shape need not — the loop reads that key itself. Entries hold only
+   * what a reader may see (id + name, or url + title), never excerpts or
+   * storage paths. Shape and rules: ranch
+   * `specs/020-chat-sources/contracts/sources.md` §1–2.
+   */
+  sources?(params: unknown, result: unknown): ISource[]
   execute(params: unknown, ctx: ToolContext): Promise<unknown>
 }

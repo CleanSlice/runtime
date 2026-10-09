@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
+import { fetchedPageSource } from "../websearch/pageSource"
 
 const schema = z.object({
   url: z.string().describe("URL to fetch and extract text from"),
@@ -10,6 +11,8 @@ export const BrowserTool: Tool = {
   name: "browser",
   description: "Fetch a web page and extract its text content. Use for reading web pages, checking websites, scraping data.",
   schema,
+  // The page that was read is the one source of this call (CLEAN-138).
+  sources: fetchedPageSource,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {
     const { url, selector } = schema.parse(params)
 

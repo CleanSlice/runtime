@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
 import type { ChannelConfig, IChannelGroup, IThinkingStep, Message, MessagePart } from "../domain/channel.types"
+import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../agent/session/domain/activity"
 import { TelegramRepository } from "./repositories/telegram/telegram.repository"
@@ -45,7 +46,7 @@ export class ChannelGateway implements IChannelGateway {
     return this.repository.stop()
   }
 
-  send(to: string, text: string, parts?: MessagePart[]): Promise<void> {
+  send(to: string, text: string, parts?: MessagePart[]): Promise<string | void> {
     if (isSilentReply(text)) return Promise.resolve()
     return this.repository.send(to, text, parts)
   }
@@ -76,6 +77,14 @@ export class ChannelGateway implements IChannelGateway {
   sendThinking(to: string, turnId: string, step?: IThinkingStep): Promise<void> {
     if (this.repository instanceof BridleRepository) {
       this.repository.sendThinking(to, turnId, step)
+    }
+    return Promise.resolve()
+  }
+
+  /** Best-effort sources publish (CLEAN-138) — only effective on a bridle channel. */
+  sendSources(to: string, messageId: string, text: string, sources: ISource[]): Promise<void> {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.sendSources(to, messageId, text, sources)
     }
     return Promise.resolve()
   }

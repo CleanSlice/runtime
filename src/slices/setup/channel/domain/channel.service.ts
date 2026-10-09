@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "./channel.gateway"
 import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./channel.types"
+import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { createLogger } from "../../logger"
 
@@ -100,14 +101,15 @@ export class ChannelService {
     return out
   }
 
-  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<void> {
+  /** Resolves to the wire message id when the channel mints one (bridle). */
+  async send(channel: string, to: string, text: string, parts?: MessagePart[]): Promise<string | void> {
     if (isSilentReply(text)) {
       log.warn(`dropping NO_REPLY sentinel on ${channel}`)
       return
     }
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)
-    await ch.send(to, text, parts)
+    return ch.send(to, text, parts)
   }
 
   /** Best-effort typing signal — no-op when the channel doesn't support it. */
@@ -129,6 +131,17 @@ export class ChannelService {
       await ch.sendThinking(to, turnId, step)
     } catch (err) {
       log.warn(`${channel} sendThinking failed`, err)
+    }
+  }
+
+  /** Best-effort sources publish for one bubble — no-op when the channel can't draw them. */
+  async sendSources(channel: string, to: string, messageId: string, text: string, sources: ISource[]): Promise<void> {
+    const ch = this.channels.find(c => c.name === channel)
+    if (!ch?.sendSources) return
+    try {
+      await ch.sendSources(to, messageId, text, sources)
+    } catch (err) {
+      log.warn(`${channel} sendSources failed`, err)
     }
   }
 

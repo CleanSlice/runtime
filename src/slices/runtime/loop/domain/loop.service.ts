@@ -6,8 +6,9 @@ import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { VoiceModule } from "../../../bot/voice/voice.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
-import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble } from "./loop.types"
+import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble, ISource } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
+import { SourceRegistry, citeBlock, extractSources, finalizeBubble, stripMarkers } from "./sources"
 import { ERROR_HINT_PROMPT, CONTINUATION_PROMPT, buildAnchoredContinuationPrompt } from "../../../agent/agent/domain/prompts/error-hint.prompt"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { LastTurnStatsTracker } from "./last-turn-stats.tracker"
@@ -58,6 +59,46 @@ function buildStepLabel(tool: Tool | undefined, call: { name: string; params: un
   return humanizeToolName(call.name)
 }
 
+/** One finished bubble's text after the citation check, and what it cites (CLEAN-138). */
+type BubbleFinalizer = (text: string) => { text: string; sources: ISource[] }
+
+/** What one bubble cites, as stored on the assistant event (`data.sources`). */
+interface IBubbleSources {
+  messageId: string
+  sources: ISource[]
+}
+
+/**
+ * The sources a tool call consulted, off its RAW result: the tool's own
+ * reading when it has one, else the contract's `sources` key. A hook must
+ * never break the loop — anything thrown counts as "none".
+ */
+function sourcesOf(tool: Tool | undefined, params: unknown, result: unknown): ISource[] {
+  try {
+    return tool?.sources?.(params, result) ?? extractSources(result)
+  } catch (err) {
+    log.warn(`sources hook failed for ${tool?.name ?? "unknown tool"}`, err)
+    return []
+  }
+}
+
+/**
+ * Puts the "Sources you may cite" block where the model will read it.
+ * Every provider hands `data.result` to the model as `JSON.stringify(result)`,
+ * so text appended to a serialised string would arrive double-encoded; a
+ * key on the object arrives as plain text. A result that is not an object
+ * (an MCP content array, a web_search list) is wrapped so the key has a
+ * place to sit.
+ */
+function withCitations(data: unknown, block: string): unknown {
+  const d = data as { result?: unknown }
+  const result = d.result
+  const cited = result && typeof result === "object" && !Array.isArray(result)
+    ? { ...(result as Record<string, unknown>), citations: block }
+    : { result, citations: block }
+  return { ...d, result: cited }
+}
+
 function isDebugEnabled(deps: LoopServiceDeps): boolean {
   // Order: explicit env override > NODE_ENV=development > runtime hub-pushed flag.
   // Env is checked first so a developer running locally can force debug on
@@ -100,6 +141,18 @@ export class LoopService {
     // change shape), but it carries these boundaries — without them a replay
     // glues "Let me check:" and "Done!" into "Let me check:Done!" (CLEAN-102).
     const bubbles: IAssistantBubble[] = []
+    // The sources this turn consulted, numbered as the model saw them in its
+    // tool results (CLEAN-138). One registry per turn: a number means the
+    // same source in every bubble, and numbers never collide across tool
+    // calls. What each bubble actually cited goes on the assistant event.
+    const registry = new SourceRegistry()
+    const bubbleSources: IBubbleSources[] = []
+    // A client that can draw sources gets the check — unknown markers out,
+    // the rest renumbered. Everyone else gets the markers stripped: the
+    // model had no numbers to cite, so a marker there points at nothing.
+    const finalize: BubbleFinalizer = (text) => ctx.citeSources
+      ? finalizeBubble(text, registry)
+      : { text: stripMarkers(text), sources: [] }
 
     // Light the channel's thinking indicator immediately — the first LLM byte
     // can be seconds away (prompt build + model latency), and tool-only
@@ -133,9 +186,15 @@ export class LoopService {
       const llmStartMs = Date.now()
       try {
         let bubbleId: string | undefined
-        response = await this.callLlm(ctx, (id) => { bubbleId = id })
+        let bubbleCited: ISource[] = []
+        response = await this.callLlm(ctx, finalize, (id, cited) => { bubbleId = id; bubbleCited = cited })
         if (bubbleId && response.text) {
           bubbles.push({ id: bubbleId, text: response.text, ts: Date.now() })
+          // `stream_end` is out by now, so the list follows as its own event.
+          if (bubbleCited.length > 0) {
+            bubbleSources.push({ messageId: bubbleId, sources: bubbleCited })
+            ctx.sendSources?.(bubbleId, response.text, bubbleCited)
+          }
         }
         if (response.usage) this.deps.usage.add(response.usage)
         const elapsedMs = Date.now() - llmStartMs
@@ -186,6 +245,7 @@ export class LoopService {
           response,
           iterations,
           turnId,
+          registry,
           streamsToClient ? undefined : (response.text || undefined),
         )
 
@@ -252,7 +312,7 @@ export class LoopService {
 
         // Send only when the loop is done (all continuations complete)
         if (!continueLoop && accumulatedText) {
-          await this.sendFinalResponse(ctx, accumulatedText, iterations, bubbles)
+          await this.sendFinalResponse(ctx, accumulatedText, iterations, bubbles, bubbleSources, finalize)
         }
       }
     }
@@ -291,8 +351,13 @@ export class LoopService {
   }
 
   /** `onBubble` fires with the wire message id when the channel showed this
-   *  call's text as a bubble of its own (streaming channels that mint ids). */
-  private async callLlm(ctx: ILoopContext, onBubble?: (messageId: string) => void) {
+   *  call's text as a bubble of its own (streaming channels that mint ids),
+   *  and with the sources that bubble cites after `finalize` ran over it. */
+  private async callLlm(
+    ctx: ILoopContext,
+    finalize: BubbleFinalizer,
+    onBubble?: (messageId: string, cited: ISource[]) => void,
+  ) {
     const { channel, isInternal, systemPrompt, tools } = ctx
     // Tool results pile up inside one turn too; the model always gets a
     // history that fits its window (CLEAN-124).
@@ -307,13 +372,24 @@ export class LoopService {
     )
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
+      let cited: ISource[] = []
       const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
         streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
-        return streamedResponse.text ?? ""
+        // The bubble is complete here and the channel has not sent its final
+        // text yet — what the streamer returns is what `stream_end` (bridle)
+        // or the last edit (telegram) carries. Check the citations now, so
+        // the text the person keeps is the corrected one (CLEAN-138).
+        const fixed = finalize(streamedResponse.text ?? "")
+        streamedResponse = { ...streamedResponse, text: fixed.text }
+        cited = fixed.sources
+        return fixed.text
       })
-      if (messageId) onBubble?.(messageId)
+      if (messageId) onBubble?.(messageId, cited)
       if (streamedResponse) return streamedResponse
     }
+    // Not streamed: the text is one bubble sent once at the end of the turn,
+    // and may be several iterations glued together — sendFinalResponse runs
+    // the check over the whole of it.
     return this.deps.llm.complete(systemPrompt, history, tools)
   }
 
@@ -322,6 +398,7 @@ export class LoopService {
     response: import("../../../setup/llm/domain/llm.types").ModelResponse,
     iterations: number,
     turnId: string,
+    registry: SourceRegistry,
     iterationDetail?: string,
   ): Promise<boolean> {
     const { task, sessionId, history } = ctx
@@ -376,7 +453,7 @@ export class LoopService {
               ...(ctx.user ? { user: ctx.user } : {}),
               ...(ctx.origin ? { origin: ctx.origin } : {}),
               channel: ctx.channel,
-              send: ctx.send,
+              send: async (text, parts) => { await ctx.send(text, parts) },
               agentConfig: ctx.agentConfig,
               reloadSkills: ctx.reloadSkills,
               access: ctx.access,
@@ -404,6 +481,18 @@ export class LoopService {
         rlog.warn(`tool error: ${String(errorValue).slice(0, 80)}`)
       }
 
+      // Which sources this call consulted, read off the RAW result: the cap
+      // below may drop the tail of a long list, and a source the model read
+      // about in the part that survived must still be citable (CLEAN-138).
+      // The registry hands out the numbers; a source seen earlier in the
+      // turn keeps the one it had.
+      const consulted = sourcesOf(tool, call.params, result)
+      const citable: Array<{ n: number; source: ISource }> = []
+      for (let i = 0; i < consulted.length; i++) {
+        const n = registry.numberOf(consulted[i])
+        if (!citable.some((c) => c.n === n)) citable.push({ n, source: consulted[i] })
+      }
+
       const resultEvent: Event = {
         id: randomUUID(),
         type: "tool_result",
@@ -414,7 +503,13 @@ export class LoopService {
       // The transcript keeps the full result; the model gets one that fits
       // (CLEAN-124). Same cap the next turn's history rebuild applies.
       const capped = capPayload(resultEvent.data, this.config.maxToolOutputChars)
-      history.push(capped === resultEvent.data ? resultEvent : { ...resultEvent, data: capped })
+      // Only the model's copy learns which numbers it may cite, and only
+      // when the client can show them — the stored event is the tool's
+      // result as returned.
+      const forModel = ctx.citeSources && citable.length > 0
+        ? withCitations(capped, citeBlock(citable))
+        : capped
+      history.push(forModel === resultEvent.data ? resultEvent : { ...resultEvent, data: forModel })
 
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "done" })
     }
@@ -452,7 +547,14 @@ export class LoopService {
     }
   }
 
-  private async sendFinalResponse(ctx: ILoopContext, fullText: string, iterations: number, bubbles: IAssistantBubble[] = []): Promise<void> {
+  private async sendFinalResponse(
+    ctx: ILoopContext,
+    fullText: string,
+    iterations: number,
+    bubbles: IAssistantBubble[] = [],
+    bubbleSources: IBubbleSources[] = [],
+    finalize: BubbleFinalizer = (text) => ({ text, sources: [] }),
+  ): Promise<void> {
     const tid = ctx.task.id.slice(0, 6)
     const rlog = log.child(tid)
     const iterTag = iterations > 1 ? ` #${iterations}` : ""
@@ -467,8 +569,34 @@ export class LoopService {
       return
     }
 
-    const preview = fullText.slice(0, 50).replace(/\n/g, " ")
-    rlog.info(`${iterTag} llm → "${preview}…" (${fullText.length})`)
+    // If we streamed — message already sent via streamSend, skip re-send
+    const wasStreamed = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()
+
+    // Streamed bubbles had their citations checked one by one as they went
+    // out (callLlm). A non-streamed turn is one bubble sent once, even when
+    // max_tokens continuations glued several model outputs into it — so it
+    // is checked here, once, over the whole text; checking each piece would
+    // have restarted the numbering at 1 in the middle of the bubble.
+    const fixed = wasStreamed ? { text: fullText, sources: [] as ISource[] } : finalize(fullText)
+    const text = fixed.text
+
+    const preview = text.slice(0, 50).replace(/\n/g, " ")
+    rlog.info(`${iterTag} llm → "${preview}…" (${text.length})`)
+
+    // A cited bubble is stored under its wire id, and a non-streamed send is
+    // the only way to learn that id — so a cited non-streamed bubble goes
+    // out before the event is written. Everything else keeps the old order:
+    // store first, so the turn survives a channel that fails to deliver.
+    const sources = [...bubbleSources]
+    let sentEarly = false
+    if (!wasStreamed && fixed.sources.length > 0) {
+      const messageId = await ctx.send(text)
+      sentEarly = true
+      if (messageId) {
+        sources.push({ messageId, sources: fixed.sources })
+        ctx.sendSources?.(messageId, text, fixed.sources)
+      }
+    }
 
     const assistantEvent: Event = {
       id: randomUUID(),
@@ -476,31 +604,39 @@ export class LoopService {
       ts: Date.now(),
       // `text` stays the whole turn — it is what every LLM prompt builder and
       // the compactor read. `messages` is display-only: the bubbles as sent.
-      data: { text: fullText, ...(bubbles.length ? { messages: bubbles } : {}) },
+      // `sources` is display-only too: what each bubble cites (CLEAN-138).
+      data: {
+        text,
+        ...(bubbles.length ? { messages: bubbles } : {}),
+        ...(sources.length ? { sources } : {}),
+      },
     }
     await this.deps.session.append(ctx.sessionId, assistantEvent)
 
-    // If we streamed — message already sent via streamSend, skip re-send
-    const wasStreamed = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()
-
-    if (!wasStreamed) {
+    if (!wasStreamed && !sentEarly) {
       if (ctx.channel === "telegram" && this.deps.voice.isEnabled(ctx.from)) {
         const tts = this.deps.tools.find(t => t.name === "tts")
         if (tts) {
           try {
             await tts.execute(
-              { text: fullText, chat_id: ctx.from },
-              { sessionId: ctx.sessionId, agentDir: ctx.agentDir, from: ctx.from, channel: ctx.channel, send: ctx.send },
+              { text, chat_id: ctx.from },
+              {
+                sessionId: ctx.sessionId,
+                agentDir: ctx.agentDir,
+                from: ctx.from,
+                channel: ctx.channel,
+                send: async (t, parts) => { await ctx.send(t, parts) },
+              },
             )
           } catch (err) {
             rlog.error(`TTS failed`, err)
-            await ctx.send(fullText)
+            await ctx.send(text)
           }
         } else {
-          await ctx.send(fullText)
+          await ctx.send(text)
         }
       } else {
-        await ctx.send(fullText)
+        await ctx.send(text)
       }
     }
   }

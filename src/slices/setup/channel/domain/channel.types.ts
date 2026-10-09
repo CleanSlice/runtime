@@ -161,7 +161,8 @@ export interface Message {
    * channels without the concept (Telegram, email) leave this undefined —
    * agents should default to text when checking.
    *
-   * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`, `"thinking"`.
+   * Known values: `"streaming"`, `"images"`, `"files"`, `"ui"`, `"thinking"`,
+   * `"sources"` (the client draws citations and a source list, CLEAN-138).
    */
   capabilities?: string[]
   /**
