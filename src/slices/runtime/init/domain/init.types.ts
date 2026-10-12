@@ -153,6 +153,8 @@ export interface IAgentConfig {
       timeoutMs: number
       maxParallel: number
       summaryChars: number
+      /** Let workers call write-effect tools. Default false: workers observe and report, the parent acts. */
+      allowWrite: boolean
     }
   }
 
@@ -326,6 +328,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
       timeoutMs: 300_000,
       maxParallel: 5,
       summaryChars: 4000,
+      allowWrite: false,
     },
   },
 

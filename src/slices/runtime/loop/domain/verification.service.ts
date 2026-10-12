@@ -24,6 +24,15 @@ export interface IVerificationConfig {
   timeoutMs: number
 }
 
+const URL_RE = /https?:\/\/[^\s)]+/gi
+
+/** The rewrite may only restate: no more than ~3× the draft (+500) and no URL the draft did not already carry. */
+export function plausibleRewrite(draft: string, reply: string): boolean {
+  if (reply.length > draft.length * 3 + 500) return false
+  const known = new Set((draft.match(URL_RE) ?? []).map(u => u.toLowerCase()))
+  return (reply.match(URL_RE) ?? []).every(u => known.has(u.toLowerCase()))
+}
+
 /**
  * Verified completion (CLEAN-150 US5): after a turn that ran a mutating
  * tool, the draft reply is checked against the tool outcomes by the
@@ -54,6 +63,12 @@ export class VerificationService {
         return done({ ok: true, timedOut: false, skipped: true })
       }
       if (parsed.ok) return done({ ok: true, timedOut: false, skipped: false })
+      // A rewrite that balloons or smuggles a link/tool call the draft never
+      // had is not a correction; keep the draft and say it was not verified.
+      if (!plausibleRewrite(draft, parsed.reply)) {
+        log.warn("verifier's rewrite was out of bounds (size or new links) — reply goes out as drafted, unverified")
+        return done({ ok: true, timedOut: true, skipped: false })
+      }
       log.info(`verification rewrote a reply (${outcomes.filter(o => o.outcome !== "ok").length} failed outcome(s))`)
       return done({ ok: false, reply: parsed.reply, timedOut: false, skipped: false })
     } catch (err) {

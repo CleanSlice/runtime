@@ -516,7 +516,11 @@ export class LoopService {
       let params = call.params
 
       const adminBlocked = tool && tool.adminOnly && !ctx.isAdmin
-      const verdict = tool && !adminBlocked && this.deps.guard ? this.deps.guard.before(guardCall) : undefined
+      // Workers observe unless tools.delegate.allowWrite is on — enforced per
+      // call so `file` write / `http` POST are caught even though the tool
+      // itself is allowed (CLEAN-150 US6).
+      const workerBlocked = tool && ctx.worker && guardCall.effect === "write" && ctx.agentConfig.tools?.delegate?.allowWrite !== true
+      const verdict = tool && !adminBlocked && !workerBlocked && this.deps.guard ? this.deps.guard.before(guardCall) : undefined
       if (verdict?.kind === "allow") {
         params = verdict.params
         rulesFired = verdict.rulesFired
@@ -525,6 +529,10 @@ export class LoopService {
       if (adminBlocked) {
         rlog.warn(`admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
         result = { error: `Tool "${call.name}" is admin-only and cannot be called by this user.` }
+        outcome = "blocked"
+      } else if (workerBlocked) {
+        rlog.warn(`write call refused inside a worker: ${call.name}`)
+        result = { error: `Workers are read-only: "${call.name}" would change something. Report what you found; the parent decides what to do.` }
         outcome = "blocked"
       } else if (verdict?.kind === "block") {
         rlog.warn(`blocked by rule ${verdict.ruleId}: ${call.name}`)
