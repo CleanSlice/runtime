@@ -54,24 +54,69 @@ export function estimateEventsBytes(events: Event[]): number {
   return JSON.stringify(events).length
 }
 
+/** Why a compaction ran (CLEAN-150 US4). Recorded on the summary event. */
+export type CompactionReason = "boundary" | "idle" | "hard-limit" | "operator"
+
+/** What was going on when the archive was written, so the next phase can pick up. */
+export interface IInFlightNote {
+  goal: string
+  done: string[]
+  pending: string[]
+}
+
+export interface ICompactOptions {
+  reason?: CompactionReason
+  /** A task of this session is still running: wait for the boundary unless the hard limit is passed. */
+  inFlight?: boolean
+  /** Operator request: ignore the thresholds (the recentKeep floor still holds). */
+  force?: boolean
+  /** Work the caller knows is still owed (inbox items) — goes into the in-flight note. */
+  pending?: string[]
+}
+
+export interface ICompactionLimits {
+  /** The model's history budget; the hard limit is a percentage of it. */
+  contextBudgetChars: number
+  /** Past this percentage of the budget, a running task no longer defers compaction. */
+  hardLimitPct: number
+}
+
+const DEFAULT_LIMITS: ICompactionLimits = { contextBudgetChars: 400_000, hardLimitPct: 90 }
+
 export class CompactionService {
   private compacting = new Set<string>()
+  private last = new Map<string, { reason: CompactionReason; ts: number }>()
 
   constructor(
     private sessionService: SessionService,
     private compactionThreshold: number,
     private recentKeep: number,
     private compactionBytesThreshold: number,
+    private limits: ICompactionLimits = DEFAULT_LIMITS,
   ) {}
 
   /** Update the thresholds used by future compact() calls. */
-  updateConfig(compactionThreshold: number, recentKeep: number, compactionBytesThreshold: number): void {
+  updateConfig(compactionThreshold: number, recentKeep: number, compactionBytesThreshold: number, limits?: ICompactionLimits): void {
     this.compactionThreshold = compactionThreshold
     this.recentKeep = recentKeep
     this.compactionBytesThreshold = compactionBytesThreshold
+    if (limits) this.limits = limits
   }
 
-  async compact(sessionId: string, llm: ILlmGateway): Promise<void> {
+  /** The most recent compaction of a session and why it ran. */
+  lastCompaction(sessionId: string): { reason: CompactionReason; ts: number } | undefined {
+    return this.last.get(sessionId)
+  }
+
+  /**
+   * Shrink a session's history to an archive summary plus the recent tail.
+   * Runs at task boundaries, on idle sweeps and on operator request; while a
+   * task is in flight it waits, because the summary would lose the paths and
+   * partial results the task is working with — unless the history is within
+   * `hardLimitPct` of the model's budget, when losing some is better than
+   * losing the turn (CLEAN-150 US4).
+   */
+  async compact(sessionId: string, llm: ILlmGateway, opts: ICompactOptions = {}): Promise<void> {
     if (this.compacting.has(sessionId)) {
       log.info(`skipping compaction for ${sessionId}: already in progress`)
       return
@@ -83,11 +128,21 @@ export class CompactionService {
     const overBytes = bytes > this.compactionBytesThreshold
     // Only the OLD slice (everything before recentKeep) can be summarized away.
     // If there aren't enough events to keep + summarize, compaction is a no-op.
-    if (!overCount && !overBytes) return
+    if (!opts.force && !overCount && !overBytes) return
     if (events.length <= this.recentKeep) return
 
-    const reason = overBytes ? `${Math.round(bytes / 1024)}KB > ${Math.round(this.compactionBytesThreshold / 1024)}KB` : `${events.length} events`
-    log.info(`compacting ${sessionId} (${reason}): ${events.length} → ${this.recentKeep} events`)
+    let reason: CompactionReason = opts.reason ?? "boundary"
+    if (opts.inFlight && !opts.force) {
+      const hardLimit = (this.limits.hardLimitPct / 100) * this.limits.contextBudgetChars
+      if (bytes < hardLimit) {
+        log.info(`deferring compaction for ${sessionId}: a task is in flight (${Math.round(bytes / 1024)}KB < hard limit ${Math.round(hardLimit / 1024)}KB)`)
+        return
+      }
+      reason = "hard-limit"
+    }
+
+    const trigger = overBytes ? `${Math.round(bytes / 1024)}KB > ${Math.round(this.compactionBytesThreshold / 1024)}KB` : `${events.length} events`
+    log.info(`compacting ${sessionId} [${reason}] (${trigger}): ${events.length} → ${this.recentKeep} events`)
     this.compacting.add(sessionId)
     try {
       const snapshotLen = events.length
@@ -128,23 +183,45 @@ This archive replaces the original messages. If a value is not here, it is lost 
       const currentEvents = await this.sessionService.read(sessionId)
       const newlyAppended = currentEvents.slice(snapshotLen)
 
+      // The in-flight note is what the archive alone would lose: the goal
+      // being pursued, the last steps taken, what is still owed.
+      const inFlight = inFlightNote(events, opts.pending ?? [])
       const summaryEvent: Event = {
         id: randomUUID(),
         type: "summary",
         ts: Date.now(),
-        data: { text: `[ARCHIVED CONTEXT — search here when user says "I sent you earlier" / "see above"]\n${response.text}\n[END ARCHIVED CONTEXT]` },
+        data: {
+          text:
+            `[ARCHIVED CONTEXT — search here when user says "I sent you earlier" / "see above"]\n${response.text}\n` +
+            `[IN FLIGHT when archived — goal: ${inFlight.goal}; last steps: ${inFlight.done.join(", ") || "none"}; pending: ${inFlight.pending.join("; ") || "none"}]\n` +
+            `[END ARCHIVED CONTEXT]`,
+          reason,
+          inFlight,
+        },
       }
 
       await this.sessionService.rewrite(sessionId, [summaryEvent, ...recent, ...newlyAppended])
-      log.info(`compaction done: ${sessionId}${newlyAppended.length > 0 ? ` (+${newlyAppended.length} appended during compaction)` : ""}`)
+      this.last.set(sessionId, { reason, ts: summaryEvent.ts })
+      log.info(`compaction done: ${sessionId} [${reason}]${newlyAppended.length > 0 ? ` (+${newlyAppended.length} appended during compaction)` : ""}`)
     } finally {
       this.compacting.delete(sessionId)
     }
   }
 
-  compactAsync(sessionId: string, llm: ILlmGateway): void {
-    this.compact(sessionId, llm).catch(err => {
+  compactAsync(sessionId: string, llm: ILlmGateway, opts: ICompactOptions = {}): void {
+    this.compact(sessionId, llm, opts).catch(err => {
       log.error(`compaction failed for ${sessionId}`, err)
     })
   }
+}
+
+/** Goal = the latest user message; done = the last three tool calls; pending = whatever the caller still owes. */
+export function inFlightNote(events: Event[], pending: string[]): IInFlightNote {
+  const lastUser = [...events].reverse().find(e => e.type === "user")
+  const goal = String((lastUser?.data as { text?: string } | undefined)?.text ?? "").replace(/\s+/g, " ").slice(0, 200) || "(none)"
+  const done = events
+    .filter(e => e.type === "tool_call")
+    .slice(-3)
+    .map(e => String((e.data as { name?: string }).name ?? "?"))
+  return { goal, done, pending: pending.slice(0, 5) }
 }

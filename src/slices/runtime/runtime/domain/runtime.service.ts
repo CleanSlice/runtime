@@ -152,8 +152,13 @@ export class RuntimeService {
 
         this.deps.session.touch(sessionId)
         this.deps.activity.clear()
-        this.deps.memory.flushAndCompact(sessionId, history, this.deps.llm, this.deps.session, this.deps.config.session.compactionThreshold, this.deps.config.session.compactionBytesThreshold)
-        this.deps.memory.reviewMemory(sessionId, this.deps.llm, this.deps.session)
+        // This task is done; a sibling task of the session may not be.
+        this.deps.memory.flushAndCompact(
+          sessionId, history, this.deps.llm, this.deps.session,
+          this.deps.config.session.compactionThreshold, this.deps.config.session.compactionBytesThreshold,
+          this.deps.tasks.inFlight(sessionId),
+        )
+        this.deps.memory.reviewMemory(sessionId, this.deps.llm, this.deps.session, { isAdmin })
 
       } catch (err) {
         log.child(task.id.slice(0, 6)).error("unhandled", err)

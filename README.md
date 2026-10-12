@@ -420,10 +420,13 @@ Users can interact with the bot via Telegram/Slack commands:
 | `/rules reload` | Re-read `.agent/rules/` — a bad file keeps the previous set (admin only) |
 | `/context` | System prompt size per section vs budget, and what was loaded on demand last turn (admin only) |
 | `/learned` | What the agent has learned, with confidence; `show`, `pin`, `unpin`, `prune`, `promote`, `export` (admin only) |
+| `/compact` | Archive this conversation's older history now (admin only) |
 
 ---
 
 ## Sessions
+
+**When compaction runs.** History is archived at task boundaries (after a turn ends), on the heartbeat's idle sweep (`session.idleCompactMin`), or on `/compact`. While a task of the session is still running, size-triggered compaction waits — the archive would lose the paths and partial results the task is using — unless the history passes `session.hardLimitPct` of `contextBudgetChars`, when it proceeds as `hard-limit`. Every archive summary records its `reason` and an in-flight note (goal, last steps, pending work); `agent_status.lastCompaction` shows the latest.
 
 Every conversation is a **session** — a JSONL file where each line is one event:
 
