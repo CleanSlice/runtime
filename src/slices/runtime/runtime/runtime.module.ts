@@ -14,7 +14,7 @@ import { LlmModule } from "../../setup/llm/llm.module"
 import { SkillModule } from "../../agent/skill/skill.module"
 import { VoiceModule } from "../../bot/voice/voice.module"
 import { UsageModule } from "../../bot/usage/usage.module"
-import { TaskModule } from "../../agent/task/task.module"
+import { TaskModule, type TaskManager } from "../../agent/task/task.module"
 import { RouterModule } from "../../agent/router/router.module"
 import { randomUUID } from "crypto"
 import { InitModule, type IAgentConfig } from "../init"
@@ -75,6 +75,7 @@ export class AgentRuntime {
   private loop: LoopModule
   private guard: GuardModule
   private instincts: InstinctModule
+  private tasks: TaskManager
 
   /**
    * Dependency injection — instantiates and wires all modules.
@@ -109,6 +110,9 @@ export class AgentRuntime {
       compactionThreshold: this.config.session.compactionThreshold,
       recentKeep: this.config.session.recentKeep,
       compactionBytesThreshold: this.config.session.compactionBytesThreshold,
+      contextBudgetChars: this.config.session.contextBudgetChars,
+      hardLimitPct: this.config.session.hardLimitPct,
+      idleCompactMin: this.config.session.idleCompactMin,
     })
 
     // Encrypted credential storage (file-based or AWS Secrets Manager)
@@ -144,6 +148,7 @@ export class AgentRuntime {
     // Background task manager (start, cancel, inject)
     const taskModule = new TaskModule()
     const tasks = taskModule.manager
+    this.tasks = tasks
 
     // LLM-backed router — classifies incoming messages as new / join / ambiguous
     const routerModule = new RouterModule(this.llm)
@@ -463,9 +468,12 @@ export class AgentRuntime {
     this.cron.start()
 
     this.heartbeat.onHeartbeat(async (message) => {
-      // Daily maintenance rides the heartbeat: confidence decay of learned
-      // behaviours that went unreinforced (CLEAN-150 US3).
+      // Maintenance rides the heartbeat: confidence decay of learned
+      // behaviours (CLEAN-150 US3) and compaction of sessions that went
+      // quiet over threshold, skipping any with a task in flight (US4).
       this.instincts.decayIfDue()
+      void this.session.compactIdle(this.llm.getAuxGateway(), Date.now(), (id) => this.tasks.inFlight(id))
+        .catch(err => msgLog.warn(`idle compaction sweep failed: ${(err as Error).message}`))
       await this.handleMessage(buildMessage({
         id: randomUUID(), text: message,
         from: "heartbeat", channel: "internal",
