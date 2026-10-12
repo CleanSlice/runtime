@@ -28,6 +28,8 @@ async function validateTelegramToken(
 
 export const ChannelTelegramSetTool: Tool = {
   name: "channel_telegram_set",
+
+  effect: "write",
   description:
     "Configure (or replace) this agent's Telegram bot. Provide the bot token from @BotFather; bot name auto-detects from the token if omitted. The bot starts receiving messages immediately after a successful save. Admin-only.",
   adminOnly: true,

@@ -22,6 +22,8 @@ function scoreText(text: string, words: string[]): number {
 
 export const MemorySearchTool: Tool = {
   name: "memory_search",
+
+  effect: "read",
   description: "Search agent memory and conversation history for relevant information. Use when you need to recall past conversations or stored knowledge.",
   schema,
   adminOnly: true,

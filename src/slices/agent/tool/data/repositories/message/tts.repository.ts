@@ -57,6 +57,8 @@ async function generateWithEspeak(text: string, outPath: string): Promise<void> 
 
 export const TtsTool: Tool = {
   name: "tts",
+
+  effect: "write",
   description: "Convert text to speech and send as voice message to Telegram.",
   schema,
   adminOnly: true,

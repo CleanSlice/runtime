@@ -15,12 +15,34 @@
     "intervalMin": 30
   },
 
+  "_comment_session": "idleCompactMin: idle sessions over the threshold are compacted by the heartbeat sweep (0 = off). hardLimitPct: size-triggered compaction may interrupt a running task only above this % of contextBudgetChars.",
   "session": {
     "compactionThreshold": 60,
-    "recentKeep": 20
+    "recentKeep": 20,
+    "idleCompactMin": 30,
+    "hardLimitPct": 90
   },
 
-  "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded. review: background self-improvement pass — every everyTurns turns, durable facts from the conversation are promoted into MEMORY.md via the auxiliary LLM. Set review.enabled false or everyTurns 0 to disable.",
+  "_comment_contextBudget": "Character budget for the always-on system prompt, per section. /context shows the actual split; start-up warns when a section overflows.",
+  "contextBudget": {
+    "total": 48000,
+    "sections": { "soul": 12000, "tooling": 6000, "skillsCatalog": 3000, "memory": 2200, "dailyNotes": 8000, "alwaysSkills": 12000, "instincts": 2500 }
+  },
+
+  "_comment_skills": "selection: model (agent calls skill_load when a description fits) | keyword (legacy word overlap, fallback for one release). retainTurns: turns a loaded skill stays after its last use.",
+  "skills": {
+    "selection": "model",
+    "retainTurns": 3
+  },
+
+  "_comment_guard": "Guardrails around tool calls. Rules are markdown files in rules/*.md; protected platform rules ship with the runtime. record rules append to recordFile, rotated at recordMaxBytes; observers slower than observerTimeoutMs are abandoned.",
+  "guard": {
+    "observerTimeoutMs": 2000,
+    "recordFile": "data/toolcalls.jsonl",
+    "recordMaxBytes": 10485760
+  },
+
+  "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded (the ## Rules heading of SOUL.md is exempt). review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
   "memory": {
     "limits": {
       "soul": 12000,
@@ -32,7 +54,23 @@
     "review": {
       "enabled": true,
       "everyTurns": 10
+    },
+    "instincts": {
+      "enabled": true,
+      "bands": { "suggested": 0.3, "apply": 0.5, "core": 0.8 },
+      "start": { "correction": 0.6, "errorResolution": 0.5, "repetition": 0.5, "explicitRule": 0.9 },
+      "reinforce": 0.05,
+      "correct": 0.2,
+      "decay": 0.05,
+      "decayDays": 14,
+      "maxInjected": 8
     }
+  },
+
+  "_comment_verification": "After a mutating tool ran, the draft reply is checked against the tool outcomes by the auxiliary LLM before delivery; past timeoutMs the draft goes out marked unverified.",
+  "verification": {
+    "enabled": true,
+    "timeoutMs": 8000
   },
 
   "_comment_s3": "Sync is event-driven (fs.watch + diff). syncIntervalSec is an optional periodic full-sweep safety net — set 0 to disable, or e.g. 21600 (6h) for paranoid backup.",
@@ -71,6 +109,12 @@
     "webFetch": {
       "maxChars": 8000
     },
-    "maxOutputChars": 16000
+    "maxOutputChars": 16000,
+    "coreCatalogue": ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    "delegate": {
+      "timeoutMs": 300000,
+      "maxParallel": 5,
+      "summaryChars": 4000
+    }
   }
 }

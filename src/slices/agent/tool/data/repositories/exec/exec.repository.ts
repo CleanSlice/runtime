@@ -8,6 +8,8 @@ const schema = z.object({
 
 export const ExecTool: Tool = {
   name: "exec",
+
+  effect: "write",
   description: "Execute a shell command and return stdout/stderr",
   schema,
   adminOnly: true,

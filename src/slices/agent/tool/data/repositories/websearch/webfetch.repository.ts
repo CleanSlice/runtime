@@ -8,6 +8,8 @@ const schema = z.object({
 
 export const WebFetchTool: Tool = {
   name: "web_fetch",
+
+  effect: "read",
   description: "Fetch a URL and return its content as clean readable text (markdown-style). Better than browser for reading articles.",
   schema,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {

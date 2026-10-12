@@ -1,5 +1,5 @@
 import type { ITaskGateway, Task } from "../domain/task.gateway"
-import type { ITask } from "../domain/task.types"
+import type { ITask, ITaskStartOptions } from "../domain/task.types"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -12,7 +12,7 @@ export class TaskGateway implements ITaskGateway {
     sessionId: string,
     label: string,
     fn: (task: Task) => Promise<void>,
-    options?: { internal?: boolean },
+    options?: ITaskStartOptions,
   ): Task {
     const id = randomUUID()
     const taskSessionId = `${sessionId}:task:${id}`
@@ -28,6 +28,7 @@ export class TaskGateway implements ITaskGateway {
       controller,
       inbox: [],
       internal: options?.internal ?? false,
+      ...(options?.parentTaskId ? { parentTaskId: options.parentTaskId } : {}),
     }
 
     this.tasks.set(id, task)
@@ -85,5 +86,9 @@ export class TaskGateway implements ITaskGateway {
 
   getRunningBySessionId(sessionId: string): Task[] {
     return this.getTasksBySessionId(sessionId).filter(t => t.status === "running")
+  }
+
+  getChildren(parentTaskId: string): Task[] {
+    return Array.from(this.tasks.values()).filter(t => t.parentTaskId === parentTaskId)
   }
 }

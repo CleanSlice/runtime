@@ -9,6 +9,8 @@ const schema = z.object({
 
 export const SpawnAgentTool: Tool = {
   name: "spawn_agent",
+
+  effect: "write",
   description: "Spawn a Claude Code agent to handle a complex task. The agent runs in the background and reports back.",
   schema,
   adminOnly: true,

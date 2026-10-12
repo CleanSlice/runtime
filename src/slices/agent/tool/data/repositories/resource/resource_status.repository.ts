@@ -7,6 +7,8 @@ const schema = z.object({})
 
 export const ResourceStatusTool: Tool = {
   name: "resource_status",
+
+  effect: "read",
   description: `Inspect your current operating resources.
 
 Returns a structured snapshot:

@@ -14,6 +14,8 @@ const schema = z.object({
 
 export const MemorySaveTool: Tool = {
   name: "memory_save",
+
+  effect: "write",
   description:
     "Append a note to today's daily memory file (memory/YYYY-MM-DD.md). " +
     "Use ONLY for durable facts, significant events, and reusable workflows. " +

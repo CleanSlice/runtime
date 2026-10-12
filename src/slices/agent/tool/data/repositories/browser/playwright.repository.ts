@@ -131,6 +131,8 @@ const schema = z.object({
 
 export const PlaywrightTool: Tool = {
   name: "browser_play",
+
+  effect: "write",
   description: `Full Playwright browser control with persistent sessions. Cookies + localStorage are stored as JSON under .agent/browser-state/<user>-<profile>.json — they survive container restarts via the existing S3 sync.
 
 Supports: navigate, click, fill, press, wait, waitForSelector, evaluate (JS), screenshot, getText.
