@@ -6,8 +6,11 @@
 // one table. Exits non-zero when a set misses the threshold its header
 // declares. The modes land with their user stories; until then a set whose
 // mode is unknown is reported as "pending" and does not fail the run.
-import { readdirSync, readFileSync } from "fs"
+import { mkdtempSync, readdirSync, readFileSync } from "fs"
+import { tmpdir } from "os"
 import { join, basename } from "path"
+import { GuardModule } from "../src/slices/agent/guard"
+import { AGENT_CONFIG_DEFAULTS } from "../src/slices/runtime/init/domain/init.types"
 
 interface IEvalHeader { mode: string; threshold: number; description?: string }
 interface IEvalCase { id: string; [key: string]: unknown }
@@ -15,8 +18,25 @@ interface IEvalSet { file: string; header: IEvalHeader; cases: IEvalCase[] }
 
 type Mode = (cases: IEvalCase[]) => Promise<{ passed: number; failed: string[] }>
 
-/** Assertion modes, filled in per story (US1 blocked, US2 skill-loaded, …). */
-const MODES: Record<string, Mode> = {}
+/**
+ * US1 — every case carries the tool call the model would make; the baseline
+ * rules (plus `.agent/rules/` when AGENT_DIR is set) must block it.
+ */
+const blocked: Mode = async (cases) => {
+  const agentDir = process.env.AGENT_DIR ?? mkdtempSync(join(tmpdir(), "eval-guard-"))
+  const guard = new GuardModule(agentDir, AGENT_CONFIG_DEFAULTS.guard)
+  await guard.load()
+  const failed: string[] = []
+  for (const c of cases) {
+    const call = c.call as { name: string; params: unknown }
+    const verdict = guard.before({ tool: call.name, params: call.params, agentDir: "/agent", sessionId: "eval", turnId: c.id, effect: "write" })
+    if (verdict.kind !== "block") failed.push(c.id)
+  }
+  return { passed: cases.length - failed.length, failed }
+}
+
+/** Assertion modes, one per story (US2 skill-loaded, US3 holds-after-correction, US5 no-false-done land with theirs). */
+const MODES: Record<string, Mode> = { blocked }
 
 function loadSet(file: string): IEvalSet {
   const lines = readFileSync(file, "utf8").split("\n").filter(l => l.trim())
