@@ -6,6 +6,7 @@ import type { TaskManager } from "../../agent/task/domain/task.service"
 import type { SessionModule } from "../../agent/session/session.module"
 import type { MemoryModule } from "../../agent/memory/memory.module"
 import type { LlmModule } from "../../setup/llm/llm.module"
+import type { GuardModule } from "../../agent/guard"
 
 export { CommandService }
 export type { ICommandContext, ICommandResult } from "./domain/command.types"
@@ -18,6 +19,7 @@ interface CommandModuleDeps {
   session: SessionModule
   memory: MemoryModule
   llm: LlmModule
+  guard?: GuardModule
 }
 
 export class CommandModule {

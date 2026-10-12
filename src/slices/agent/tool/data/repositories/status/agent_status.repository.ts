@@ -33,6 +33,8 @@ interface IAgentStatusReport {
   channels?: IChannelInfo[]
   usageToday?: { inputTokens: number; outputTokens: number; callCount: number }
   environment?: { ranchAdmin: boolean; bridleConnected: boolean; s3Sync: boolean }
+  /** Guardrails: how many rules are active, which fired in the last day, and whether the set loaded (CLEAN-150). */
+  rules?: { count: number; loaded: boolean; loadError?: string; firedLast24h: Array<{ id: string; times: number }> }
 }
 
 export const AgentStatusTool: Tool = {
@@ -113,6 +115,14 @@ Safe for any caller — the report is trimmed to what the current user is allowe
           inputTokens: today.totalInputTokens,
           outputTokens: today.totalOutputTokens,
           callCount: today.totalCallCount,
+        }
+      }
+      if (ctx.guard) {
+        report.rules = {
+          count: ctx.guard.listRules().filter(r => r.enabled).length,
+          loaded: ctx.guard.isLoaded,
+          ...(ctx.guard.lastLoadError ? { loadError: ctx.guard.lastLoadError } : {}),
+          firedLast24h: ctx.guard.recentFirings(24),
         }
       }
       report.environment = {

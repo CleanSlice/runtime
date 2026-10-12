@@ -81,9 +81,10 @@ Baseline rules ship in the runtime image under `src/slices/agent/guard/data/base
 |---|---|---|---|
 | `no-secret-store-reads` | before | `exec|process_exec|file|unzip` · `$` ~ `data/secrets` | block |
 | `no-env-reads` | before | `exec|process_exec|file` · `$` ~ `(^|/)\.env(\.|$)` | block |
-| `redact-credentials` | after | `*` · result ~ credential patterns from `setup/logger/redact.ts` | redact |
-| `cap-result-size` | after | `*` | redact (truncate to `maxToolOutputChars`, already implemented — moved under the rule) |
+| `redact-credentials` | after | `*` · credential patterns from `setup/logger/redact.ts` | redact |
 | `record-all` | after | `*` | record |
+
+The tool-result size cap stays where CLEAN-124 put it (`tools.maxOutputChars`, applied to the model's copy in the loop) rather than becoming a rule: a rule transforms the result the guard sees, while the cap must leave the transcript intact and trim only the in-context copy. Same split as redaction — the transcript keeps the raw result, the model gets the redacted one.
 
 ## Instinct file `.agent/memory/instincts/<id>.md`
 
