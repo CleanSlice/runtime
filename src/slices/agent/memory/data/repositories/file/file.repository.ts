@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import type { MemoryLimits } from "../../../domain/memory.types"
+import type { IMemoryLimitReport, MemoryLimits } from "../../../domain/memory.types"
 import { DEFAULT_MEMORY_LIMITS, MEMORY_FILE_LIMITS } from "../../../domain/memory.types"
 
 const DAILY_NOISE_RE = /^\s*(HEARTBEAT_OK|HEARTBEAT_FAIL.*|\[heartbeat\].*)\s*$/i
@@ -36,6 +36,52 @@ function truncateOldest(content: string, limit: number): string {
   }
   return `${marker}\n${body}`
 }
+
+/** The one section of an identity file that is never dropped to fit a limit (CLEAN-150 US2). */
+export const RULES_HEADING_RE = /^## rules\b/i
+
+export interface ITruncationResult {
+  text: string
+  /** True when the protected rules alone exceed the limit — nothing more could be dropped. */
+  over: boolean
+  /** Characters removed from the non-protected content. */
+  dropped: number
+}
+
+/**
+ * Fit `content` into `limit` characters without touching the `## Rules`
+ * section: everything else is truncated oldest-first (as `truncateOldest`),
+ * then the rules are appended whole. When the rules by themselves exceed the
+ * limit they are still kept and `over` is reported, so an operator sees the
+ * overflow instead of losing a rule silently.
+ */
+export function truncateKeepingRules(content: string, limit: number): ITruncationResult {
+  if (content.length <= limit) return { text: content, over: false, dropped: 0 }
+
+  const lines = content.split("\n")
+  const start = lines.findIndex(l => RULES_HEADING_RE.test(l))
+  if (start === -1) {
+    const text = truncateOldest(content, limit)
+    return { text, over: false, dropped: content.length - text.length }
+  }
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^## /.test(lines[i]!)) { end = i; break }
+  }
+  const rules = lines.slice(start, end).join("\n").trimEnd()
+  const rest = [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim()
+
+  // Two newlines join the parts and one closes the file.
+  const budgetForRest = limit - rules.length - 3
+  if (budgetForRest <= 0) {
+    return { text: rules + "\n", over: true, dropped: rest.length }
+  }
+  const kept = truncateOldest(rest, budgetForRest)
+  const text = kept ? `${kept}\n\n${rules}\n` : rules + "\n"
+  return { text, over: false, dropped: rest.length - kept.length }
+}
+
+export type { IMemoryLimitReport }
 
 export class FileRepository {
   private agentDir: string
@@ -102,20 +148,27 @@ export class FileRepository {
    * truncated on disk so every consumer — the SQLite search index and the
    * system-prompt builder — sees the bounded version. Called once at load.
    */
-  enforceMdLimits(): void {
+  enforceMdLimits(): IMemoryLimitReport[] {
+    const reports: IMemoryLimitReport[] = []
     for (const [filename, limitKey] of Object.entries(MEMORY_FILE_LIMITS)) {
       const path = join(this.agentDir, filename)
       if (!existsSync(path)) continue
       try {
         const current = readFileSync(path, "utf-8")
-        const trimmed = truncateOldest(current, this.limits[limitKey])
-        if (trimmed !== current) {
-          writeFileSync(path, trimmed)
+        const limit = this.limits[limitKey]
+        // The rules of an identity file survive the cut; reference material goes first.
+        const result = truncateKeepingRules(current, limit)
+        if (result.text !== current) {
+          writeFileSync(path, result.text)
+        }
+        if (result.dropped > 0 || result.over) {
+          reports.push({ file: filename, limit, chars: result.text.length, over: result.over, dropped: result.dropped })
         }
       } catch {
         // file unreadable — skip, load() will handle absence gracefully
       }
     }
+    return reports
   }
 
   private memoryDir(): string {

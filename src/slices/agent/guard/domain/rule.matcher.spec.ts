@@ -39,6 +39,15 @@ describe("argMatches", () => {
     expect(argMatches({ path: "$.path", pattern: "/agent/data/secrets" }, { action: "read", path: "/etc/hosts" }, agentDir)).toBe(false)
   })
 
+  test("shell quoting and .. segments do not hide a path from the rule", () => {
+    const rule = { path: "$", pattern: "data/secrets" }
+    expect(argMatches(rule, { command: "cat 'data/sec'rets/key" }, agentDir)).toBe(true)
+    expect(argMatches(rule, { command: 'cat data/"secrets"/key' }, agentDir)).toBe(true)
+    expect(argMatches(rule, { command: "cat data/sec\\rets/key" }, agentDir)).toBe(true)
+    expect(argMatches(rule, { command: "cat workspace/../data/secrets/key" }, agentDir)).toBe(true)
+    expect(argMatches(rule, { command: "cat /agent/workspace/../data/secrets/key" }, agentDir)).toBe(true)
+  })
+
   test("non-object params are matched as strings", () => {
     expect(argMatches({ path: "$", pattern: "secret" }, "top secret", agentDir)).toBe(true)
     expect(argMatches({ path: "$.x", pattern: "secret" }, "top secret", agentDir)).toBe(false)

@@ -40,8 +40,20 @@ export function argMatches(arg: NonNullable<IRuleMatch["arg"]>, params: unknown,
   const re = new RegExp(arg.pattern)
   // An object is tested both as the raw strings it carries (so a quote inside
   // a shell command is a quote, not `\"`) and as JSON (so keys and numbers
-  // are reachable too).
-  return textsOf(value).some(text => re.test(text) || re.test(resolveRelativePaths(text, agentDir)))
+  // are reachable too). Each text is also tried with shell quoting removed
+  // and `..` segments collapsed, so `cat 'data/sec'rets/../secrets/x` reads
+  // as the path the shell would open. Globs and variable expansion are not
+  // simulated — those stay with the admin-only gating of the shell tools.
+  return textsOf(value).some(text =>
+    candidatesOf(text, agentDir).some(c => re.test(c)),
+  )
+}
+
+/** The forms a text is matched in: as written, dequoted, and each with relative paths resolved. */
+export function candidatesOf(text: string, agentDir: string): string[] {
+  const dequoted = text.replace(/\\(.)/g, "$1").replace(/["']/g, "")
+  const forms = dequoted === text ? [text] : [text, dequoted]
+  return forms.flatMap(f => [f, resolveRelativePaths(f, agentDir)])
 }
 
 function textsOf(value: unknown): string[] {
@@ -73,7 +85,7 @@ export function resolveRelativePaths(text: string, agentDir: string): string {
     // Something like "x/y" directly after a scheme separator is a URL path.
     if (text.slice(0, offset).match(/:\/\/[^\s]*$/)) return whole
     return posix.resolve(base, dots + rest)
-  })
+  }).replace(/(^|[\s"'=])(\/[\w.-]+(?:\/[\w.-]+)*\/\.\.(?:\/[\w.-]+)*)/g, (_m, pre: string, abs: string) => pre + posix.normalize(abs))
 }
 
 function serialize(value: unknown): string {

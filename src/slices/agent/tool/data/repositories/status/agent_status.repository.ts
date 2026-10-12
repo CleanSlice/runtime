@@ -3,6 +3,7 @@ import { readdir } from "fs/promises"
 import { join } from "path"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import type { IChannelInfo } from "../../../../../setup/channel/channel.module"
+import type { IPromptBreakdown } from "../../../../agent/domain/agent.types"
 import pkg from "../../../../../../../package.json"
 
 const schema = z.object({})
@@ -35,6 +36,8 @@ interface IAgentStatusReport {
   environment?: { ranchAdmin: boolean; bridleConnected: boolean; s3Sync: boolean }
   /** Guardrails: how many rules are active, which fired in the last day, and whether the set loaded (CLEAN-150). */
   rules?: { count: number; loaded: boolean; loadError?: string; firedLast24h: Array<{ id: string; times: number }> }
+  /** System-prompt accounting of this turn against `contextBudget` (CLEAN-150 US2). */
+  context?: IPromptBreakdown
 }
 
 export const AgentStatusTool: Tool = {
@@ -117,6 +120,7 @@ Safe for any caller — the report is trimmed to what the current user is allowe
           callCount: today.totalCallCount,
         }
       }
+      if (ctx.promptBreakdown) report.context = ctx.promptBreakdown
       if (ctx.guard) {
         report.rules = {
           count: ctx.guard.listRules().filter(r => r.enabled).length,

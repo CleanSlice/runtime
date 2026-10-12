@@ -48,6 +48,10 @@ export class GuardModule {
     return this.service.redactOutgoing(text)
   }
 
+  redactStreaming(accumulated: string): string {
+    return this.service.redactStreaming(accumulated)
+  }
+
   listRules(): IRule[] {
     return this.service.listRules()
   }

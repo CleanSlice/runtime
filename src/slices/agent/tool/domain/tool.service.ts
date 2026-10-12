@@ -1,5 +1,14 @@
 import type { Tool, ToolContext } from "./tool.types"
 
+const STUB_MAX_CHARS = 80
+
+/** First sentence of a description, cut to one bounded line. */
+function stub(description: string): string {
+  const firstLine = description.split("\n").find(l => l.trim()) ?? ""
+  const sentence = firstLine.match(/^.*?[.!?](\s|$)/)?.[0]?.trim() ?? firstLine.trim()
+  return sentence.length > STUB_MAX_CHARS ? sentence.slice(0, STUB_MAX_CHARS - 1).trimEnd() + "…" : sentence
+}
+
 export class ToolService {
   private tools: Map<string, Tool> = new Map()
 
@@ -32,8 +41,13 @@ export class ToolService {
   /**
    * Build tooling + tool call style sections from any Tool array.
    * Usable without a ToolService instance.
+   *
+   * With `opts.core`, only those tools keep their full description; every
+   * other tool is a one-line stub and `tool_describe` hands out the rest on
+   * demand, so the catalogue stays within its budget however many MCP tools
+   * are connected (CLEAN-150 US2).
    */
-  static buildToolingPromptFrom(tools: Tool[]): string {
+  static buildToolingPromptFrom(tools: Tool[], opts?: { core?: string[] }): string {
     if (tools.length === 0) return ""
 
     const lines = [
@@ -44,8 +58,18 @@ export class ToolService {
       "",
     ]
 
+    const core = opts?.core ? new Set(opts.core) : undefined
+    let stubbed = 0
     for (const tool of tools) {
-      lines.push(`- \`${tool.name}\` — ${tool.description}`)
+      if (!core || core.has(tool.name)) {
+        lines.push(`- \`${tool.name}\` — ${tool.description}`)
+      } else {
+        lines.push(`- \`${tool.name}\` — ${stub(tool.description)}`)
+        stubbed++
+      }
+    }
+    if (stubbed > 0) {
+      lines.push("", `${stubbed} tool${stubbed === 1 ? "" : "s"} above show a one-line summary. Call \`tool_describe\` with the name for the full description and parameters before using one.`)
     }
 
     lines.push(
