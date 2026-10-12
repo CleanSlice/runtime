@@ -11,7 +11,7 @@ export const SpawnAgentTool: Tool = {
   name: "spawn_agent",
 
   effect: "write",
-  description: "Spawn a Claude Code agent to handle a complex task. The agent runs in the background and reports back.",
+  description: "Spawn an external Claude Code coding agent (a separate process with its own credentials) for a software task in a repository. For sub-tasks of your own work that only need your tools, use delegate_task instead — it runs isolated workers inside this runtime and returns their summaries to you.",
   schema,
   adminOnly: true,
   async execute(params: unknown, ctx: ToolContext): Promise<unknown> {

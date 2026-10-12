@@ -9,6 +9,7 @@ import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-tur
 import type { GuardModule } from "../../guard/guard.module"
 import type { SkillModule } from "../../skill/skill.module"
 import type { InstinctModule } from "../../instinct/instinct.module"
+import type { IDelegateRequest, IDelegateResult } from "../../task/domain/delegate.types"
 import type { IPromptBreakdown } from "../../agent/domain/agent.types"
 
 export type ToolEffect = "read" | "write"
@@ -73,6 +74,8 @@ export interface ToolContext {
   promptBreakdown?: IPromptBreakdown
   /** This session's most recent compaction and why it ran (CLEAN-150 US4). */
   lastCompaction?: { reason: string; ts: number }
+  /** Run sub-tasks in isolated workers (CLEAN-150 US6). Absent inside a worker. */
+  delegate?: (requests: IDelegateRequest[]) => Promise<IDelegateResult[]>
   /**
    * Tools visible to THIS session's caller (admin-only tools are already
    * filtered out upstream for non-admins). Lets introspection tools like

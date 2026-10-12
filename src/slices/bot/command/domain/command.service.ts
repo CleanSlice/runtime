@@ -358,12 +358,17 @@ export class CommandService {
   private formatTaskList(sessionId: string): string {
     const tasks = this.deps.tasks.getTasksBySessionId(sessionId)
     if (tasks.length === 0) return "No active tasks."
+    const line = (t: typeof tasks[number], indent = "") => {
+      const elapsed = Math.round((Date.now() - t.startedAt) / 1000)
+      const icon = { running: "⏳", done: "✅", error: "❌", cancelled: "🚫" }[t.status]
+      return `${indent}${icon} [${t.id.slice(0, 6)}] ${t.label} — ${elapsed}s`
+    }
+    // Delegated workers sit under their parent (CLEAN-150 US6).
+    const byParent = new Map<string, typeof tasks>()
+    for (const t of tasks) if (t.parentTaskId) byParent.set(t.parentTaskId, [...(byParent.get(t.parentTaskId) ?? []), t])
     return tasks
-      .map(t => {
-        const elapsed = Math.round((Date.now() - t.startedAt) / 1000)
-        const icon = { running: "⏳", done: "✅", error: "❌", cancelled: "🚫" }[t.status]
-        return `${icon} [${t.id.slice(0, 6)}] ${t.label} — ${elapsed}s`
-      })
+      .filter(t => !t.parentTaskId || !tasks.some(p => p.id === t.parentTaskId))
+      .flatMap(t => [line(t), ...(byParent.get(t.id) ?? []).map(c => line(c, "   ↳ "))])
       .join("\n")
   }
 
