@@ -39,6 +39,16 @@ export const DEFAULT_MEMORY_LIMITS: MemoryLimits = {
   daily: 4000,
 }
 
+/** What enforcing a file's limit did — reported to the operator at start-up (CLEAN-150 US2). */
+export interface IMemoryLimitReport {
+  file: string
+  limit: number
+  chars: number
+  /** The `## Rules` section alone exceeds the limit; nothing more could be dropped. */
+  over: boolean
+  dropped: number
+}
+
 /** Maps a curated memory filename to its limit key. */
 export const MEMORY_FILE_LIMITS: Record<string, keyof MemoryLimits> = {
   "SOUL.md": "soul",

@@ -157,3 +157,43 @@ describe("LoopService with guardrails (CLEAN-150 US1)", () => {
     expect(sent).toEqual(["done"])
   })
 })
+
+describe("LoopService with on-demand skills (CLEAN-150 US2)", () => {
+  const ranch = { name: "ranch", description: "Operate the ranch API", path: "/x", content: "# Ranch\n\nCall GET /agents first.", source: "agent" as const }
+  const skills = {
+    get: (name: string) => (name === "ranch" ? ranch : undefined),
+    markLoaded: (_s: string, name: string) => ({ name, chars: ranch.content.length, retainedForTurns: 3 }),
+  }
+  const skillLoadTool: Tool = {
+    name: "skill_load", description: "load", effect: "read", schema: z.object({ name: z.string() }),
+    execute: async (params, ctx) => ctx.skills!.markLoaded(ctx.sessionId, (params as { name: string }).name, ctx.turn ?? 0),
+  }
+
+  test("a successful skill_load puts the skill body into history ahead of the conversation and leaves the system prompt untouched", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "skill-loop-"))
+    const tools = [skillLoadTool]
+    const { llm, calls } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "skill_load", params: { name: "ranch" } }], stopReason: "tool_use" },
+    ])
+    const { session } = recordingSession()
+    const sent: string[] = []
+    const loads: unknown[] = []
+    const ctx = makeCtx(agentDir, tools, sent)
+    ctx.systemPrompt = "SYSTEM"
+    ctx.history = [{ id: "u1", type: "user", ts: 1, data: { text: "how many agents are stale?", from: "u" } }]
+    ctx.onDemandLoad = (l) => loads.push(l)
+
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools, skills: skills as never,
+    }).run(ctx)
+
+    expect(ctx.systemPrompt).toBe("SYSTEM")
+    const secondCall = calls[1]!.history
+    expect(secondCall[0]!.type).toBe("summary")
+    expect((secondCall[0]!.data as { skill: string; text: string }).skill).toBe("ranch")
+    expect((secondCall[0]!.data as { text: string }).text).toContain("Call GET /agents first.")
+    expect(secondCall[1]!.type).toBe("user")
+    expect(loads).toEqual([{ kind: "skill", name: "ranch", chars: ranch.content.length }])
+  })
+})

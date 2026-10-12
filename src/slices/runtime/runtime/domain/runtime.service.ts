@@ -18,6 +18,7 @@ import type { IAgentConfig } from "../../init"
 import { buildResourceHintPrompt } from "../../loop/domain/prompts/resource-hint.prompt"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
 import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/contextBudget"
+import { isSkillEvent, skillEvent } from "../../../agent/skill/domain/skillEvent"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
@@ -87,11 +88,24 @@ export class RuntimeService {
           lastStep: "started",
         })
 
-        const history = await this.buildHistory(msg, sessionId, task.id)
-        const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools)
+        // Skill retention is counted in turns of the session (CLEAN-150 US2).
+        const turn = this.deps.skills.nextTurn(sessionId)
+        const history = await this.buildHistory(msg, sessionId, task.id, turn)
+        const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools, { core: this.deps.config.tools.coreCatalogue })
         const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId)
+        const breakdown = this.lastBreakdown.get(sessionId)
+        // Skills carried over from earlier turns count as on-demand context too.
+        for (const evt of history) {
+          const skillName = (evt.data as { skill?: string })?.skill
+          if (evt.type === "summary" && skillName) {
+            breakdown?.onDemand.push({ kind: "skill", name: skillName, chars: String((evt.data as { text?: string }).text ?? "").length })
+          }
+        }
 
         await this.deps.loop.service.run({
+          turn,
+          breakdown,
+          onDemandLoad: (load) => { this.lastBreakdown.get(sessionId)?.onDemand.push(load) },
           task,
           sessionId,
           agentDir: this.deps.agentDir,
@@ -183,7 +197,7 @@ export class RuntimeService {
     return `You are responding via ${channel}.`
   }
 
-  private async buildHistory(msg: Message, sessionId: string, taskId: string): Promise<Event[]> {
+  private async buildHistory(msg: Message, sessionId: string, taskId: string, turn: number): Promise<Event[]> {
     // Append user message as shared context
     const userEvent: Event = {
       // On bridle the message id is minted by the person's browser and rides
@@ -261,7 +275,18 @@ export class RuntimeService {
     if (fitted.dropped > 0) {
       log.warn(`session ${sessionId}: ${fitted.dropped} events left out to fit ${this.deps.config.session.contextBudgetChars} chars`)
     }
-    return fitted.events
+
+    // Skills the model pulled in on earlier turns ride ahead of the
+    // conversation while they are retained (CLEAN-150 US2). They are never
+    // persisted — only the fact of loading is — so a fresh copy of the body
+    // goes in each turn, after the archive summary if there is one.
+    const events = fitted.events.filter(e => !isSkillEvent(e))
+    const active = this.deps.skills.activeFor(sessionId, turn)
+    if (active.length > 0) {
+      const insertAt = events[0]?.type === "summary" ? 1 : 0
+      events.splice(insertAt, 0, ...active.map(skillEvent))
+    }
+    return events
   }
 
   private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string): Promise<string> {
@@ -270,11 +295,8 @@ export class RuntimeService {
 
     // Get all loaded skills — pass summaries to system prompt catalog
     const allSkills = this.deps.skills.getAll()
-    const skillSummaries = allSkills.map(s => ({
-      name: s.name,
-      description: s.description,
-      metadata: s.metadata,
-    }))
+    // Summaries carry the reason when a skill cannot be loaded (missing env or binary).
+    const skillSummaries = this.deps.skills.summaries()
 
     // One-shot resource-status hint: if the previous LLM turn for this
     // session was delayed (retries, rate limit, overload, >30s), nudge the

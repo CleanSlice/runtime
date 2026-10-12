@@ -1,4 +1,4 @@
-import type { MemoryEntry } from "./memory.types"
+import type { IMemoryLimitReport, MemoryEntry } from "./memory.types"
 
 export interface IMemoryGateway {
   // Search (SQLite-backed)
@@ -14,5 +14,5 @@ export interface IMemoryGateway {
   writeMemoryFile(content: string): void
 
   // Limits — truncate oversized curated files (SOUL/USER/MEMORY/HEARTBEAT) on disk
-  enforceMdLimits(): void
+  enforceMdLimits(): IMemoryLimitReport[]
 }

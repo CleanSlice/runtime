@@ -95,25 +95,25 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ### Tests for User Story 2
 
-- [ ] T029 [P] [US2] Spec: `## Rules` heading in `SOUL.md` is never top-truncated, other headings go first, `over` reported when rules alone exceed the cap, in `src/slices/agent/memory/data/repositories/file/file.repository.spec.ts`
-- [ ] T030 [P] [US2] Spec: per-session loaded skills retained `retainTurns` turns then released; `requires.env`/`bins` unmet → not loadable with the stated reason; `selection: "keyword"` still uses the old matcher, in `src/slices/agent/skill/domain/skill.service.spec.ts`
-- [ ] T031 [P] [US2] Spec: catalogue emits full descriptions only for `coreCatalogue`, stubs for the rest, total within `contextBudget.sections.tooling`, in `src/slices/agent/tool/domain/tool.service.spec.ts`
-- [ ] T032 [P] [US2] Spec: `skill_load` places a `summary` event `[SKILL <name>]` at the top of history and does not change `systemPrompt` (prompt-cache prefix stays stable), in `src/slices/runtime/loop/domain/loop.service.spec.ts`
+- [X] T029 [P] [US2] Spec: `## Rules` heading in `SOUL.md` is never top-truncated, other headings go first, `over` reported when rules alone exceed the cap, in `src/slices/agent/memory/data/repositories/file/file.repository.spec.ts`
+- [X] T030 [P] [US2] Spec: per-session loaded skills retained `retainTurns` turns then released; `requires.env`/`bins` unmet → not loadable with the stated reason; `selection: "keyword"` still uses the old matcher, in `src/slices/agent/skill/domain/skill.service.spec.ts`
+- [X] T031 [P] [US2] Spec: catalogue emits full descriptions only for `coreCatalogue`, stubs for the rest, total within `contextBudget.sections.tooling`, in `src/slices/agent/tool/domain/tool.service.spec.ts`
+- [X] T032 [P] [US2] Spec: `skill_load` places a `summary` event `[SKILL <name>]` at the top of history and does not change `systemPrompt` (prompt-cache prefix stays stable), in `src/slices/runtime/loop/domain/loop.service.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T033 [US2] Make `truncateOldest` heading-aware: drop non-`## Rules` sections first and surface an `over` flag, in `src/slices/agent/memory/data/repositories/file/file.repository.ts`; add `contextBudget` checks and start-up warning naming the file and sections in `src/slices/agent/memory/data/memory.gateway.ts`
-- [ ] T034 [US2] Add per-session loaded-skill state (`load(sessionId, name, turn)`, `activeFor(sessionId, turn)`, release after `retainTurns`), the `requires` availability check with reason, and the `selection` flag, in `src/slices/agent/skill/domain/skill.service.ts` and `src/slices/agent/skill/skill.module.ts`
-- [ ] T035 [US2] Append `(unavailable: missing env X)` to catalogue entries of unsatisfiable skills and render the instinct/skill sections from the breakdown in `src/slices/agent/agent/domain/agent.service.ts`
-- [ ] T036 [P] [US2] Create the `skill_load` tool (schema `{ name }`, returns `{ name, chars, retainedForTurns }`, errors `unknown skill` / `skill unavailable: …`, `effect: "read"`) in `src/slices/agent/tool/data/repositories/skill/skill_load.repository.ts`
-- [ ] T037 [P] [US2] Create the `tool_describe` tool (returns description, JSON schema, `effect`, `adminOnly`; reads `ctx.tools`) in `src/slices/agent/tool/data/repositories/tool/tool_describe.repository.ts`
-- [ ] T038 [US2] Register both tools in `src/slices/agent/tool/data/tool.gateway.ts` and list them in `.agent/skills/runtime-tools/SKILL.md`
-- [ ] T039 [US2] Split `buildToolingPromptFrom` into core (full) and stub (one line + "call `tool_describe`") sections driven by `tools.coreCatalogue`, in `src/slices/agent/tool/domain/tool.service.ts`
-- [ ] T040 [US2] In the loop: when `skill_load` succeeds, insert the skill body as a `summary` event at the head of `ctx.history` (after any leading archive summary) and record it in the session's loaded set; re-insert active skills on later turns when rebuilding history, in `src/slices/runtime/loop/domain/loop.service.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts` (`buildHistory`)
-- [ ] T041 [US2] Record on-demand loads (skills, `tool_describe`) into the session's `IPromptBreakdown.onDemand` in `src/slices/runtime/runtime/domain/runtime.service.ts`
-- [ ] T042 [US2] Add `/context` (admin-only) rendering the last breakdown: per-section chars vs budget, `over` markers, on-demand list, in `src/slices/bot/command/domain/command.service.ts`; add `context` to `agent_status` output in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
-- [ ] T043 [US2] Move the ranch HTTP endpoint table and recipes out of `.agent/SOUL.md` into `.agent/skills/ranch/SKILL.md`, leaving `## Hard rules` under a `## Rules` heading; mirror in `.agent.example/SOUL.md`
-- [ ] T044 [US2] Create the skill-selection eval set (100 messages with expected skill or none) in `tests/evals/skill-selection.jsonl` and the `skill-loaded` assertion mode in `scripts/eval.ts`
+- [X] T033 [US2] Make `truncateOldest` heading-aware: drop non-`## Rules` sections first and surface an `over` flag, in `src/slices/agent/memory/data/repositories/file/file.repository.ts`; add `contextBudget` checks and start-up warning naming the file and sections in `src/slices/agent/memory/data/memory.gateway.ts`
+- [X] T034 [US2] Add per-session loaded-skill state (`load(sessionId, name, turn)`, `activeFor(sessionId, turn)`, release after `retainTurns`), the `requires` availability check with reason, and the `selection` flag, in `src/slices/agent/skill/domain/skill.service.ts` and `src/slices/agent/skill/skill.module.ts`
+- [X] T035 [US2] Append `(unavailable: missing env X)` to catalogue entries of unsatisfiable skills and render the instinct/skill sections from the breakdown in `src/slices/agent/agent/domain/agent.service.ts`
+- [X] T036 [P] [US2] Create the `skill_load` tool (schema `{ name }`, returns `{ name, chars, retainedForTurns }`, errors `unknown skill` / `skill unavailable: …`, `effect: "read"`) in `src/slices/agent/tool/data/repositories/skill/skill_load.repository.ts`
+- [X] T037 [P] [US2] Create the `tool_describe` tool (returns description, JSON schema, `effect`, `adminOnly`; reads `ctx.tools`) in `src/slices/agent/tool/data/repositories/tool/tool_describe.repository.ts`
+- [X] T038 [US2] Register both tools in `src/slices/agent/tool/data/tool.gateway.ts` and list them in `.agent/skills/runtime-tools/SKILL.md`
+- [X] T039 [US2] Split `buildToolingPromptFrom` into core (full) and stub (one line + "call `tool_describe`") sections driven by `tools.coreCatalogue`, in `src/slices/agent/tool/domain/tool.service.ts`
+- [X] T040 [US2] In the loop: when `skill_load` succeeds, insert the skill body as a `summary` event at the head of `ctx.history` (after any leading archive summary) and record it in the session's loaded set; re-insert active skills on later turns when rebuilding history, in `src/slices/runtime/loop/domain/loop.service.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts` (`buildHistory`)
+- [X] T041 [US2] Record on-demand loads (skills, `tool_describe`) into the session's `IPromptBreakdown.onDemand` in `src/slices/runtime/runtime/domain/runtime.service.ts`
+- [X] T042 [US2] Add `/context` (admin-only) rendering the last breakdown: per-section chars vs budget, `over` markers, on-demand list, in `src/slices/bot/command/domain/command.service.ts`; add `context` to `agent_status` output in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
+- [X] T043 [US2] Move the ranch HTTP endpoint table and recipes out of `.agent/SOUL.md` into `.agent/skills/ranch/SKILL.md`, leaving `## Hard rules` under a `## Rules` heading; mirror in `.agent.example/SOUL.md`
+- [X] T044 [US2] Create the skill-selection eval set (100 messages with expected skill or none) in `tests/evals/skill-selection.jsonl` and the `skill-loaded` assertion mode in `scripts/eval.ts`
 
 **Checkpoint**: US1 and US2 work independently; `/context` shows the admin agent ≥40 % smaller; eval ≥90 % / ≤5 %.
 
