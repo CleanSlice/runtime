@@ -357,6 +357,33 @@ Built-in tools available to the agent:
 | `invite` | Manage user invite codes |
 | `secret_*` | Manage encrypted user secrets (set, get, list, delete) |
 
+### Guardrails
+
+Rules are checked by the runtime around every tool call — before it runs and on its result — so they hold whatever the prompt said. A rule is a markdown file with frontmatter in `.agent/rules/`:
+
+```markdown
+---
+id: no-prod-deletes
+event: before                  # before | after
+match:
+  tool: 'http'                 # glob: 'exec', 'exec|file', 'ranch__*', '*'
+  arg: { path: '$.method', pattern: '^DELETE$' }   # before only
+action: block                  # block | redact | record
+---
+Deleting through the API is done from the console, not by the agent.
+```
+
+Outcomes compose strictest-first (block > redact > record). The platform ships protected rules that an agent cannot override:
+
+| Rule | Event | Does |
+|------|-------|------|
+| `no-secret-store-reads` | before | Blocks `exec` / `process_exec` / `file` / `unzip` calls that reference `data/secrets` |
+| `no-env-reads` | before | Blocks shell and file reads of `.env*` |
+| `redact-credentials` | after | Masks API keys, OAuth tokens, bearer headers, JWTs in tool results and in replies |
+| `record-all` | after | Appends every call (tool, outcome, duration, sizes, rules fired) to `data/toolcalls.jsonl` |
+
+A rule file that does not parse fails closed: the previous set stays in force on `/rules reload`, and on start-up every tool call is blocked with the reason until the file is fixed. Observers (`record`) fail open and are bounded by `guard.observerTimeoutMs`. `/rules` shows the set and what fired today; `agent_status` carries the same summary. `bun run eval tests/evals/guardrails.jsonl` checks the baseline against 31 extraction attempts.
+
 ### Bot commands
 
 Users can interact with the bot via Telegram/Slack commands:
@@ -373,6 +400,8 @@ Users can interact with the bot via Telegram/Slack commands:
 | `/voice` | Toggle voice mode (TTS) |
 | `/skills` | List loaded skills |
 | `/skills reload` | Reload skills from disk (admin only) |
+| `/rules` | Guardrails in force and what fired today (admin only) |
+| `/rules reload` | Re-read `.agent/rules/` — a bad file keeps the previous set (admin only) |
 
 ---
 

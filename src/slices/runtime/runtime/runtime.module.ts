@@ -22,12 +22,14 @@ import { SecretModule } from "../../setup/secret/secret.module"
 import { ActivityModule } from "../../bot/activity/activity.module"
 import { CommandService } from "../../bot/command/domain/command.service"
 import { LoopModule } from "../loop/loop.module"
+import { GuardModule } from "../../agent/guard"
 import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
 import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
 
 const s3Log = createLogger("s3")
+const guardLog = createLogger("guard")
 const msgLog = createLogger("msg")
 
 /** External config passed by the entrypoint (index.ts / multi.ts) */
@@ -70,6 +72,7 @@ export class AgentRuntime {
   private access: AccessModule
   private init: InitModule
   private loop: LoopModule
+  private guard: GuardModule
 
   /**
    * Dependency injection — instantiates and wires all modules.
@@ -151,14 +154,18 @@ export class AgentRuntime {
     this.access = AccessModule.create(agentDir, adminIds, this.config)
     const access = this.access
 
+    // Guardrails around every tool call — rules in .agent/rules/ plus the
+    // platform baseline. Loaded in start(); until then every call is blocked.
+    this.guard = new GuardModule(agentDir, this.config.guard)
+
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
-    const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm })
+    const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm, guard: this.guard })
 
     // ── Runtime slices (orchestration) ─────────────────────────────
 
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard },
       {
         maxIterations: this.config.maxIterations,
         maxToolOutputChars: this.config.tools.maxOutputChars,
@@ -233,10 +240,25 @@ export class AgentRuntime {
   /** Boot the agent: restore state, connect channels, start background jobs. */
   async start(): Promise<void> {
     await this.restoreState()
+    await this.loadGuard()
     await this.loadState()
     await this.connectChannels()
     this.checkRecovery()
     this.startBackgroundJobs()
+  }
+
+  /**
+   * Fail closed: a rule file that does not parse keeps every tool call
+   * blocked with the reason, and the operator fixes the file (CLEAN-150 FR-004).
+   */
+  private async loadGuard(): Promise<void> {
+    try {
+      await this.guard.load()
+    } catch (err) {
+      const message = (err as Error).message
+      guardLog.error(`rules failed to load — tool calls are blocked until fixed: ${message}`)
+      this.guard.markFailed(message)
+    }
   }
 
   /** Graceful shutdown: disconnect channels, flush state, push to S3. */
