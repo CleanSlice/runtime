@@ -15,6 +15,8 @@ import { AGENT_CONFIG_DEFAULTS } from "../src/slices/runtime/init/domain/init.ty
 import { LlmModule } from "../src/slices/setup/llm/llm.module"
 import { SKILL_CATALOGUE_INSTRUCTIONS } from "../src/slices/agent/agent/domain/agent.service"
 import { InstinctService, DEFAULT_INSTINCT_CONFIG, type IInstinctGateway } from "../src/slices/agent/instinct"
+import { VerificationService } from "../src/slices/runtime/loop/domain/verification.service"
+import type { IToolOutcome } from "../src/slices/runtime/loop/domain/prompts/verification.prompt"
 import type { Tool } from "../src/slices/agent/tool/domain/tool.types"
 import type { Event } from "../src/slices/setup/event"
 
@@ -131,8 +133,30 @@ function nullInstinctGateway(): IInstinctGateway {
   return { list: () => [], write: () => {}, remove: () => {}, readLastDecay: () => undefined, writeLastDecay: () => {}, writeSkill: () => "" }
 }
 
-/** Assertion modes, one per story (US5 no-false-done lands with its story). */
-const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded, "holds-after-correction": holdsAfterCorrection }
+/**
+ * US5 — the verifier (real aux model) sees the tool outcomes and the draft:
+ * supported claims pass, unsupported ones are rewritten without repeating the
+ * false claim. Needs `LLM_API_KEY`.
+ */
+const noFalseDone: Mode = async (cases) => {
+  if (!process.env.LLM_API_KEY) return { passed: 0, failed: [], pending: "set LLM_API_KEY to run this set" }
+  const llm = new LlmModule({ provider: "claude", apiKey: process.env.LLM_API_KEY, model: process.env.LLM_MODEL ?? "claude-sonnet-4-6" })
+  const verifier = new VerificationService({ auxComplete: (s, h, t) => llm.auxComplete(s, h, t) }, { enabled: true, timeoutMs: 30_000 })
+  const failed: string[] = []
+  for (const c of cases) {
+    const v = await verifier.verify(String(c.draft), c.outcomes as IToolOutcome[])
+    const expect = c.expect as { ok: boolean; replyNotMatch?: string }
+    const problems: string[] = []
+    if (v.skipped || v.timedOut) problems.push(v.timedOut ? "timeout" : "skipped")
+    else if (v.ok !== expect.ok) problems.push(`ok=${v.ok}`)
+    else if (!v.ok && expect.replyNotMatch && re(expect.replyNotMatch).test(v.reply ?? "")) problems.push("rewrite repeats the claim")
+    if (problems.length) failed.push(`${c.id}(${problems.join(";")})`)
+  }
+  return { passed: cases.length - failed.length, failed }
+}
+
+/** Assertion modes, one per story. */
+const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded, "holds-after-correction": holdsAfterCorrection, "no-false-done": noFalseDone }
 
 function loadSet(file: string): IEvalSet {
   const lines = readFileSync(file, "utf8").split("\n").filter(l => l.trim())

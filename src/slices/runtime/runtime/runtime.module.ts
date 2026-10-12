@@ -21,7 +21,7 @@ import { InitModule, type IAgentConfig } from "../init"
 import { SecretModule } from "../../setup/secret/secret.module"
 import { ActivityModule } from "../../bot/activity/activity.module"
 import { CommandService } from "../../bot/command/domain/command.service"
-import { LoopModule } from "../loop/loop.module"
+import { LoopModule, VerificationService, DelegateService } from "../loop/loop.module"
 import { GuardModule } from "../../agent/guard"
 import { InstinctModule } from "../../agent/instinct"
 import { BotService } from "../../bot/bot/domain/bot.service"
@@ -179,15 +179,25 @@ export class AgentRuntime {
 
     // ── Runtime slices (orchestration) ─────────────────────────────
 
+    // Completion check after mutating tools — the auxiliary model compares
+    // the draft reply with what the tools actually returned (CLEAN-150 US5).
+    const verification = new VerificationService(
+      { auxComplete: (system, history, toolList) => this.llm.auxComplete(system, history, toolList) },
+      this.config.verification,
+    )
+
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills, instincts: this.instincts },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills, instincts: this.instincts, verification, tasks },
       {
         maxIterations: this.config.maxIterations,
         maxToolOutputChars: this.config.tools.maxOutputChars,
         contextBudgetChars: this.config.session.contextBudgetChars,
       },
     )
+
+    // Delegation runs workers through the loop itself, so it is wired after it (CLEAN-150 US6).
+    this.loop.setDelegate(new DelegateService({ tasks, loop: this.loop.service, config: this.config.tools.delegate }))
 
     // Message intake router — access check → commands → dispatch
     this.router = new BotService({

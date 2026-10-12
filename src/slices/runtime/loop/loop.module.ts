@@ -10,6 +10,12 @@ import type { Tool } from "../../agent/tool"
 import type { GuardModule } from "../../agent/guard"
 import type { SkillModule } from "../../agent/skill/skill.module"
 import type { InstinctModule } from "../../agent/instinct/instinct.module"
+import type { VerificationService } from "./domain/verification.service"
+
+export { VerificationService } from "./domain/verification.service"
+export { DelegateService } from "./domain/delegate.service"
+import type { DelegateService } from "./domain/delegate.service"
+import type { TaskManager } from "../../agent/task/domain/task.service"
 
 export { LoopService }
 export type { ILoopContext, ILoopResult, ILoopConfig } from "./domain/loop.types"
@@ -25,6 +31,8 @@ interface LoopModuleDeps {
   guard?: GuardModule
   skills?: SkillModule
   instincts?: InstinctModule
+  verification?: VerificationService
+  tasks?: TaskManager
 }
 
 export class LoopModule {
@@ -32,6 +40,11 @@ export class LoopModule {
 
   constructor(deps: LoopModuleDeps, config?: Partial<ILoopConfig>) {
     this.service = new LoopService(deps, config)
+  }
+
+  /** Wire delegation once the loop exists — workers run through this very loop (CLEAN-150 US6). */
+  setDelegate(delegate: DelegateService): void {
+    this.service.setDelegate(delegate)
   }
 
   /** Update maxIterations after construction (e.g. after an agent.config.json reload). */
