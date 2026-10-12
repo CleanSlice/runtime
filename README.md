@@ -164,7 +164,7 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
     // Tools with a full description always in the prompt; the rest are one-line stubs + `tool_describe`
     "coreCatalogue": ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
     // delegate_task worker budgets
-    "delegate": { "timeoutMs": 300000, "maxParallel": 5, "summaryChars": 4000 }
+    "delegate": { "timeoutMs": 300000, "maxParallel": 5, "summaryChars": 4000, "allowWrite": false }
   }
 }
 ```
