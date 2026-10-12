@@ -40,6 +40,8 @@ interface IAgentStatusReport {
   context?: IPromptBreakdown
   /** Learned behaviours by band (CLEAN-150 US3). */
   learned?: { core: number; apply: number; suggested: number; hidden: number; conflicts: number; pinned: number }
+  /** The most recent compaction of this session and why it ran (CLEAN-150 US4). */
+  lastCompaction?: { reason: string; ts: number }
 }
 
 export const AgentStatusTool: Tool = {
@@ -124,6 +126,7 @@ Safe for any caller — the report is trimmed to what the current user is allowe
       }
       if (ctx.promptBreakdown) report.context = ctx.promptBreakdown
       if (ctx.instincts) report.learned = ctx.instincts.summary()
+      if (ctx.lastCompaction) report.lastCompaction = ctx.lastCompaction
       if (ctx.guard) {
         report.rules = {
           count: ctx.guard.listRules().filter(r => r.enabled).length,

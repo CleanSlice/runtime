@@ -71,6 +71,8 @@ export interface ToolContext {
   turn?: number
   /** The system-prompt accounting of this turn — `agent_status.context`. */
   promptBreakdown?: IPromptBreakdown
+  /** This session's most recent compaction and why it ran (CLEAN-150 US4). */
+  lastCompaction?: { reason: string; ts: number }
   /**
    * Tools visible to THIS session's caller (admin-only tools are already
    * filtered out upstream for non-admins). Lets introspection tools like

@@ -62,6 +62,11 @@ export class CommandService {
       return this.handleLearned(ctx, text, send)
     }
 
+    // /compact — archive this session's history now (admin only)
+    if (text === "/compact") {
+      return this.handleCompact(ctx, send)
+    }
+
     // /voice toggle
     if (text === "/voice") {
       const isNowOn = this.deps.voice.toggle(ctx.from)
@@ -102,7 +107,8 @@ export class CommandService {
         `/rules reload — Re-read .agent/rules/ (admin only)\n` +
         `/context — System prompt size per section vs budget, and what was loaded on demand (admin only)\n` +
         `/learned — What the agent has learned, with confidence (admin only)\n` +
-        `/learned show|pin|unpin|prune <id> · promote <id…> · prune · export (admin only)`,
+        `/learned show|pin|unpin|prune <id> · promote <id…> · prune · export (admin only)\n` +
+        `/compact — Archive this conversation's older history now (admin only)`,
       )
       return { handled: true }
     }
@@ -310,6 +316,20 @@ export class CommandService {
       await send(`❌ ${(err as Error).message}`)
       return { handled: true }
     }
+  }
+
+  private async handleCompact(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
+    if (!this.deps.access.isAdmin(ctx.from)) {
+      await send("🔒 Only admins can compact a conversation.")
+      return { handled: true }
+    }
+    const before = (await this.deps.session.read(ctx.sessionId)).length
+    await this.deps.session.compact(ctx.sessionId, this.deps.llm.getAuxGateway(), { reason: "operator", force: true })
+    const after = (await this.deps.session.read(ctx.sessionId)).length
+    await send(after < before
+      ? `🗜 Compacted: ${before} → ${after} events. The archive summary leads the history now.`
+      : `Nothing to compact — ${before} events, at or under the recent-keep floor.`)
+    return { handled: true }
   }
 
   private async handleCancel(ctx: ICommandContext, taskId: string, send: SendFn): Promise<ICommandResult> {

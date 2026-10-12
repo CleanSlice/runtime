@@ -49,6 +49,8 @@ const reviewLog = createLogger("memory-review")
 export class MemoryService {
   /** Per-session counter for the background review cadence. */
   private reviewCounters = new Map<string, number>()
+  /** Whether the person in a session is an admin — only they teach behaviours. */
+  private adminSessions = new Map<string, boolean>()
 
   constructor(
     private gateway: IMemoryGateway,
@@ -129,13 +131,13 @@ export class MemoryService {
 
   // ─── Memory flush + compaction ─────────────────────────────────────
 
-  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): void {
-    this.doFlush(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold).catch(err =>
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number, inFlight = false): void {
+    this.doFlush(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold, inFlight).catch(err =>
       log.error("unhandled", err)
     )
   }
 
-  private async doFlush(sessionId: string, _history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): Promise<void> {
+  private async doFlush(sessionId: string, _history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number, inFlight: boolean): Promise<void> {
     const events = await session.read(sessionId)
     // Flush + compact when either the event COUNT or the serialized SIZE is
     // over budget — a few huge tool_results can overflow context long before
@@ -162,7 +164,9 @@ export class MemoryService {
       log.error("failed", err)
     }
 
-    session.compactAsync(sessionId, llm.getAuxGateway())
+    // A task just ended — this is the boundary. Another task of the same
+    // session may still be running; the compaction gate defers for it.
+    session.compactAsync(sessionId, llm.getAuxGateway(), { reason: "boundary", inFlight })
   }
 
   // ─── Background self-improvement review ────────────────────────────
@@ -173,8 +177,11 @@ export class MemoryService {
    * MEMORY.md. Best-effort and fire-and-forget — runs after the response is
    * delivered and never blocks the turn or touches the main prompt cache.
    */
-  reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule): void {
+  reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule, opts: { isAdmin?: boolean } = {}): void {
     if (!this.review.enabled || this.review.everyTurns <= 0) return
+    // Only an admin's conversation may teach behaviours; a visitor's words
+    // yield facts at most (CLEAN-150 FR-016 territory: no escalation by chat).
+    if (opts.isAdmin !== undefined) this.adminSessions.set(sessionId, opts.isAdmin)
 
     const next = (this.reviewCounters.get(sessionId) ?? 0) + 1
     if (next < this.review.everyTurns) {
@@ -232,20 +239,22 @@ export class MemoryService {
   private async doReview(sessionId: string, llm: LlmModule, session: SessionModule, events?: Event[]): Promise<void> {
     const evts = events ?? await session.read(sessionId)
     if (evts.length === 0) return
-    await this.reviewNow(sessionId, llm, evts)
+    await this.reviewNow(sessionId, llm, evts, { teach: this.adminSessions.get(sessionId) ?? false })
   }
 
   /**
    * One review pass over `events`. With an instinct store the curator answers
    * in JSON — facts for MEMORY.md plus behaviours to create, reinforce or
    * correct; without one it falls back to the `[fact]/[workflow]` lines.
+   * `teach` is true only for an admin's session: a visitor cannot install
+   * behaviours, let alone standing rules, by phrasing a message as one.
    * Best-effort: a malformed answer teaches nothing and changes nothing.
    */
-  async reviewNow(sessionId: string, llm: Pick<LlmModule, "auxComplete">, evts: Event[]): Promise<void> {
+  async reviewNow(sessionId: string, llm: Pick<LlmModule, "auxComplete">, evts: Event[], opts: { teach?: boolean } = { teach: true }): Promise<void> {
     reviewLog.info(`reviewing session ${sessionId}`)
     try {
       const existing = this.gateway.readMemoryFile() ?? ""
-      if (!this.instincts?.enabled) {
+      if (!this.instincts?.enabled || opts.teach === false) {
         // Auxiliary LLM — cheaper model, no contention with the main prompt cache.
         const response = await llm.auxComplete(buildMemoryReviewPrompt(existing), evts, [])
         this.fileFacts(existing, this.dedupeReviewLines(response.text?.trim() ?? "", existing))

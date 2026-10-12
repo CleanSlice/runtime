@@ -161,17 +161,17 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ### Tests for User Story 4
 
-- [ ] T063 [P] [US4] Spec: `compact()` with `inFlight` true and size below `hardLimitPct` is a no-op; above it proceeds with `reason: "hard-limit"`; summary event carries `reason` and `inFlight` note; `operator` reason bypasses thresholds, in `src/slices/agent/session/domain/compaction.service.spec.ts`
-- [ ] T064 [P] [US4] Spec: idle sweep compacts only sessions idle > `idleCompactMin` and over threshold, in `src/slices/agent/session/session.module.spec.ts`
+- [X] T063 [P] [US4] Spec: `compact()` with `inFlight` true and size below `hardLimitPct` is a no-op; above it proceeds with `reason: "hard-limit"`; summary event carries `reason` and `inFlight` note; `operator` reason bypasses thresholds, in `src/slices/agent/session/domain/compaction.service.spec.ts`
+- [X] T064 [P] [US4] Spec: idle sweep compacts only sessions idle > `idleCompactMin` and over threshold, in `src/slices/agent/session/session.module.spec.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T065 [US4] Add `reason` and `inFlight` to the `summary` event data type in `src/slices/setup/event/domain/event.types.ts`
-- [ ] T066 [US4] Extend `CompactionService.compact(sessionId, llm, opts: { reason, inFlight: boolean, force?: boolean })`: hard-limit gate from `session.hardLimitPct × contextBudgetChars`, in-flight note built from the task label, last three `tool_call` names and the inbox, written ahead of the archive summary, in `src/slices/agent/session/domain/compaction.service.ts`
-- [ ] T067 [US4] Pass `inFlight` from `TaskManager` and the `boundary` reason from the post-turn call in `src/slices/agent/memory/domain/memory.service.ts` (`doFlush`) and `src/slices/runtime/runtime/domain/runtime.service.ts`
-- [ ] T068 [US4] Add `compactIdle(now)` to `SessionModule` and call it from the heartbeat tick with `session.idleCompactMin`, in `src/slices/agent/session/session.module.ts`, `src/slices/agent/heartbeat/heartbeat.module.ts`, `src/slices/runtime/runtime/runtime.module.ts`
-- [ ] T069 [US4] Add `/compact` (admin-only, reason `operator`, replies with before/after event counts) in `src/slices/bot/command/domain/command.service.ts`
-- [ ] T070 [US4] Log each compaction with its reason at info level and surface the last reason in `agent_status` in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
+- [X] T065 [US4] Add `reason` and `inFlight` to the `summary` event data type in `src/slices/setup/event/domain/event.types.ts`
+- [X] T066 [US4] Extend `CompactionService.compact(sessionId, llm, opts: { reason, inFlight: boolean, force?: boolean })`: hard-limit gate from `session.hardLimitPct × contextBudgetChars`, in-flight note built from the task label, last three `tool_call` names and the inbox, written ahead of the archive summary, in `src/slices/agent/session/domain/compaction.service.ts`
+- [X] T067 [US4] Pass `inFlight` from `TaskManager` and the `boundary` reason from the post-turn call in `src/slices/agent/memory/domain/memory.service.ts` (`doFlush`) and `src/slices/runtime/runtime/domain/runtime.service.ts`
+- [X] T068 [US4] Add `compactIdle(now)` to `SessionModule` and call it from the heartbeat tick with `session.idleCompactMin`, in `src/slices/agent/session/session.module.ts`, `src/slices/agent/heartbeat/heartbeat.module.ts`, `src/slices/runtime/runtime/runtime.module.ts`
+- [X] T069 [US4] Add `/compact` (admin-only, reason `operator`, replies with before/after event counts) in `src/slices/bot/command/domain/command.service.ts`
+- [X] T070 [US4] Log each compaction with its reason at info level and surface the last reason in `agent_status` in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
 
 **Checkpoint**: Mid-task compaction only on hard limit; `bun test` green.
 
