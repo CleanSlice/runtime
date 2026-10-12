@@ -8,9 +8,39 @@ import { fitEventsToBudget } from "../../session/domain/contextBudget"
 import { DEFAULT_MEMORY_REVIEW, MEMORY_LEARNED_HEADING } from "./memory.types"
 import { buildAdminOwnerPrompt } from "../../agent/domain/prompts/admin-owner.prompt"
 import { buildMemoryFlushPrompt, buildMemoryReviewPrompt } from "../../agent/domain/prompts/error-hint.prompt"
+import type { InstinctModule } from "../../instinct/instinct.module"
+import type { ReviewItem } from "../../instinct/domain/instinct.types"
+import { buildInstinctReviewPrompt, parseInstinctReview } from "../../instinct/domain/prompts/instinct-review.prompt"
 import { createLogger } from "../../../setup/logger"
 
 const MD_FILES = ["SOUL.md", "USER.md", "MEMORY.md", "HEARTBEAT.md"]
+
+const SOURCES = new Set(["correction", "error-resolution", "repetition", "explicit-rule"])
+
+/** Shape check for one item of the curator's JSON — anything else is dropped. */
+function isReviewItem(x: unknown): x is ReviewItem {
+  if (!x || typeof x !== "object") return false
+  const r = x as Record<string, unknown>
+  if (r.kind === "new") {
+    return typeof r.trigger === "string" && r.trigger.trim().length > 0 &&
+      typeof r.action === "string" && r.action.trim().length > 0 &&
+      SOURCES.has(r.source as string)
+  }
+  return (r.kind === "reinforce" || r.kind === "correct") && typeof r.id === "string"
+}
+
+/** Evidence refs the model wrote without a session prefix get this session's. */
+function withSessionRefs(item: ReviewItem, sessionId: string): ReviewItem {
+  if (item.kind !== "new") return item
+  const evidence = (Array.isArray(item.evidence) ? item.evidence : [])
+    .filter(e => e && typeof e === "object")
+    .map(e => ({
+      ref: typeof e.ref === "string" && e.ref.includes(":") ? e.ref : `session:${sessionId}#${typeof e.ref === "string" ? e.ref : "?"}`,
+      ts: typeof e.ts === "number" ? e.ts : Date.now(),
+      ...(typeof e.note === "string" ? { note: e.note } : {}),
+    }))
+  return { ...item, evidence: evidence.length > 0 ? evidence : [{ ref: `session:${sessionId}`, ts: Date.now() }] }
+}
 
 const initLog = createLogger("init")
 const log = createLogger("memory-flush")
@@ -23,6 +53,8 @@ export class MemoryService {
   constructor(
     private gateway: IMemoryGateway,
     private review: MemoryReviewConfig = DEFAULT_MEMORY_REVIEW,
+    /** When present, the review pass also teaches behaviours (CLEAN-150 US3). */
+    private instincts?: Pick<InstinctModule, "list" | "applyReview" | "enabled">,
   ) {}
 
   // ─── Search / Insert ───────────────────────────────────────────────
@@ -200,24 +232,48 @@ export class MemoryService {
   private async doReview(sessionId: string, llm: LlmModule, session: SessionModule, events?: Event[]): Promise<void> {
     const evts = events ?? await session.read(sessionId)
     if (evts.length === 0) return
+    await this.reviewNow(sessionId, llm, evts)
+  }
 
+  /**
+   * One review pass over `events`. With an instinct store the curator answers
+   * in JSON — facts for MEMORY.md plus behaviours to create, reinforce or
+   * correct; without one it falls back to the `[fact]/[workflow]` lines.
+   * Best-effort: a malformed answer teaches nothing and changes nothing.
+   */
+  async reviewNow(sessionId: string, llm: Pick<LlmModule, "auxComplete">, evts: Event[]): Promise<void> {
     reviewLog.info(`reviewing session ${sessionId}`)
     try {
       const existing = this.gateway.readMemoryFile() ?? ""
-      // Auxiliary LLM — cheaper model, no contention with the main prompt cache.
-      const response = await llm.auxComplete(buildMemoryReviewPrompt(existing), evts, [])
+      if (!this.instincts?.enabled) {
+        // Auxiliary LLM — cheaper model, no contention with the main prompt cache.
+        const response = await llm.auxComplete(buildMemoryReviewPrompt(existing), evts, [])
+        this.fileFacts(existing, this.dedupeReviewLines(response.text?.trim() ?? "", existing))
+        return
+      }
 
-      const text = response.text?.trim()
-      if (!text || text === "NOTHING") return
+      const response = await llm.auxComplete(buildInstinctReviewPrompt(existing, this.instincts.list()), evts, [])
+      const parsed = parseInstinctReview(response.text)
+      if (!parsed) return
 
-      const newLines = this.dedupeReviewLines(text, existing)
-      if (newLines.length === 0) return
+      this.fileFacts(existing, this.dedupeReviewLines(parsed.facts.join("\n"), existing))
 
-      this.gateway.writeMemoryFile(this.fileLearnedEntries(existing, newLines))
-      reviewLog.info(`promoted ${newLines.length} entries to MEMORY.md`)
+      const items = parsed.instincts.filter(isReviewItem).map(i => withSessionRefs(i, sessionId))
+      if (items.length === 0) return
+      const applied = this.instincts.applyReview(items)
+      reviewLog.info(
+        `instincts: +${applied.created.length} new, ${applied.reinforced.length} reinforced, ${applied.corrected.length} corrected` +
+        (applied.ignored.length ? `, ${applied.ignored.length} unknown ids ignored` : ""),
+      )
     } catch (err) {
       reviewLog.error("failed", err)
     }
+  }
+
+  private fileFacts(existing: string, lines: string[]): void {
+    if (lines.length === 0) return
+    this.gateway.writeMemoryFile(this.fileLearnedEntries(existing, lines))
+    reviewLog.info(`promoted ${lines.length} entries to MEMORY.md`)
   }
 
   /** Keep only tagged lines not already present anywhere in MEMORY.md. */

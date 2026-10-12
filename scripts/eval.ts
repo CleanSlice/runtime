@@ -14,6 +14,7 @@ import { GuardModule } from "../src/slices/agent/guard"
 import { AGENT_CONFIG_DEFAULTS } from "../src/slices/runtime/init/domain/init.types"
 import { LlmModule } from "../src/slices/setup/llm/llm.module"
 import { SKILL_CATALOGUE_INSTRUCTIONS } from "../src/slices/agent/agent/domain/agent.service"
+import { InstinctService, DEFAULT_INSTINCT_CONFIG, type IInstinctGateway } from "../src/slices/agent/instinct"
 import type { Tool } from "../src/slices/agent/tool/domain/tool.types"
 import type { Event } from "../src/slices/setup/event"
 
@@ -84,8 +85,54 @@ const skillLoaded: Mode = async (cases, header) => {
   return { passed: cases.length - failed.filter(f => !f.startsWith("false loads")).length, failed }
 }
 
-/** Assertion modes, one per story (US3 holds-after-correction and US5 no-false-done land with theirs). */
-const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded }
+/**
+ * US3 — one instinct at its post-correction confidence (apply band) is
+ * rendered into the prompt; the model's next move on a matching message must
+ * follow it: the expected tool call (or none), text that matches / avoids a
+ * regex, or a sentence cap. Needs `LLM_API_KEY`.
+ */
+const holdsAfterCorrection: Mode = async (cases) => {
+  if (!process.env.LLM_API_KEY) return { passed: 0, failed: [], pending: "set LLM_API_KEY to run this set" }
+  const llm = new LlmModule({ provider: "claude", apiKey: process.env.LLM_API_KEY, model: process.env.LLM_MODEL ?? "claude-sonnet-4-6" })
+  const stub = (name: string, description: string): Tool => ({ name, description, effect: "write", schema: z.object({ agent: z.string().optional() }), execute: async () => ({}) })
+  const tools = [
+    stub("ranch__list_agents", "List every agent on the ranch with its state."),
+    stub("ranch__restart_agent", "Restart one agent by name or id."),
+    stub("ranch__delete_agent", "Delete one agent by name or id."),
+  ]
+  const failed: string[] = []
+  for (const c of cases) {
+    const spec = c.instinct as { trigger: string; action: string; source: "correction" }
+    const service = new InstinctService(nullInstinctGateway(), DEFAULT_INSTINCT_CONFIG)
+    service.create({ trigger: spec.trigger, action: spec.action, source: spec.source, evidence: [{ ref: "session:eval", ts: Date.now() }] })
+    const system = `You are a helpful operations assistant with tools. Be concise.\n\n# Learned from experience\n\n${service.render()}`
+    const history: Event[] = [{ id: c.id, type: "user", ts: Date.now(), data: { text: String(c.message), from: "eval" } }]
+    const response = await llm.getGateway().complete(system, history, tools)
+    const expect = c.expect as { toolCall?: string | null; contains?: string; notContains?: string; maxSentences?: number }
+    const calls = response.toolCalls?.map(t => t.name) ?? []
+    const text = response.text ?? ""
+    const problems: string[] = []
+    if (expect.toolCall === null && calls.length > 0) problems.push(`called ${calls.join("+")}`)
+    if (typeof expect.toolCall === "string" && !calls.includes(expect.toolCall)) problems.push(`no ${expect.toolCall}`)
+    if (expect.contains && !re(expect.contains).test(text)) problems.push("text mismatch")
+    if (expect.notContains && re(expect.notContains).test(text)) problems.push("forbidden text")
+    if (expect.maxSentences !== undefined && (text.match(/[.!?](\s|$)/g)?.length ?? 1) > expect.maxSentences) problems.push("too long")
+    if (problems.length) failed.push(`${c.id}(${problems.join(";")})`)
+  }
+  return { passed: cases.length - failed.length, failed }
+}
+
+/** Case patterns may start with `(?i)` for case-insensitive matching (JS has no inline flags). */
+function re(pattern: string): RegExp {
+  return pattern.startsWith("(?i)") ? new RegExp(pattern.slice(4), "iu") : new RegExp(pattern, "u")
+}
+
+function nullInstinctGateway(): IInstinctGateway {
+  return { list: () => [], write: () => {}, remove: () => {}, readLastDecay: () => undefined, writeLastDecay: () => {}, writeSkill: () => "" }
+}
+
+/** Assertion modes, one per story (US5 no-false-done lands with its story). */
+const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded, "holds-after-correction": holdsAfterCorrection }
 
 function loadSet(file: string): IEvalSet {
   const lines = readFileSync(file, "utf8").split("\n").filter(l => l.trim())

@@ -9,6 +9,7 @@ import type { Tool } from "../../../agent/tool"
 import { effectOfCall } from "../../../agent/tool/domain/tool.types"
 import type { GuardModule, IGuardCall, CallOutcome } from "../../../agent/guard"
 import type { SkillModule } from "../../../agent/skill/skill.module"
+import type { InstinctModule } from "../../../agent/instinct/instinct.module"
 import { skillEvent } from "../../../agent/skill/domain/skillEvent"
 import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
@@ -33,6 +34,8 @@ interface LoopServiceDeps {
   guard?: GuardModule
   /** Skills — the body of a skill the model pulls in with `skill_load` goes into the history (CLEAN-150 US2). */
   skills?: SkillModule
+  /** Learned behaviours — `agent_status` reports the counts (CLEAN-150 US3). */
+  instincts?: InstinctModule
 }
 
 // Channels that support live token-by-token streaming. The channel repository
@@ -368,11 +371,13 @@ export class LoopService {
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "active" })
 
       const toolUseId = randomUUID()
+      // Persisted params are credential-masked: the transcript syncs to S3,
+      // and a token the model typed out would otherwise live there forever.
       const callEvent: Event = {
         id: randomUUID(),
         type: "tool_call",
         ts: Date.now(),
-        data: { name: call.name, params: call.params, toolUseId },
+        data: { name: call.name, params: this.deps.guard ? this.deps.guard.redactValue(call.params) : call.params, toolUseId },
       }
       await this.deps.session.append(sessionId, callEvent)
       history.push(callEvent)
@@ -431,6 +436,7 @@ export class LoopService {
               tools: ctx.tools,
               guard: this.deps.guard,
               skills: this.deps.skills,
+              instincts: this.deps.instincts,
               turn: ctx.turn,
               promptBreakdown: ctx.breakdown,
             }),
@@ -454,9 +460,10 @@ export class LoopService {
         rlog.warn(`tool error: ${String(errorValue).slice(0, 80)}`)
       }
 
-      // After-rules: redaction for the model's copy, records for the audit
-      // trail. The transcript keeps the raw result (same split as the size
-      // cap, CLEAN-124); the model only ever sees the redacted one.
+      // After-rules: redaction and records. Credentials are masked in the
+      // copy the model sees AND in the persisted one (the transcript is a log
+      // that leaves the box); only the size cap keeps the CLEAN-124 split of
+      // full-on-disk / trimmed-in-context.
       let modelResult = result
       let redacted = false
       if (this.deps.guard) {
@@ -471,7 +478,7 @@ export class LoopService {
         ts: Date.now(),
         data: {
           toolUseId,
-          result,
+          result: modelResult,
           ...(outcome === "blocked" ? { blocked: true } : {}),
           ...(redacted ? { redacted: true } : {}),
         },
@@ -479,10 +486,7 @@ export class LoopService {
       await this.deps.session.append(sessionId, resultEvent)
       // The transcript keeps the full result; the model gets one that fits
       // (CLEAN-124). Same cap the next turn's history rebuild applies.
-      const modelData = modelResult === result
-        ? resultEvent.data
-        : { ...(resultEvent.data as Record<string, unknown>), result: modelResult }
-      const capped = capPayload(modelData, this.config.maxToolOutputChars)
+      const capped = capPayload(resultEvent.data, this.config.maxToolOutputChars)
       history.push(capped === resultEvent.data ? resultEvent : { ...resultEvent, data: capped })
 
       // On-demand context (CLEAN-150 US2): a loaded skill's body enters the

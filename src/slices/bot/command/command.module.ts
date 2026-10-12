@@ -8,6 +8,7 @@ import type { MemoryModule } from "../../agent/memory/memory.module"
 import type { LlmModule } from "../../setup/llm/llm.module"
 import type { GuardModule } from "../../agent/guard"
 import type { IPromptBreakdown } from "../../agent/agent/agent.module"
+import type { InstinctModule } from "../../agent/instinct"
 
 export { CommandService }
 export type { ICommandContext, ICommandResult } from "./domain/command.types"
@@ -22,6 +23,7 @@ interface CommandModuleDeps {
   llm: LlmModule
   guard?: GuardModule
   context?: (sessionId: string) => IPromptBreakdown | undefined
+  instincts?: InstinctModule
 }
 
 export class CommandModule {

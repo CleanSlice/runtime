@@ -253,6 +253,15 @@ export class GuardService {
     return partial ? masked.slice(0, partial.index) : masked
   }
 
+  /**
+   * Deep-mask credentials in a value that is about to be persisted (a
+   * tool_call's params, a tool_result). The transcript is a log that syncs
+   * to S3; a token in it is a token leaked, whatever the model saw.
+   */
+  redactValue(value: unknown): unknown {
+    return this.outgoingRedactionActive() ? redactDeep(value).value : value
+  }
+
   private outgoingRedactionActive(): boolean {
     return this.active("after").some(r => r.action === "redact" && !r.match.result && matchesTool(r.match.tool, "*"))
   }

@@ -42,6 +42,8 @@ export interface BuildPromptOpts {
    * the conversation is happening (Telegram DM, Telegram group, Slack, etc.).
    */
   channelContext?: string
+  /** Rendered learned behaviours (`InstinctModule.render()`), CLEAN-150 US3. */
+  instincts?: string
 }
 
 const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
@@ -107,6 +109,10 @@ export class AgentService {
     }
     if (memory)            push("memory", `# Memory\n\n${memory}`)
 
+    // Learned behaviours with confidence (CLEAN-150 US3): standing rules and
+    // apply-band behaviours, rendered by the instinct slice.
+    if (opts?.instincts?.trim()) push("instincts", `# Learned from experience\n\n${opts.instincts.trim()}`)
+
     if (opts?.dailyMemory) {
       push("dailyNotes", `## Recent Notes\n\n${opts.dailyMemory}`)
     }
@@ -157,7 +163,7 @@ export class AgentService {
     return { prompt, sections }
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string }): Promise<IBuiltPrompt> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; instincts?: string }): Promise<IBuiltPrompt> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -176,6 +182,7 @@ export class AgentService {
       extraHint: opts?.extraHint,
       integratorPrompt: opts?.integratorPrompt,
       channelContext: opts?.channelContext,
+      instincts: opts?.instincts,
     })
   }
 }
