@@ -9,6 +9,9 @@ import type { Event } from "../../../setup/event"
 import type { Tool } from "../../../agent/tool"
 import type { ModelResponse } from "../../../setup/llm/domain/llm.types"
 import { GuardModule } from "../../../agent/guard"
+import { VerificationService } from "./verification.service"
+import { TaskManager } from "../../../agent/task/domain/task.service"
+import { TaskGateway } from "../../../agent/task/data/task.gateway"
 import { AGENT_CONFIG_DEFAULTS } from "../../init/domain/init.types"
 
 /** A scripted LLM: each call pops the next response; afterwards it says "done". */
@@ -172,6 +175,128 @@ describe("LoopService with guardrails (CLEAN-150 US1)", () => {
     await makeLoop({ llm, session, tools }).run(makeCtx(agentDir, tools, sent))
 
     expect(seen).toHaveLength(1)
+    expect(sent).toEqual(["done"])
+  })
+})
+
+describe("LoopService with verified completion (CLEAN-150 US5)", () => {
+  function verifier(answer: string) {
+    const calls: string[] = []
+    const service = new VerificationService({ auxComplete: async (system) => { calls.push(system); return { text: answer } } }, { enabled: true, timeoutMs: 1000 })
+    return { calls, service }
+  }
+  const failingHttp: Tool = {
+    name: "http", description: "call", effect: "write", schema: z.object({ url: z.string() }),
+    execute: async () => ({ error: "500 Internal Server Error" }),
+  }
+  const readOnly: Tool = {
+    name: "web_fetch", description: "fetch", effect: "read", schema: z.object({ url: z.string() }),
+    execute: async () => ({ text: "hello" }),
+  }
+
+  test("a 'done' after a failed mutating tool is rewritten before delivery", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
+    const tools = [failingHttp]
+    const { llm } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "http", params: { url: "https://api.test/agents/1" } }], stopReason: "tool_use" },
+      { text: "Done — the agent name is updated.", stopReason: "end_turn" },
+    ])
+    const { session, events } = recordingSession()
+    const sent: string[] = []
+    const { calls, service } = verifier('{"ok":false,"reply":"The update failed: the API returned 500 Internal Server Error."}')
+
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools, verification: service,
+    }).run(makeCtx(agentDir, tools, sent))
+
+    expect(calls).toHaveLength(1)
+    expect(sent).toEqual(["The update failed: the API returned 500 Internal Server Error."])
+    const assistant = events.find(e => e.type === "assistant")!.data as { text: string }
+    expect(assistant.text).toContain("500")
+  })
+
+  test("a read-only turn never calls the verifier", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
+    const tools = [readOnly]
+    const { llm } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "web_fetch", params: { url: "https://x.test" } }], stopReason: "tool_use" },
+      { text: "It says hello.", stopReason: "end_turn" },
+    ])
+    const { session } = recordingSession()
+    const sent: string[] = []
+    const { calls, service } = verifier('{"ok":false,"reply":"should not be used"}')
+
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools, verification: service,
+    }).run(makeCtx(agentDir, tools, sent))
+
+    expect(calls).toHaveLength(0)
+    expect(sent).toEqual(["It says hello."])
+  })
+
+  test("a verifier timeout delivers the draft marked unverified", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
+    const tools = [failingHttp]
+    const { llm } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "http", params: { url: "https://api.test/agents/1" } }], stopReason: "tool_use" },
+      { text: "Done.", stopReason: "end_turn" },
+    ])
+    const { session } = recordingSession()
+    const sent: string[] = []
+    const slow = new VerificationService({ auxComplete: () => new Promise(res => setTimeout(() => res({ text: '{"ok":true}' }), 300)) }, { enabled: true, timeoutMs: 20 })
+
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools, verification: slow,
+    }).run(makeCtx(agentDir, tools, sent))
+
+    expect(sent).toEqual(["Done. (unverified)"])
+  })
+})
+
+describe("LoopService completion contract (CLEAN-150 US6)", () => {
+  test("a turn does not end while a delegated worker runs; past the budget it is cancelled and reported", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "delegate-loop-"))
+    const tasks = new TaskManager(new TaskGateway())
+    const { llm, calls } = scriptedLlm([
+      { text: "All five reports are ready.", stopReason: "end_turn" },
+      { text: "One worker was cancelled at the budget; four results are below.", stopReason: "end_turn" },
+    ])
+    const { session } = recordingSession()
+    const sent: string[] = []
+    const ctx = makeCtx(agentDir, [], sent)
+    ctx.task = tasks.start(ctx.sessionId, "parent", () => new Promise(() => {}))
+    ctx.agentConfig = { ...AGENT_CONFIG_DEFAULTS, tools: { ...AGENT_CONFIG_DEFAULTS.tools, delegate: { ...AGENT_CONFIG_DEFAULTS.tools.delegate, timeoutMs: 80 } } }
+    const child = tasks.start(ctx.sessionId, "worker: agent E", () => new Promise(() => {}), { internal: true, parentTaskId: ctx.task.id })
+
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools: [], tasks,
+    }).run(ctx)
+
+    expect(calls).toHaveLength(2)
+    expect(child.controller.signal.aborted).toBe(true)
+    expect(child.status).toBe("cancelled")
+    const note = (calls[1]!.history.at(-1)!.data as { text: string }).text
+    expect(note).toContain("Cancelled at the budget: worker: agent E")
+    expect(sent).toEqual(["One worker was cancelled at the budget; four results are below."])
+  })
+
+  test("without running workers the turn ends as usual, and a worker context never waits", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "delegate-loop-"))
+    const tasks = new TaskManager(new TaskGateway())
+    const { llm, calls } = scriptedLlm([{ text: "done", stopReason: "end_turn" }])
+    const { session } = recordingSession()
+    const sent: string[] = []
+    const ctx = makeCtx(agentDir, [], sent)
+    ctx.task = tasks.start(ctx.sessionId, "parent", () => new Promise(() => {}))
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools: [], tasks,
+    }).run(ctx)
+    expect(calls).toHaveLength(1)
     expect(sent).toEqual(["done"])
   })
 })

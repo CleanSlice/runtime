@@ -185,15 +185,15 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ### Tests for User Story 5
 
-- [ ] T071 [P] [US5] Spec: `VerificationService.verify(draft, outcomes)` returns `ok` for a supported claim, rewritten reply for an unsupported one, `timedOut` with the draft untouched past `timeoutMs`, skipped when no `write` outcome exists, in `src/slices/runtime/loop/domain/verification.service.spec.ts`
-- [ ] T072 [P] [US5] Loop spec: a scripted turn with one `write` tool error and a "done" draft sends the rewritten reply; a read-only turn never calls the aux gateway, in `src/slices/runtime/loop/domain/loop.service.spec.ts`
+- [X] T071 [P] [US5] Spec: `VerificationService.verify(draft, outcomes)` returns `ok` for a supported claim, rewritten reply for an unsupported one, `timedOut` with the draft untouched past `timeoutMs`, skipped when no `write` outcome exists, in `src/slices/runtime/loop/domain/verification.service.spec.ts`
+- [X] T072 [P] [US5] Loop spec: a scripted turn with one `write` tool error and a "done" draft sends the rewritten reply; a read-only turn never calls the aux gateway, in `src/slices/runtime/loop/domain/loop.service.spec.ts`
 
 ### Implementation for User Story 5
 
-- [ ] T073 [P] [US5] Write the verification prompt (inputs: tool name, outcome, first 400 chars of result; draft reply; output JSON `{ ok } | { ok: false, reply }`) in `src/slices/runtime/loop/domain/prompts/verification.prompt.ts`
-- [ ] T074 [US5] Implement `VerificationService` over `llm.auxComplete` with `Promise.race` against `verification.timeoutMs`, in `src/slices/runtime/loop/domain/verification.service.ts`
-- [ ] T075 [US5] Track `mutatingCalls` per turn from `effect`/`effectOf` in `executeToolCalls`; before `sendFinalResponse`, run verification when non-empty and `verification.enabled`; on `!ok` replace the text, on timeout append ` (unverified)`; log `verification: ok|rewritten|timeout|skipped`, in `src/slices/runtime/loop/domain/loop.service.ts`
-- [ ] T076 [US5] Create the completion-claims eval set (mutating tasks with failing backends, expected "no success claim") in `tests/evals/completion-claims.jsonl` and the `no-false-done` assertion mode in `scripts/eval.ts`
+- [X] T073 [P] [US5] Write the verification prompt (inputs: tool name, outcome, first 400 chars of result; draft reply; output JSON `{ ok } | { ok: false, reply }`) in `src/slices/runtime/loop/domain/prompts/verification.prompt.ts`
+- [X] T074 [US5] Implement `VerificationService` over `llm.auxComplete` with `Promise.race` against `verification.timeoutMs`, in `src/slices/runtime/loop/domain/verification.service.ts`
+- [X] T075 [US5] Track `mutatingCalls` per turn from `effect`/`effectOf` in `executeToolCalls`; before `sendFinalResponse`, run verification when non-empty and `verification.enabled`; on `!ok` replace the text, on timeout append ` (unverified)`; log `verification: ok|rewritten|timeout|skipped`, in `src/slices/runtime/loop/domain/loop.service.ts`
+- [X] T076 [US5] Create the completion-claims eval set (mutating tasks with failing backends, expected "no success claim") in `tests/evals/completion-claims.jsonl` and the `no-false-done` assertion mode in `scripts/eval.ts`
 
 **Checkpoint**: `bun test` green; completion-claims eval ≥50 % fewer false "done" than baseline recorded in the eval file header.
 
@@ -207,17 +207,17 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ### Tests for User Story 6
 
-- [ ] T077 [P] [US6] Spec: worker tool list excludes `DELEGATE_BLOCKED`, workers get a fresh history and `internal: true`, `Promise.allSettled` fan-out respects `maxParallel`, budget expiry cancels and returns `timeout`, summaries truncated at `summaryChars`, in `src/slices/agent/task/domain/delegate.service.spec.ts`
-- [ ] T078 [P] [US6] Loop spec: a parent turn whose text-only response arrives while a child is `running` does not end; it waits, then injects a system note with partial results on budget expiry, in `src/slices/runtime/loop/domain/loop.service.spec.ts`
+- [X] T077 [P] [US6] Spec: worker tool list excludes `DELEGATE_BLOCKED`, workers get a fresh history and `internal: true`, `Promise.allSettled` fan-out respects `maxParallel`, budget expiry cancels and returns `timeout`, summaries truncated at `summaryChars`, in `src/slices/agent/task/domain/delegate.service.spec.ts`
+- [X] T078 [P] [US6] Loop spec: a parent turn whose text-only response arrives while a child is `running` does not end; it waits, then injects a system note with partial results on budget expiry, in `src/slices/runtime/loop/domain/loop.service.spec.ts`
 
 ### Implementation for User Story 6
 
-- [ ] T079 [P] [US6] Create `IDelegateRequest`, `IDelegateResult`, `DELEGATE_BLOCKED` in `src/slices/agent/task/domain/delegate.types.ts`
-- [ ] T080 [US6] Implement `DelegateService.run(parentTask, requests, ctx)` using `TaskManager.start` with `parentTaskId`, a filtered tool list, `LoopService.run` with fresh history and `isInternal: true`, per-request `AbortController` timeout, in `src/slices/agent/task/domain/delegate.service.ts`; export from `src/slices/agent/task/task.module.ts`
-- [ ] T081 [US6] Create the `delegate_task` tool (admin-only, `effect: "write"`, schema `{ tasks: [{ goal, context?, timeoutMs? }] }`, blocked inside workers by name) in `src/slices/agent/tool/data/repositories/delegate/delegate.repository.ts`; register in `src/slices/agent/tool/data/tool.gateway.ts`; add `delegate` to `ToolContext` in `src/slices/agent/tool/domain/tool.types.ts`
-- [ ] T082 [US6] Enforce the completion contract: before setting `continueLoop = false`, check `tasks.getChildren(task.id)` for `running`; await them up to the remaining budget, else cancel and push a `user` event listing partial results, in `src/slices/runtime/loop/domain/loop.service.ts`
-- [ ] T083 [US6] Wire `DelegateService` into the loop deps and the tool context in `src/slices/runtime/runtime/runtime.module.ts`; mark `spawn_agent` as the external-coding-agent path in its description in `src/slices/agent/tool/data/repositories/exec/spawn_agent.repository.ts`
-- [ ] T084 [US6] Show child tasks indented under their parent in `/tasks` in `src/slices/bot/command/domain/command.service.ts`
+- [X] T079 [P] [US6] Create `IDelegateRequest`, `IDelegateResult`, `DELEGATE_BLOCKED` in `src/slices/agent/task/domain/delegate.types.ts`
+- [X] T080 [US6] Implement `DelegateService.run(parentTask, requests, ctx)` using `TaskManager.start` with `parentTaskId`, a filtered tool list, `LoopService.run` with fresh history and `isInternal: true`, per-request `AbortController` timeout, in `src/slices/agent/task/domain/delegate.service.ts`; export from `src/slices/agent/task/task.module.ts`
+- [X] T081 [US6] Create the `delegate_task` tool (admin-only, `effect: "write"`, schema `{ tasks: [{ goal, context?, timeoutMs? }] }`, blocked inside workers by name) in `src/slices/agent/tool/data/repositories/delegate/delegate.repository.ts`; register in `src/slices/agent/tool/data/tool.gateway.ts`; add `delegate` to `ToolContext` in `src/slices/agent/tool/domain/tool.types.ts`
+- [X] T082 [US6] Enforce the completion contract: before setting `continueLoop = false`, check `tasks.getChildren(task.id)` for `running`; await them up to the remaining budget, else cancel and push a `user` event listing partial results, in `src/slices/runtime/loop/domain/loop.service.ts`
+- [X] T083 [US6] Wire `DelegateService` into the loop deps and the tool context in `src/slices/runtime/runtime/runtime.module.ts`; mark `spawn_agent` as the external-coding-agent path in its description in `src/slices/agent/tool/data/repositories/exec/spawn_agent.repository.ts`
+- [X] T084 [US6] Show child tasks indented under their parent in `/tasks` in `src/slices/bot/command/domain/command.service.ts`
 
 **Checkpoint**: All six stories functional; `bun test` green.
 
