@@ -23,6 +23,7 @@ import { ActivityModule } from "../../bot/activity/activity.module"
 import { CommandService } from "../../bot/command/domain/command.service"
 import { LoopModule } from "../loop/loop.module"
 import { GuardModule } from "../../agent/guard"
+import { InstinctModule } from "../../agent/instinct"
 import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
 import { clearBridleSession } from "./domain/sessionClear"
@@ -73,6 +74,7 @@ export class AgentRuntime {
   private init: InitModule
   private loop: LoopModule
   private guard: GuardModule
+  private instincts: InstinctModule
 
   /**
    * Dependency injection — instantiates and wires all modules.
@@ -117,8 +119,12 @@ export class AgentRuntime {
     // System prompt builder (SOUL.md, USER.md, MEMORY.md, etc.)
     const agent = new AgentModule(agentDir)
 
+    // Learned behaviours with confidence — fed by the memory review, rendered
+    // into the prompt, steered by the operator with /learned (CLEAN-150 US3).
+    this.instincts = new InstinctModule(agentDir, this.config.memory.instincts)
+
     // Long-term memory with search, daily flush, and background review
-    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review)
+    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review, this.instincts)
 
     // Scheduled jobs (user-defined via cron tool)
     this.cron = new CronModule(agentDir)
@@ -161,6 +167,7 @@ export class AgentRuntime {
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
     const commands = new CommandService({
       access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm, guard: this.guard,
+      instincts: this.instincts,
       // Resolved at call time: the runtime service is built a few lines below.
       context: (sessionId) => this.runtimeService.getLastBreakdown(sessionId),
     })
@@ -169,7 +176,7 @@ export class AgentRuntime {
 
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills, instincts: this.instincts },
       {
         maxIterations: this.config.maxIterations,
         maxToolOutputChars: this.config.tools.maxOutputChars,
@@ -189,7 +196,7 @@ export class AgentRuntime {
       session: this.session, agent, skills: this.skills, secrets,
       memory: this.memory, channel: this.channel, activity: activityService,
       llm: this.llm, loop: this.loop, tasks, tools, access,
-      agentDir, config: this.config,
+      agentDir, config: this.config, instincts: this.instincts,
     })
 
     // ── Optional: S3 backup ────────────────────────────────────────
@@ -389,6 +396,8 @@ export class AgentRuntime {
     const adminIds = [...new Set([...(process.env.TELEGRAM_BOT_ADMIN_IDS ?? "").split(",").filter(Boolean), ...(process.env.BRIDLE_URL ? ["admin"] : [])])]
     this.memory.ensureAdminInMemory(adminIds)
     await this.memory.load()
+    this.instincts.load()
+    this.instincts.decayIfDue()
     await this.skills.load()
     this.usage.start()
   }
@@ -454,6 +463,9 @@ export class AgentRuntime {
     this.cron.start()
 
     this.heartbeat.onHeartbeat(async (message) => {
+      // Daily maintenance rides the heartbeat: confidence decay of learned
+      // behaviours that went unreinforced (CLEAN-150 US3).
+      this.instincts.decayIfDue()
       await this.handleMessage(buildMessage({
         id: randomUUID(), text: message,
         from: "heartbeat", channel: "internal",

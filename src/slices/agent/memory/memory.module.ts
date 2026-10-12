@@ -2,6 +2,7 @@ import type { MemoryEntry, MemoryLimits, MemoryReviewConfig } from "./domain/mem
 import type { Event } from "../../setup/event"
 import type { LlmModule } from "../../setup/llm/llm.module"
 import type { SessionModule } from "../session/session.module"
+import type { InstinctModule } from "../instinct/instinct.module"
 import { DEFAULT_MEMORY_LIMITS, DEFAULT_MEMORY_REVIEW } from "./domain/memory.types"
 import { MemoryService } from "./domain/memory.service"
 import { MemoryGateway } from "./data/memory.gateway"
@@ -13,8 +14,9 @@ export class MemoryModule {
     private agentDir: string,
     limits: MemoryLimits = DEFAULT_MEMORY_LIMITS,
     review: MemoryReviewConfig = DEFAULT_MEMORY_REVIEW,
+    instincts?: InstinctModule,
   ) {
-    this.service = new MemoryService(new MemoryGateway(agentDir, limits), review)
+    this.service = new MemoryService(new MemoryGateway(agentDir, limits), review, instincts)
   }
 
   async load(): Promise<void> {
