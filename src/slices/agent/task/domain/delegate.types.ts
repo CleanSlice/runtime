@@ -44,3 +44,17 @@ export const DELEGATE_BLOCKED = new Set<string>([
 export function isDelegateBlocked(toolName: string): boolean {
   return DELEGATE_BLOCKED.has(toolName) || toolName.startsWith("channel_")
 }
+
+/**
+ * The name list above is belt and braces; the rule that actually bounds a
+ * worker is by effect: unless `tools.delegate.allowWrite` is on, a worker
+ * only gets tools that observe (`effect: "read"`, or per-call tools like
+ * `file`/`http` whose write calls the loop then refuses). A new or MCP tool
+ * with side effects is therefore excluded by default, not by remembering to
+ * list it.
+ */
+export function isDelegateAllowed(tool: { name: string; effect?: "read" | "write"; effectOf?: unknown }, allowWrite: boolean): boolean {
+  if (isDelegateBlocked(tool.name)) return false
+  if (allowWrite) return true
+  return tool.effect === "read" || typeof tool.effectOf === "function"
+}

@@ -170,6 +170,13 @@ Currently `src/slices/bot/voice/` only does TTS. Add Whisper-based STT for inbou
 | 1c | Usage reporter to ranch (Phase C of credential-pool feature) | shipped — v0.6.0 |
 | 2 | Cross-session FTS5 search | planned |
 | 3 | Provider plugin pattern | planned |
-| 4 | Curator | planned |
+| 4 | Curator | superseded — confidence-weighted instincts with decay, prune and promotion (CLEAN-154, `specs/001-ecc-agent-principles` US3) |
 | 5 | Insights / cost analytics | planned |
-| 6+ | (Phase 2 / 3) | backlog |
+| 6 | Subagent delegation with isolated context + restricted toolset | superseded — `delegate_task` + completion contract (CLEAN-157, US6) |
+| 10 | Safety pipeline (path / URL / redaction) | superseded in part — guardrails slice with protected baseline rules and redaction (CLEAN-152, US1); URL allow-list still open |
+| 15 | Shell / lifecycle hooks | superseded — declarative before/after rules around every tool call (CLEAN-152, US1) |
+| 6+ | (remaining Phase 2 / 3) | backlog |
+
+The ECC-derived harness principles (guardrails, lean context, teachable
+memory, boundary compaction, verified completion, delegation) are specified
+in `specs/001-ecc-agent-principles/` and tracked under CLEAN-150.

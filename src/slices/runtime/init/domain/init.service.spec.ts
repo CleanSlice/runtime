@@ -18,7 +18,7 @@ describe("agent.config.json harness sections", () => {
     expect(d.contextBudget.sections.soul).toBe(12_000)
     expect(d.skills).toEqual({ selection: "model", retainTurns: 3 })
     expect(d.tools.coreCatalogue).toContain("exec")
-    expect(d.tools.delegate).toEqual({ timeoutMs: 300_000, maxParallel: 5, summaryChars: 4000 })
+    expect(d.tools.delegate).toEqual({ timeoutMs: 300_000, maxParallel: 5, summaryChars: 4000, allowWrite: false })
     expect(d.guard).toEqual({ observerTimeoutMs: 2000, recordFile: "data/toolcalls.jsonl", recordMaxBytes: 10_485_760 })
     expect(d.memory.instincts.bands).toEqual({ suggested: 0.3, apply: 0.5, core: 0.8 })
     expect(d.memory.instincts.decayDays).toBe(14)

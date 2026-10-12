@@ -7,7 +7,10 @@ import { TaskManager } from "../../../agent/task/domain/task.service"
 import { TaskGateway } from "../../../agent/task/data/task.gateway"
 import { AGENT_CONFIG_DEFAULTS } from "../../init/domain/init.types"
 
-const tool = (name: string): Tool => ({ name, description: name, schema: z.object({}), execute: async () => ({}) })
+const tool = (name: string, effect: "read" | "write" = "read", perCall = false): Tool => ({
+  name, description: name, schema: z.object({}), execute: async () => ({}),
+  ...(perCall ? { effectOf: () => "read" as const } : { effect }),
+})
 
 function parentCtx(tasks: TaskManager, tools: Tool[]): ILoopContext {
   const task = tasks.start("tg:admin", "parent", () => new Promise(() => {}))
@@ -35,7 +38,16 @@ describe("DelegateService (CLEAN-150 US6)", () => {
     const seen: ILoopContext[] = []
     const loop = { run: async (ctx: ILoopContext) => { seen.push(ctx); return { text: `done: ${(ctx.history[0]!.data as { text: string }).text.includes("GOAL: A") ? "A" : "B"}`, errorLimitHit: false } } }
     const svc = new DelegateService({ tasks, loop, config: { timeoutMs: 5_000, maxParallel: 5, summaryChars: 4000 } })
-    const parent = parentCtx(tasks, [tool("http"), tool("telegram_send"), tool("memory_save"), tool("delegate_task"), tool("channel_list"), tool("web_fetch")])
+    const parent = parentCtx(tasks, [
+      tool("http", "write", true),      // per-call effect — allowed, the loop refuses its write calls
+      tool("telegram_send", "write"),   // named block
+      tool("memory_save", "write"),     // named block
+      tool("delegate_task", "write"),   // named block
+      tool("channel_list", "read"),     // channel_* block even though read
+      tool("web_fetch", "read"),        // allowed
+      tool("exec", "write"),            // write-effect, not named — excluded by effect
+      tool("ranch__delete_agent", "write"), // MCP write tool — excluded by effect
+    ])
 
     const results = await svc.run(parent, [{ goal: "A" }, { goal: "B", context: "use the API" }])
 
@@ -54,6 +66,15 @@ describe("DelegateService (CLEAN-150 US6)", () => {
     }
     expect((seen[1]!.history[0]!.data as { text: string }).text).toContain("CONTEXT:\nuse the API")
     expect(tasks.getChildren(parent.task.id)).toHaveLength(2)
+  })
+
+  test("allowWrite hands workers the parent's write tools except the named blocks", async () => {
+    const tasks = new TaskManager(new TaskGateway())
+    const seen: ILoopContext[] = []
+    const loop = { run: async (ctx: ILoopContext) => { seen.push(ctx); return { text: "ok", errorLimitHit: false } } }
+    const svc = new DelegateService({ tasks, loop, config: { timeoutMs: 5_000, maxParallel: 5, summaryChars: 4000, allowWrite: true } })
+    await svc.run(parentCtx(tasks, [tool("exec", "write"), tool("telegram_send", "write"), tool("web_fetch", "read")]), [{ goal: "x" }])
+    expect(seen[0]!.tools.map(t => t.name).sort()).toEqual(["exec", "web_fetch"])
   })
 
   test("independent requests run concurrently, bounded by maxParallel", async () => {
