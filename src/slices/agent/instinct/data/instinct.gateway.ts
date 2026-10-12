@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { join } from "path"
 import matter from "gray-matter"
+import { safeMatter } from "../../../setup/frontmatter/safeMatter"
 import type { IInstinctGateway } from "../domain/instinct.gateway"
 import type { IInstinct } from "../domain/instinct.types"
 import { createLogger } from "../../../setup/logger"
@@ -30,7 +31,7 @@ export class InstinctGateway implements IInstinctGateway {
     for (const f of readdirSync(this.dir).filter(f => f.endsWith(".md")).sort()) {
       const path = join(this.dir, f)
       try {
-        const parsed = matter(readFileSync(path, "utf8"))
+        const parsed = safeMatter(readFileSync(path, "utf8"))
         const i = fromFile(parsed.data as Record<string, unknown>, parsed.content)
         if (i) out.push(i)
         else this.warnOnce(f, "missing id, trigger or action")
