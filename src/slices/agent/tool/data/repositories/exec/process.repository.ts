@@ -18,6 +18,8 @@ const processes = new Map<number, ProcessEntry>()
 
 export const ProcessExecTool: Tool = {
   name: "process_exec",
+
+  effect: "write",
   description: "Run a shell command in the background and get its output later. Useful for long-running commands.",
   schema,
   adminOnly: true,

@@ -13,6 +13,8 @@ import type { Tool, ToolContext } from "../../../domain/tool.types"
 
 export const ChannelRemoveTool: Tool = {
   name: "channel_remove",
+
+  effect: "write",
   description:
     "Disconnect a configured channel and delete its data/channels/<type>.json file (for telegram this includes the group registry). Use to stop receiving messages on that platform. Bridle cannot be removed this way — it's the bootstrap channel.",
   adminOnly: true,
@@ -40,6 +42,8 @@ export const ChannelRemoveTool: Tool = {
 
 export const ChannelListTool: Tool = {
   name: "channel_list",
+
+  effect: "read",
   description:
     "List currently configured channels with their source (file or env), live connection state, and masked credentials. Bridle, when present, is always env-sourced.",
   schema: z.object({}),
@@ -60,6 +64,8 @@ const channelGroupsSchema = z.object({
 
 export const ChannelGroupsTool: Tool = {
   name: "channel_groups",
+
+  effect: "read",
   description:
     "List the groups/rooms the bot works in, per channel: Telegram groups and channels (with chat_id, title, membership status) and Slack channels the bot is a member of. " +
     "Use this to resolve a group name to an id for telegram_send or channel sends. " +

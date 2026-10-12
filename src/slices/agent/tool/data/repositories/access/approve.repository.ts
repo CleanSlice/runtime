@@ -7,6 +7,8 @@ const schema = z.object({
 
 export const ApproveUserTool: Tool = {
   name: "approve_user",
+
+  effect: "write",
   description: "Approve a pending user by their access code. Only the bot owner (admin) can use this. The user will be notified automatically.",
   schema,
   adminOnly: true,

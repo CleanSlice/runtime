@@ -42,6 +42,8 @@ async function extractPdfText(pdfPath: string): Promise<string> {
 
 export const PdfAnalyzeTool: Tool = {
   name: "pdf_analyze",
+
+  effect: "read",
   description: "Analyze a PDF document from a URL. Extracts text and answers questions about it.",
   schema,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {

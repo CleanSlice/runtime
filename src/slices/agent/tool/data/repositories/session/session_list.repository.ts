@@ -19,6 +19,8 @@ const schema = z.object({})
 
 export const SessionListTool: Tool = {
   name: "session_list",
+
+  effect: "read",
   description: `List the external services connected to this agent (Instagram, X, GitHub, etc.).
 
 Call this BEFORE browser_play whenever you need to act on a social account but don't already know the exact profile. Returns:

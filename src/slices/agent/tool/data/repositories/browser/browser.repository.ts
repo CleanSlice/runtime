@@ -9,6 +9,8 @@ const schema = z.object({
 
 export const BrowserTool: Tool = {
   name: "browser",
+
+  effect: "read",
   description: "Fetch a web page and extract its text content. Use for reading web pages, checking websites, scraping data.",
   schema,
   // The page that was read is the one source of this call (CLEAN-138).

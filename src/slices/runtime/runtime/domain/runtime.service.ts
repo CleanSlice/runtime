@@ -1,7 +1,7 @@
 import { getMessageImages, type Message } from "../../../setup/channel"
 import type { Event } from "../../../setup/event"
 import type { SessionModule } from "../../../agent/session/session.module"
-import type { AgentModule } from "../../../agent/agent/agent.module"
+import { SECTION_SEPARATOR, type AgentModule, type IPromptBreakdown, type IPromptSection } from "../../../agent/agent/agent.module"
 import type { SkillModule } from "../../../agent/skill/skill.module"
 import type { SecretModule } from "../../../setup/secret/secret.module"
 import type { MemoryModule } from "../../../agent/memory/memory.module"
@@ -43,6 +43,9 @@ interface RuntimeDeps {
 }
 
 export class RuntimeService {
+  /** Latest prompt accounting per session, for `/context` and `agent_status`. */
+  private lastBreakdown = new Map<string, IPromptBreakdown>()
+
   constructor(private deps: RuntimeDeps) {}
 
   /** Start a fire-and-forget task for this message */
@@ -299,7 +302,7 @@ export class RuntimeService {
       }
     }
 
-    let systemPrompt = await this.deps.agent.buildPrompt({
+    const built = await this.deps.agent.buildPrompt({
       userId: msg.from,
       toolingPrompt,
       secretKeys,
@@ -312,24 +315,52 @@ export class RuntimeService {
       // Only a client that can draw sources is asked to cite (CLEAN-138).
       ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
     })
+    let systemPrompt = built.prompt
+    const sections = [...built.sections]
 
     // Inject full content for always-on skills
     const injected = new Set<string>()
+    let alwaysChars = 0
     for (const skill of allSkills) {
       if (skill.metadata?.always) {
-        systemPrompt += `\n\n---\n\n## Skill: ${skill.name}\n\n${skill.content}`
+        const block = `## Skill: ${skill.name}\n\n${skill.content}`
+        systemPrompt += SECTION_SEPARATOR + block
+        alwaysChars += block.length
         injected.add(skill.name)
         log.child(tid).info(`skill(always): ${skill.name}`)
       }
     }
+    if (alwaysChars > 0) sections.push({ name: "alwaysSkills", chars: alwaysChars })
 
     // Inject full content for message-matched skill (skip if already injected)
     const matched = this.deps.skills.select(msg.text)
     if (matched && !injected.has(matched.name)) {
-      systemPrompt += `\n\n---\n\n## Active Skill: ${matched.name}\n\n${matched.content}`
+      const block = `## Active Skill: ${matched.name}\n\n${matched.content}`
+      systemPrompt += SECTION_SEPARATOR + block
+      sections.push({ name: "activeSkill", chars: block.length })
       log.child(tid).info(`skill: ${matched.name}`)
     }
 
+    this.lastBreakdown.set(sessionId, this.toBreakdown(systemPrompt.length, sections))
     return systemPrompt
+  }
+
+  /** The system-prompt accounting of the latest turn in a session (CLEAN-150 US2). */
+  getLastBreakdown(sessionId: string): IPromptBreakdown | undefined {
+    return this.lastBreakdown.get(sessionId)
+  }
+
+  /** Section sizes against `contextBudget`; sections without a configured budget are never "over". */
+  private toBreakdown(total: number, sections: IPromptSection[]): IPromptBreakdown {
+    const budgets = this.deps.config.contextBudget.sections as Record<string, number | undefined>
+    return {
+      total,
+      budget: this.deps.config.contextBudget.total,
+      sections: sections.map(s => {
+        const budget = budgets[s.name]
+        return { ...s, ...(budget !== undefined ? { budget } : {}), over: budget !== undefined && s.chars > budget }
+      }),
+      onDemand: [],
+    }
   }
 }

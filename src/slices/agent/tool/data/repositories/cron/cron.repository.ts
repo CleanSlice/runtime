@@ -24,6 +24,8 @@ async function saveJobs(jobs: CronJob[], ctx: ToolContext): Promise<void> {
 
 export const CronListRepository = {
   name: "cron_list",
+
+  effect: "read",
   description: "List all scheduled cron jobs",
   schema: z.object({}),
   async execute(_params: unknown, ctx: ToolContext) {
@@ -34,6 +36,8 @@ export const CronListRepository = {
 
 export const CronAddRepository = {
   name: "cron_add",
+
+  effect: "write",
   description:
     "Add a scheduled job. For recurring tasks use schedule (standard cron syntax: numbers, ranges 1-5, lists 0,30, steps */10). " +
     "The schedule is evaluated in UTC unless tz is set — when the user names a wall-clock time ('every day at 9'), ALWAYS pass their IANA timezone (e.g. 'Europe/Kyiv') in tz. " +
@@ -99,6 +103,8 @@ export const CronAddRepository = {
 
 export const CronRemoveRepository = {
   name: "cron_remove",
+
+  effect: "write",
   description: "Remove a cron job by id or name",
   adminOnly: true,
   schema: z.object({
@@ -117,6 +123,8 @@ export const CronRemoveRepository = {
 
 export const CronDisableRepository = {
   name: "cron_disable",
+
+  effect: "write",
   description: "Disable a cron job by id or name (keeps it but stops it from running)",
   adminOnly: true,
   schema: z.object({
