@@ -119,7 +119,7 @@ describe("LoopService with guardrails (CLEAN-150 US1)", () => {
     expect(line.effect).toBe("write")
   })
 
-  test("a credential in a tool result reaches the model redacted while the transcript keeps the raw value", async () => {
+  test("a credential in a tool result is redacted for the model and in the persisted transcript", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
     const seen: unknown[] = []
     const tools = [execTool(seen)]
@@ -137,8 +137,26 @@ describe("LoopService with guardrails (CLEAN-150 US1)", () => {
     expect(modelSaw).not.toContain("abcdefghijklmnop")
     expect(modelSaw).toContain("sk-ant")
     const stored = events.find(e => e.type === "tool_result")!.data as { result: unknown; redacted?: boolean }
-    expect(JSON.stringify(stored.result)).toContain("abcdefghijklmnop")
+    expect(JSON.stringify(stored.result)).not.toContain("abcdefghijklmnop")
     expect(stored.redacted).toBe(true)
+  })
+
+  test("a credential the model typed into tool params is masked in the persisted tool_call", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
+    const seen: unknown[] = []
+    const tools = [execTool(seen)]
+    const { llm } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "exec", params: { command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz' https://x.test" } }], stopReason: "tool_use" },
+    ])
+    const { session, events } = recordingSession()
+    const guard = await guardFor(agentDir)
+
+    await makeLoop({ llm, session, guard, tools }).run(makeCtx(agentDir, tools, []))
+
+    // The tool itself still gets the real params — only the record is masked.
+    expect(JSON.stringify(seen[0])).toContain("abcdefghijklmnopqrstuvwxyz")
+    const stored = events.find(e => e.type === "tool_call")!.data as { params: unknown }
+    expect(JSON.stringify(stored.params)).not.toContain("abcdefghijklmnopqrstuvwxyz")
   })
 
   test("without a guard the loop behaves as before", async () => {

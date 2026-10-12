@@ -52,6 +52,11 @@ export class GuardModule {
     return this.service.redactStreaming(accumulated)
   }
 
+  /** Deep-mask credential-shaped strings in any value — for what gets written to disk. */
+  redactValue(value: unknown): unknown {
+    return this.service.redactValue(value)
+  }
+
   listRules(): IRule[] {
     return this.service.listRules()
   }

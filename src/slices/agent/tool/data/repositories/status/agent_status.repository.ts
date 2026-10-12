@@ -38,6 +38,8 @@ interface IAgentStatusReport {
   rules?: { count: number; loaded: boolean; loadError?: string; firedLast24h: Array<{ id: string; times: number }> }
   /** System-prompt accounting of this turn against `contextBudget` (CLEAN-150 US2). */
   context?: IPromptBreakdown
+  /** Learned behaviours by band (CLEAN-150 US3). */
+  learned?: { core: number; apply: number; suggested: number; hidden: number; conflicts: number; pinned: number }
 }
 
 export const AgentStatusTool: Tool = {
@@ -121,6 +123,7 @@ Safe for any caller — the report is trimmed to what the current user is allowe
         }
       }
       if (ctx.promptBreakdown) report.context = ctx.promptBreakdown
+      if (ctx.instincts) report.learned = ctx.instincts.summary()
       if (ctx.guard) {
         report.rules = {
           count: ctx.guard.listRules().filter(r => r.enabled).length,

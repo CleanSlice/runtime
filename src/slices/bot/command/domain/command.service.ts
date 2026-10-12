@@ -11,6 +11,7 @@ import type { MemoryModule } from "../../../agent/memory/memory.module"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { GuardModule } from "../../../agent/guard"
 import type { IPromptBreakdown } from "../../../agent/agent/agent.module"
+import type { InstinctModule } from "../../../agent/instinct"
 
 interface CommandDeps {
   access: AccessModule
@@ -24,6 +25,8 @@ interface CommandDeps {
   guard?: GuardModule
   /** The latest system-prompt accounting of a session — `/context` (CLEAN-150 US2). */
   context?: (sessionId: string) => IPromptBreakdown | undefined
+  /** Learned behaviours — `/learned` family (CLEAN-150 US3). */
+  instincts?: InstinctModule
 }
 
 // Commands only await the send; the id a channel may hand back is not theirs to use.
@@ -53,6 +56,11 @@ export class CommandService {
     // /context — where the always-on prompt's characters went last turn (admin only)
     if (text === "/context") {
       return this.handleContext(ctx, send)
+    }
+
+    // /learned … — what the agent has learned, and steering it (admin only)
+    if (text === "/learned" || text.startsWith("/learned ")) {
+      return this.handleLearned(ctx, text, send)
     }
 
     // /voice toggle
@@ -93,7 +101,9 @@ export class CommandService {
         `/access <name> — Switch strategy: open|public|allowlist|code|approval (admin only)\n` +
         `/rules — Guardrails in force and what fired today (admin only)\n` +
         `/rules reload — Re-read .agent/rules/ (admin only)\n` +
-        `/context — System prompt size per section vs budget, and what was loaded on demand (admin only)`,
+        `/context — System prompt size per section vs budget, and what was loaded on demand (admin only)\n` +
+        `/learned — What the agent has learned, with confidence (admin only)\n` +
+        `/learned show|pin|unpin|prune <id> · promote <id…> · prune · export (admin only)`,
       )
       return { handled: true }
     }
@@ -220,6 +230,87 @@ export class CommandService {
       `${lines.join("\n")}\n\n*On demand:*\n${onDemand}`,
     )
     return { handled: true }
+  }
+
+  private async handleLearned(ctx: ICommandContext, text: string, send: SendFn): Promise<ICommandResult> {
+    if (!this.deps.access.isAdmin(ctx.from)) {
+      await send("🔒 Only admins can see what the agent has learned.")
+      return { handled: true }
+    }
+    const instincts = this.deps.instincts
+    if (!instincts) {
+      await send("Learning is not enabled on this runtime.")
+      return { handled: true }
+    }
+    const [, sub = "", ...args] = text.split(/\s+/)
+    const fmt = (i: ReturnType<InstinctModule["list"]>[number]) =>
+      `• \`${i.id}\` ${i.confidence.toFixed(2)} ${instincts.bandOf(i.confidence)}${i.pinned ? " 📌" : ""}${i.promotedTo ? ` → ${i.promotedTo}` : ""}\n` +
+      `   when ${i.trigger} → ${i.action.slice(0, 120)}\n` +
+      `   evidence ${i.evidence.length} · ${i.source} · reinforced ${new Date(i.reinforced).toISOString().slice(0, 10)}`
+
+    try {
+      switch (sub) {
+        case "": {
+          const all = instincts.list()
+          if (all.length === 0) {
+            await send("Nothing learned yet. Corrections, resolved errors and repeated workflows become behaviours after the next review pass.")
+            return { handled: true }
+          }
+          const byBand = (b: string) => all.filter(i => instincts.bandOf(i.confidence) === b && !i.conflictsWith)
+          const sections = (["core", "apply", "suggested", "hidden"] as const)
+            .map(b => [b, byBand(b)] as const)
+            .filter(([, list]) => list.length > 0)
+            .map(([b, list]) => `*${b}* (${list.length})\n${list.map(fmt).join("\n")}`)
+          const conflicts = instincts.conflicts()
+          if (conflicts.length > 0) {
+            sections.push(`*conflicts* (${conflicts.length})\n` + conflicts.map(c => `• \`${c.loser.id}\` yields to \`${c.winner.id}\` — resolve with /learned prune <id> or pin`).join("\n"))
+          }
+          await send(`🧠 *Learned behaviours (${all.length})*\n\n${sections.join("\n\n")}\n\n/learned show|pin|unpin|prune <id> · promote <id…> · prune · export`)
+          return { handled: true }
+        }
+        case "show": {
+          const i = args[0] ? instincts.get(args[0]) : undefined
+          if (!i) { await send(`No behaviour with id \`${args[0] ?? ""}\`.`); return { handled: true } }
+          const evidence = i.evidence.map(e => `  - ${e.ref}${e.note ? ` — ${e.note}` : ""}`).join("\n") || "  (none)"
+          await send(`${fmt(i)}\n\n*Action*\n${i.action}\n\n*Evidence*\n${evidence}${i.conflictsWith ? `\n\n⚠ yields to \`${i.conflictsWith}\`` : ""}`)
+          return { handled: true }
+        }
+        case "pin":
+        case "unpin": {
+          if (!args[0] || !instincts.get(args[0])) { await send(`No behaviour with id \`${args[0] ?? ""}\`.`); return { handled: true } }
+          if (sub === "pin") instincts.pin(args[0]); else instincts.unpin(args[0])
+          await send(`${sub === "pin" ? "📌 Pinned" : "Unpinned"} \`${args[0]}\`.`)
+          return { handled: true }
+        }
+        case "prune": {
+          const removed = instincts.prune(args[0])
+          await send(removed.length === 0
+            ? (args[0] ? `No behaviour with id \`${args[0]}\`.` : "Nothing to prune — no unpinned behaviour has sat below the suggested band long enough.")
+            : `🗑 Removed ${removed.length}: ${removed.map(id => `\`${id}\``).join(", ")}`)
+          return { handled: true }
+        }
+        case "promote": {
+          if (args.length === 0) { await send("Usage: /learned promote <id> [<id> …]"); return { handled: true } }
+          const slug = args.map(id => id.split("-")[0]).join("-").slice(0, 40).replace(/[^a-z0-9-]/g, "") || "behaviours"
+          const result = instincts.promote(args, slug)
+          await this.deps.skills.reload()
+          await send(`✅ Wrote skill \`${result.name}\` at ${result.path} for review — edit it like any skill. The behaviours stay in memory, marked as promoted.`)
+          return { handled: true }
+        }
+        case "export": {
+          const all = instincts.list()
+          const md = all.map(i => `## ${i.id}\n\n- trigger: ${i.trigger}\n- confidence: ${i.confidence} (${instincts.bandOf(i.confidence)})\n- source: ${i.source}${i.pinned ? ", pinned" : ""}\n\n${i.action}\n`).join("\n")
+          await send(md || "Nothing to export.")
+          return { handled: true }
+        }
+        default:
+          await send("Usage: /learned · /learned show|pin|unpin|prune <id> · /learned promote <id…> · /learned prune · /learned export")
+          return { handled: true }
+      }
+    } catch (err) {
+      await send(`❌ ${(err as Error).message}`)
+      return { handled: true }
+    }
   }
 
   private async handleCancel(ctx: ICommandContext, taskId: string, send: SendFn): Promise<ICommandResult> {
