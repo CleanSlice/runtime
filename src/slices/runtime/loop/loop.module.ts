@@ -8,6 +8,7 @@ import type { VoiceModule } from "../../bot/voice/voice.module"
 import type { ChannelModule } from "../../setup/channel/channel.module"
 import type { Tool } from "../../agent/tool"
 import type { GuardModule } from "../../agent/guard"
+import type { SkillModule } from "../../agent/skill/skill.module"
 
 export { LoopService }
 export type { ILoopContext, ILoopResult, ILoopConfig } from "./domain/loop.types"
@@ -21,6 +22,7 @@ interface LoopModuleDeps {
   channel: ChannelModule
   tools: Tool[]
   guard?: GuardModule
+  skills?: SkillModule
 }
 
 export class LoopModule {

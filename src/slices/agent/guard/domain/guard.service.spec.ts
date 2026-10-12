@@ -226,3 +226,26 @@ describe("GuardService.redactOutgoing", () => {
     expect(guard.redactOutgoing("key sk-ant-oat01-abcdefghijklmnop ok")).toContain("abcdefghijklmnop")
   })
 })
+
+describe("GuardService.redactStreaming", () => {
+  test("holds back a tail that is the start of a credential, then masks it once complete", async () => {
+    const { guard } = await loaded([redactAll])
+    expect(guard.redactStreaming("your key is sk-ant-oa")).toBe("your key is ")
+    // Long enough for redact() itself: masked rather than held.
+    expect(guard.redactStreaming("your key is sk-ant-oat01-abc")).toBe("your key is sk-ant…bc")
+    expect(guard.redactStreaming("your key is sk-ant-oat01-abcdefghijklmnop, keep it")).toBe("your key is sk-ant…op, keep it")
+    expect(guard.redactStreaming("token: Bearer abcd")).toBe("token: ")
+    expect(guard.redactStreaming("id 12345678:abc")).toBe("id ")
+  })
+
+  test("ordinary text streams through untouched, including a masked token at the end", async () => {
+    const { guard } = await loaded([redactAll])
+    expect(guard.redactStreaming("all good, nothing to see")).toBe("all good, nothing to see")
+    expect(guard.redactStreaming("key sk-ant-oat01-abcdefghijklmnop")).toBe("key sk-ant…op")
+  })
+
+  test("is a no-op without a wildcard redact rule", async () => {
+    const { guard } = await loaded([blockSecrets])
+    expect(guard.redactStreaming("your key is sk-ant-oat01-abc")).toBe("your key is sk-ant-oat01-abc")
+  })
+})

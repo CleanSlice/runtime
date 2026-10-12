@@ -30,7 +30,16 @@ export class MemoryService {
   async load(agentDir: string): Promise<void> {
     // Bound the curated files on disk before indexing them, so both the
     // search index and the system-prompt builder see the truncated version.
-    this.gateway.enforceMdLimits()
+    // The operator hears about every cut: which file, how much, and whether
+    // the rules alone no longer fit (CLEAN-150 FR-008).
+    for (const r of this.gateway.enforceMdLimits()) {
+      if (r.over) {
+        initLog.warn(`${r.file}: the ## Rules section alone is ${r.chars} chars, over the ${r.limit}-char limit — ` +
+          `all reference material was dropped; shorten the rules or raise memory.limits`)
+      } else {
+        initLog.warn(`${r.file}: ${r.dropped} chars of reference material dropped to fit the ${r.limit}-char limit (rules kept)`)
+      }
+    }
 
     for (const file of MD_FILES) {
       const path = `${agentDir}/${file}`

@@ -8,6 +8,8 @@ import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
 import { effectOfCall } from "../../../agent/tool/domain/tool.types"
 import type { GuardModule, IGuardCall, CallOutcome } from "../../../agent/guard"
+import type { SkillModule } from "../../../agent/skill/skill.module"
+import { skillEvent } from "../../../agent/skill/domain/skillEvent"
 import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble, ISource } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
 import { SourceRegistry, citeBlock, extractSources, finalizeBubble, stripMarkers } from "./sources"
@@ -30,6 +32,8 @@ interface LoopServiceDeps {
   tools: Tool[]
   /** Guardrails around every tool call (CLEAN-150 US1). Absent in tests that exercise the bare loop. */
   guard?: GuardModule
+  /** Skills — the body of a skill the model pulls in with `skill_load` goes into the history (CLEAN-150 US2). */
+  skills?: SkillModule
 }
 
 // Channels that support live token-by-token streaming. The channel repository
@@ -244,13 +248,16 @@ export class LoopService {
         // only covers the LLM call, not the tool execution that follows.
         ctx.sendTyping?.()
         if (ctx.sendThinking) thinkingStepsEmitted = true
+        // The reasoning prose rides the thinking timeline to the person, so
+        // it gets the same redaction as a reply.
+        const detail = response.text || undefined
         const iterationHadError = await this.executeToolCalls(
           ctx,
           response,
           iterations,
           turnId,
           registry,
-          streamsToClient ? undefined : (response.text || undefined),
+          streamsToClient ? undefined : (detail && this.deps.guard ? this.deps.guard.redactOutgoing(detail) : detail),
         )
 
         if (iterationHadError) {
@@ -377,13 +384,19 @@ export class LoopService {
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       let cited: ISource[] = []
+      // Chunks carry the accumulated text; a streamed reply must not show a
+      // credential the final redaction would have masked (CLEAN-150 FR-005).
+      const guard = this.deps.guard
       const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
-        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
+        const safeChunk = guard ? (text: string) => onChunk(guard.redactStreaming(text)) : onChunk
+        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, safeChunk)
+        const finalText = streamedResponse.text ?? ""
+        const safeText = guard ? guard.redactOutgoing(finalText) : finalText
         // The bubble is complete here and the channel has not sent its final
         // text yet — what the streamer returns is what `stream_end` (bridle)
         // or the last edit (telegram) carries. Check the citations now, so
         // the text the person keeps is the corrected one (CLEAN-138).
-        const fixed = finalize(streamedResponse.text ?? "")
+        const fixed = finalize(safeText)
         streamedResponse = { ...streamedResponse, text: fixed.text }
         cited = fixed.sources
         return fixed.text
@@ -495,6 +508,9 @@ export class LoopService {
               lastTurnStats: this.lastTurnStats,
               tools: ctx.tools,
               guard: this.deps.guard,
+              skills: this.deps.skills,
+              turn: ctx.turn,
+              promptBreakdown: ctx.breakdown,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)
@@ -564,10 +580,34 @@ export class LoopService {
         : capped
       history.push(forModel === resultEvent.data ? resultEvent : { ...resultEvent, data: forModel })
 
+      // On-demand context (CLEAN-150 US2): a loaded skill's body enters the
+      // history ahead of the conversation — not the system prompt, whose
+      // cached prefix must stay stable — and both kinds of load are reported
+      // so the turn's breakdown shows what came in late.
+      if (outcome === "ok") this.noteOnDemandLoad(ctx, call.name, result)
+
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "done" })
     }
 
     return iterationHadError
+  }
+
+  private noteOnDemandLoad(ctx: ILoopContext, toolName: string, result: unknown): void {
+    if (toolName === "skill_load") {
+      const name = (result as { name?: string })?.name
+      const skill = name ? this.deps.skills?.get(name) : undefined
+      if (!skill) return
+      const event = skillEvent(skill)
+      const insertAt = ctx.history[0]?.type === "summary" && !(ctx.history[0].data as { skill?: string }).skill ? 1 : 0
+      // Replace an earlier copy of the same skill rather than stacking two.
+      const existing = ctx.history.findIndex(e => e.type === "summary" && (e.data as { skill?: string }).skill === skill.name)
+      if (existing >= 0) ctx.history.splice(existing, 1)
+      ctx.history.splice(insertAt, 0, event)
+      ctx.onDemandLoad?.({ kind: "skill", name: skill.name, chars: skill.content.length })
+    } else if (toolName === "tool_describe") {
+      const name = (result as { name?: string })?.name
+      if (name) ctx.onDemandLoad?.({ kind: "tool", name, chars: JSON.stringify(result).length })
+    }
   }
 
   private maybeEmitDebug(
@@ -587,7 +627,7 @@ export class LoopService {
         systemPrompt: ctx.systemPrompt,
         history: ctx.history,
         response: {
-          text: response.text ?? "",
+          text: this.deps.guard ? this.deps.guard.redactOutgoing(response.text ?? "") : (response.text ?? ""),
           toolCalls: response.toolCalls,
           stopReason: response.stopReason,
         },

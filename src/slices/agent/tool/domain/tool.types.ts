@@ -8,6 +8,8 @@ import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import type { GuardModule } from "../../guard/guard.module"
+import type { SkillModule } from "../../skill/skill.module"
+import type { IPromptBreakdown } from "../../agent/domain/agent.types"
 
 export type ToolEffect = "read" | "write"
 
@@ -61,6 +63,12 @@ export interface ToolContext {
   lastTurnStats?: LastTurnStatsTracker
   /** Guardrails — lets `agent_status` report the rule set and recent firings (CLEAN-150). */
   guard?: GuardModule
+  /** Skills — `skill_load` pulls a skill into the session for a few turns (CLEAN-150 US2). */
+  skills?: SkillModule
+  /** This session's turn number, for skill retention. */
+  turn?: number
+  /** The system-prompt accounting of this turn — `agent_status.context`. */
+  promptBreakdown?: IPromptBreakdown
   /**
    * Tools visible to THIS session's caller (admin-only tools are already
    * filtered out upstream for non-admins). Lets introspection tools like

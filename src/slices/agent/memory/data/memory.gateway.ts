@@ -1,5 +1,5 @@
 import type { IMemoryGateway } from "../domain/memory.gateway"
-import type { MemoryEntry, MemoryLimits } from "../domain/memory.types"
+import type { IMemoryLimitReport, MemoryEntry, MemoryLimits } from "../domain/memory.types"
 import { DEFAULT_MEMORY_LIMITS } from "../domain/memory.types"
 import { SqliteRepository } from "./repositories/sqlite/sqlite.repository"
 import { FileRepository } from "./repositories/file/file.repository"
@@ -45,7 +45,7 @@ export class MemoryGateway implements IMemoryGateway {
 
   // ─── Limits ───────────────────────────────────────────────────────
 
-  enforceMdLimits(): void {
-    this.file.enforceMdLimits()
+  enforceMdLimits(): IMemoryLimitReport[] {
+    return this.file.enforceMdLimits()
   }
 }

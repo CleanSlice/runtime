@@ -9,14 +9,20 @@
 import { mkdtempSync, readdirSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join, basename } from "path"
+import { z } from "zod"
 import { GuardModule } from "../src/slices/agent/guard"
 import { AGENT_CONFIG_DEFAULTS } from "../src/slices/runtime/init/domain/init.types"
+import { LlmModule } from "../src/slices/setup/llm/llm.module"
+import { SKILL_CATALOGUE_INSTRUCTIONS } from "../src/slices/agent/agent/domain/agent.service"
+import type { Tool } from "../src/slices/agent/tool/domain/tool.types"
+import type { Event } from "../src/slices/setup/event"
 
-interface IEvalHeader { mode: string; threshold: number; description?: string }
+interface IEvalHeader { mode: string; threshold: number; description?: string; [key: string]: unknown }
 interface IEvalCase { id: string; [key: string]: unknown }
 interface IEvalSet { file: string; header: IEvalHeader; cases: IEvalCase[] }
 
-type Mode = (cases: IEvalCase[]) => Promise<{ passed: number; failed: string[] }>
+/** `pending` means the mode could not run here (missing credentials); it is reported, not failed. */
+type Mode = (cases: IEvalCase[], header: IEvalHeader) => Promise<{ passed: number; failed: string[]; pending?: string }>
 
 /**
  * US1 — every case carries the tool call the model would make; the baseline
@@ -35,8 +41,51 @@ const blocked: Mode = async (cases) => {
   return { passed: cases.length - failed.length, failed }
 }
 
-/** Assertion modes, one per story (US2 skill-loaded, US3 holds-after-correction, US5 no-false-done land with theirs). */
-const MODES: Record<string, Mode> = { blocked }
+/**
+ * US2 — the real model sees the example agent's skill catalogue and one
+ * message; it must call `skill_load` with the expected skill, or not call it
+ * when no skill applies. Needs `LLM_API_KEY` (+ optional `LLM_MODEL`);
+ * without credentials the set is reported as pending, not failed.
+ */
+const skillLoaded: Mode = async (cases, header) => {
+  if (!process.env.LLM_API_KEY) return { passed: 0, failed: [], pending: "set LLM_API_KEY to run this set" }
+  const skills = (header.skills ?? []) as Array<{ name: string; description: string }>
+  // Same model the runtime defaults to, same catalogue wording it ships.
+  const llm = new LlmModule({ provider: "claude", apiKey: process.env.LLM_API_KEY, model: process.env.LLM_MODEL ?? "claude-sonnet-4-6" })
+  const catalogue = skills.map(s => `- **${s.name}**: ${s.description}`).join("\n")
+  const system = `You are a helpful assistant with tools.\n\n# Available Skills\n\n${SKILL_CATALOGUE_INSTRUCTIONS}\n\n${catalogue}`
+  const skillLoadTool: Tool = {
+    name: "skill_load",
+    description: "Load a skill's full instructions for this conversation. Call it when a skill in the catalogue matches what the person needs.",
+    schema: z.object({ name: z.string() }),
+    execute: async () => ({}),
+  }
+  const failed: string[] = []
+  let falseLoads = 0
+  for (const c of cases) {
+    const history: Event[] = [{ id: c.id, type: "user", ts: Date.now(), data: { text: String(c.message), from: "eval" } }]
+    const response = await llm.getGateway().complete(system, history, [skillLoadTool])
+    const loaded = response.toolCalls?.filter(t => t.name === "skill_load").map(t => (t.params as { name?: string })?.name) ?? []
+    // `expect` must be loaded (or nothing, when null); `allow` lists skills
+    // whose loading is acceptable but not required — a tool-usage question
+    // may reasonably pull the tools skill.
+    const expect = c.expect as string | null
+    const allow = new Set<string>([...(c.allow as string[] | undefined ?? []), ...(expect ? [expect] : [])])
+    const unexpected = loaded.filter(n => !n || !allow.has(n))
+    const ok = (expect ? loaded.includes(expect) : true) && unexpected.length === 0
+    if (!ok) {
+      failed.push(`${c.id}→${loaded.join("+") || "none"}`)
+      if (!expect && unexpected.length > 0) falseLoads++
+    }
+  }
+  const maxFalse = Number(header.maxFalseLoadPct ?? 100)
+  const falsePct = Math.round((falseLoads / Math.max(1, cases.filter(c => !c.expect).length)) * 100)
+  if (falsePct > maxFalse) failed.push(`false loads ${falsePct}% > ${maxFalse}%`)
+  return { passed: cases.length - failed.filter(f => !f.startsWith("false loads")).length, failed }
+}
+
+/** Assertion modes, one per story (US3 holds-after-correction and US5 no-false-done land with theirs). */
+const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded }
 
 function loadSet(file: string): IEvalSet {
   const lines = readFileSync(file, "utf8").split("\n").filter(l => l.trim())
@@ -69,11 +118,16 @@ async function main(): Promise<void> {
       rows.push([basename(set.file), set.header.mode, String(set.cases.length), "-", "-", `${set.header.threshold}%`, "pending"])
       continue
     }
-    const result = await mode(set.cases)
+    const result = await mode(set.cases, set.header)
+    if (result.pending) {
+      rows.push([basename(set.file), set.header.mode, String(set.cases.length), "-", "-", `${set.header.threshold}%`, `pending (${result.pending})`])
+      continue
+    }
     const rate = set.cases.length === 0 ? 0 : Math.round((result.passed / set.cases.length) * 100)
-    const ok = rate >= set.header.threshold
+    const ok = rate >= set.header.threshold && !result.failed.some(f => f.startsWith("false loads"))
     if (!ok) failures++
-    rows.push([basename(set.file), set.header.mode, String(set.cases.length), String(result.passed), `${rate}%`, `${set.header.threshold}%`, ok ? "ok" : `FAIL (${result.failed.slice(0, 3).join(", ")})`])
+    const shown = process.env.EVAL_VERBOSE ? result.failed : result.failed.slice(0, 3)
+    rows.push([basename(set.file), set.header.mode, String(set.cases.length), String(result.passed), `${rate}%`, `${set.header.threshold}%`, ok ? "ok" : `FAIL (${shown.join(", ")})`])
   }
   const widths = rows[0]!.map((_, i) => Math.max(...rows.map(r => r[i]!.length)))
   for (const r of rows) console.log(r.map((c, i) => c.padEnd(widths[i]!)).join("  "))

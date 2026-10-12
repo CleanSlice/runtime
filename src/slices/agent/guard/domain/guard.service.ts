@@ -14,6 +14,13 @@ const EVENTS: RuleEvent[] = ["before", "after"]
 const ACTIONS: RuleAction[] = ["block", "redact", "record"]
 /** Firings older than this are dropped from the in-memory counter. */
 const FIRING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/**
+ * The opening of a credential that `redact()` would mask once complete, at
+ * the very end of a streamed text. Mirrors the heads of SECRET_PATTERNS in
+ * setup/logger/redact.ts; a masked token ("sk-ant…op") never matches because
+ * the mask ends in the token's last two characters, not its head.
+ */
+const PARTIAL_SECRET_TAIL_RE = /(sk-[\w-]{0,40}|gh[pousr]_\w{0,40}|Bearer\s+[\w.-]{0,40}|eyJ[\w-]{0,60}(\.[\w-]{0,60}){0,2}|AKIA\w{0,20}|xox[baprs]-[\w-]{0,40}|\b\d{8,10}:[\w-]{0,40})$/i
 
 /** A rule set that cannot be used: which file, and what is wrong with it. */
 export class GuardLoadError extends Error {
@@ -230,8 +237,24 @@ export class GuardService {
 
   /** Mask credentials in text the agent is about to send, when a wildcard redact rule is active. */
   redactOutgoing(text: string): string {
-    const active = this.active("after").some(r => r.action === "redact" && !r.match.result && matchesTool(r.match.tool, "*"))
-    return active ? redact(text) : text
+    return this.outgoingRedactionActive() ? redact(text) : text
+  }
+
+  /**
+   * Same, for a reply still being streamed: the accumulated text is masked,
+   * and a tail that looks like the start of a credential is held back until
+   * more arrives — otherwise the first characters of a token would be on
+   * screen before the pattern is long enough to recognise.
+   */
+  redactStreaming(accumulated: string): string {
+    if (!this.outgoingRedactionActive()) return accumulated
+    const masked = redact(accumulated)
+    const partial = masked.match(PARTIAL_SECRET_TAIL_RE)
+    return partial ? masked.slice(0, partial.index) : masked
+  }
+
+  private outgoingRedactionActive(): boolean {
+    return this.active("after").some(r => r.action === "redact" && !r.match.result && matchesTool(r.match.tool, "*"))
   }
 
   /** How often each rule fired within the last `hours`, most frequent first. */

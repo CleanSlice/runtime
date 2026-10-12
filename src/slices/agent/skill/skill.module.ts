@@ -1,12 +1,14 @@
-import type { Skill, RegistryEntry } from "./domain/skill.types"
+import type { Skill, RegistryEntry, SkillSummary, SkillServiceOptions, LoadedSkillInfo } from "./domain/skill.types"
 import { SkillService } from "./domain/skill.service"
 import { SkillGateway } from "./data/skill.gateway"
+
+export type { SkillSummary, SkillSelection, LoadedSkillInfo } from "./domain/skill.types"
 
 export class SkillModule {
   private service: SkillService
 
-  constructor(agentDir: string, bundledDir?: string) {
-    this.service = new SkillService(new SkillGateway(agentDir, bundledDir))
+  constructor(agentDir: string, opts: Partial<SkillServiceOptions> = {}, bundledDir?: string) {
+    this.service = new SkillService(new SkillGateway(agentDir, bundledDir), opts)
   }
 
   async load(): Promise<void> {
@@ -27,8 +29,26 @@ export class SkillModule {
     return this.service.get(name)
   }
 
+  summaries(): SkillSummary[] {
+    return this.service.summaries()
+  }
+
   select(message: string): Skill | null {
     return this.service.select(message)
+  }
+
+  // ─── Per-session on-demand loading ────────────────────────────────────────
+
+  nextTurn(sessionId: string): number {
+    return this.service.nextTurn(sessionId)
+  }
+
+  markLoaded(sessionId: string, name: string, turn: number): LoadedSkillInfo {
+    return this.service.markLoaded(sessionId, name, turn)
+  }
+
+  activeFor(sessionId: string, turn: number): Skill[] {
+    return this.service.activeFor(sessionId, turn)
   }
 
   // ─── Install / Remove ──────────────────────────────────────────────────────
