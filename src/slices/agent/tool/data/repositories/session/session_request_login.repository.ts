@@ -30,6 +30,8 @@ const schema = z.object({
 
 export const SessionRequestLoginTool: Tool = {
   name: "session_request_login",
+
+  effect: "write",
   description: `Ask the host for login instructions when a browser-mechanism session is missing cookies or has expired.
 
 Returns { helpUrl, siteUrl, instructions }. Forward this to the end user verbatim — do NOT paraphrase the URLs:

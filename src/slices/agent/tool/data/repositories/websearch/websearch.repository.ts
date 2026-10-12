@@ -11,6 +11,8 @@ const schema = z.object({
 
 export const WebSearchTool: Tool = {
   name: "web_search",
+
+  effect: "read",
   description: "Search the web using Brave Search and return results",
   schema,
   // The query is model-authored conversation context — same trust level as

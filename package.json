@@ -13,7 +13,8 @@
     "cli": "bun run src/cli.ts",
     "build": "bun build src/index.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun",
     "test": "bun test",
-    "monitor": "bash scripts/monitor.sh"
+    "monitor": "bash scripts/monitor.sh",
+    "eval": "bun run scripts/eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.79.0",

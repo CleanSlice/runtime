@@ -101,8 +101,45 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
     // Compact session history after this many events
     "compactionThreshold": 60,
     // Keep this many recent events after compaction
-    "recentKeep": 20
+    "recentKeep": 20,
+    // Idle sessions over the threshold are compacted by the heartbeat sweep (minutes, 0 = off)
+    "idleCompactMin": 30,
+    // Size-triggered compaction may interrupt a running task only above this % of contextBudgetChars
+    "hardLimitPct": 90
   },
+
+  // Character budget for the always-on system prompt. `/context` shows the actual split.
+  "contextBudget": {
+    "total": 48000,
+    "sections": { "soul": 12000, "tooling": 6000, "skillsCatalog": 3000, "memory": 2200, "dailyNotes": 8000, "alwaysSkills": 12000, "instincts": 2500 }
+  },
+
+  "skills": {
+    // "model": the agent pulls a skill with `skill_load` when its description fits; "keyword": legacy word overlap
+    "selection": "model",
+    // Turns a loaded skill stays in the conversation after its last use
+    "retainTurns": 3
+  },
+
+  // Guardrails around tool calls — rules live in .agent/rules/*.md, see "Guardrails" below
+  "guard": {
+    "observerTimeoutMs": 2000,
+    "recordFile": "data/toolcalls.jsonl",
+    "recordMaxBytes": 10485760
+  },
+
+  // Learned behaviours with confidence — see "Learning" below
+  "memory": {
+    "instincts": {
+      "enabled": true,
+      "bands": { "suggested": 0.3, "apply": 0.5, "core": 0.8 },
+      "decayDays": 14,
+      "maxInjected": 8
+    }
+  },
+
+  // After a mutating tool ran, the reply is checked against tool outcomes before delivery
+  "verification": { "enabled": true, "timeoutMs": 8000 },
 
   "s3": {
     // Auto-sync interval for S3 backup (seconds)
@@ -123,7 +160,11 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
     "webFetch": {
       // Max characters returned from web_fetch tool
       "maxChars": 8000
-    }
+    },
+    // Tools with a full description always in the prompt; the rest are one-line stubs + `tool_describe`
+    "coreCatalogue": ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    // delegate_task worker budgets
+    "delegate": { "timeoutMs": 300000, "maxParallel": 5, "summaryChars": 4000 }
   }
 }
 ```

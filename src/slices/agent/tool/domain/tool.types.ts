@@ -7,6 +7,20 @@ import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
 
+export type ToolEffect = "read" | "write"
+
+/** The effect of one call: `effectOf` when the tool has it, else `effect`, else `write`. */
+export function effectOfCall(tool: Tool, params: unknown): ToolEffect {
+  if (tool.effectOf) {
+    try {
+      return tool.effectOf(params)
+    } catch {
+      return "write"
+    }
+  }
+  return tool.effect ?? "write"
+}
+
 export interface ToolContext {
   sessionId: string
   agentDir: string
@@ -73,6 +87,15 @@ export interface Tool {
   inputSchema?: Record<string, unknown>
   /** When true, only admin users can call this tool. Mutating tools should be marked admin-only. */
   adminOnly?: boolean
+  /**
+   * Whether a call changes anything outside the conversation. Unset means
+   * `write`: an unannotated tool is verified rather than skipped. Tools whose
+   * effect depends on the call (`file` read/write, `http` GET/POST) implement
+   * `effectOf` instead and leave this unset.
+   */
+  effect?: ToolEffect
+  /** Per-call effect for tools whose params decide it; wins over `effect`. */
+  effectOf?(params: unknown): ToolEffect
   /**
    * Visitor-facing thinking-step label for a call with these params — a
    * short, safe phrase like "Read SOUL.md" or "Run bun". This rides the

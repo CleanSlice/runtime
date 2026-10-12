@@ -37,6 +37,8 @@ interface IAgentStatusReport {
 
 export const AgentStatusTool: Tool = {
   name: "agent_status",
+
+  effect: "read",
   description: `Report your own configuration and capabilities for the CURRENT session.
 
 Returns a structured snapshot:

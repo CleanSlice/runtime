@@ -28,6 +28,8 @@ interface IListedTool {
   name: string
   description?: string
   inputSchema?: Record<string, unknown>
+  /** MCP tool annotations; `readOnlyHint` is the only one the runtime reads. */
+  annotations?: { readOnlyHint?: boolean }
 }
 
 /** One person's live connection to an OAuth server. */
@@ -357,6 +359,7 @@ export class McpGateway extends IMcpGateway {
         `or a login link — send the link to them and ask them to open it and log ` +
         `in. Each person connects their own account; once they finish, ` +
         `${cfg.name}'s tools work for them.`,
+      effect: "write",
       schema: z.object({}),
       inputSchema: { type: "object", properties: {} },
       execute: async (_params, ctx) => {
@@ -441,6 +444,9 @@ export class McpGateway extends IMcpGateway {
     return {
       name: `${serverName}__${mcpTool.name}`,
       description: mcpTool.description ?? `MCP tool from ${serverName}`,
+      // Only a server that vouches for read-only gets `read`; the rest are
+      // verified after the turn like any other mutating tool (CLEAN-150).
+      effect: mcpTool.annotations?.readOnlyHint === true ? "read" : "write",
       schema: z.any(),
       inputSchema: mcpTool.inputSchema ?? { type: "object", properties: {} },
       execute: async (params, ctx) => {

@@ -12,6 +12,11 @@ export const FileTool: Tool = {
   description: "Read or write files on the filesystem",
   schema,
   adminOnly: true,
+  // A read leaves the world as it was; a write does not (CLEAN-150).
+  effectOf(params: unknown) {
+    const p = schema.safeParse(params)
+    return p.success && p.data.action === "read" ? "read" : "write"
+  },
   // Basename only — full paths are agent internals (FR-008).
   stepLabel(params: unknown): string | undefined {
     const p = schema.safeParse(params)

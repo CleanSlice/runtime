@@ -11,6 +11,8 @@ function getSecrets(ctx: ToolContext): SecretModule {
 
 export const SecretSetTool: Tool = {
   name: "secret_set",
+
+  effect: "write",
   description: "Save a secret value for this agent. Use for passwords, tokens, API keys. Key format: 'service:field' e.g. 'instagram:password', 'upwork:email'",
   adminOnly: true,
   schema: z.object({
@@ -26,6 +28,8 @@ export const SecretSetTool: Tool = {
 
 export const SecretGetTool: Tool = {
   name: "secret_get",
+
+  effect: "read",
   description: "Retrieve a saved secret for this agent. Returns null if not found.",
   schema: z.object({
     key: z.string().describe("Secret key to retrieve"),
@@ -39,6 +43,8 @@ export const SecretGetTool: Tool = {
 
 export const SecretListTool: Tool = {
   name: "secret_list",
+
+  effect: "read",
   description: "List all secret keys saved for this agent (values are not shown).",
   schema: z.object({}),
   async execute(_params: unknown, ctx: ToolContext): Promise<unknown> {
@@ -49,6 +55,8 @@ export const SecretListTool: Tool = {
 
 export const SecretDeleteTool: Tool = {
   name: "secret_delete",
+
+  effect: "write",
   description: "Delete a saved secret for this agent.",
   adminOnly: true,
   schema: z.object({

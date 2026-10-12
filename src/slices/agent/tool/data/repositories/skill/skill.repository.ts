@@ -17,6 +17,8 @@ const schema = z.object({
 
 export const SkillWriteTool: Tool = {
   name: "skill_write",
+
+  effect: "write",
   description:
     "Create or update a skill in the agent's skills directory (.agent/skills/<name>/SKILL.md). " +
     "The skill is immediately reloaded and available after writing. " +
@@ -50,6 +52,8 @@ const deleteSchema = z.object({
 
 export const SkillDeleteTool: Tool = {
   name: "skill_delete",
+
+  effect: "write",
   description:
     "Delete a skill from the agent's skills directory (.agent/skills/<name>/). " +
     "Only agent-level skills can be deleted — bundled runtime skills cannot. " +

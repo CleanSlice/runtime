@@ -10,6 +10,8 @@ const schema = z.object({
 
 export const UnzipTool: Tool = {
   name: "unzip",
+
+  effect: "write",
   description: "Extract a zip archive to a directory. Use when the user sends a zip file.",
   schema,
   adminOnly: true,

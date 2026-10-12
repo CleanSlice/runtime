@@ -29,11 +29,11 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 **Purpose**: Config surface and shared type changes that carry no behaviour yet.
 
-- [ ] T001 Add `contextBudget`, `skills`, `tools.coreCatalogue`, `tools.delegate`, `guard`, `memory.instincts`, `session.idleCompactMin`, `session.hardLimitPct`, `verification` to `IAgentConfig` with the defaults from contracts/commands-and-config.md in `src/slices/runtime/init/domain/init.types.ts`
-- [ ] T002 Merge the new config sections with defaults in the config loader so a partial `agent.config.json` still validates, in `src/slices/runtime/init/domain/init.service.ts`; add a spec case for a config that sets only `memory.instincts.decayDays` in `src/slices/runtime/init/domain/init.service.spec.ts`
-- [ ] T003 [P] Add `effect?: "read" | "write"` to `Tool` with the docstring "unset means write" in `src/slices/agent/tool/domain/tool.types.ts`
-- [ ] T004 [P] Document the new `agent.config.json` sections in the "Agent configuration" block of `README.md` and in `.agent.example/agent.config.json`
-- [ ] T005 [P] Add `"eval": "bun run scripts/eval.ts"` to `package.json` scripts and create the empty runner skeleton `scripts/eval.ts` that reads `tests/evals/*.jsonl` and prints a table (no assertions yet)
+- [X] T001 Add `contextBudget`, `skills`, `tools.coreCatalogue`, `tools.delegate`, `guard`, `memory.instincts`, `session.idleCompactMin`, `session.hardLimitPct`, `verification` to `IAgentConfig` with the defaults from contracts/commands-and-config.md in `src/slices/runtime/init/domain/init.types.ts`
+- [X] T002 Merge the new config sections with defaults in the config loader so a partial `agent.config.json` still validates, in `src/slices/runtime/init/domain/init.service.ts`; add a spec case for a config that sets only `memory.instincts.decayDays` in `src/slices/runtime/init/domain/init.service.spec.ts`
+- [X] T003 [P] Add `effect?: "read" | "write"` to `Tool` with the docstring "unset means write" in `src/slices/agent/tool/domain/tool.types.ts`
+- [X] T004 [P] Document the new `agent.config.json` sections in the "Agent configuration" block of `README.md` and in `.agent.example/agent.config.json`
+- [X] T005 [P] Add `"eval": "bun run scripts/eval.ts"` to `package.json` scripts and create the empty runner skeleton `scripts/eval.ts` that reads `tests/evals/*.jsonl` and prints a table (no assertions yet)
 
 ---
 
@@ -43,13 +43,13 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Annotate every built-in tool with `effect` per the read/write table in contracts/tools.md across `src/slices/agent/tool/data/repositories/**/*.repository.ts` (`file` and `http` decide per call: add `effectOf?(params)` to `Tool` in `src/slices/agent/tool/domain/tool.types.ts` and implement it for those two)
-- [ ] T007 Map MCP `readOnlyHint` annotations to `effect: "read"` and default the rest to `"write"` where MCP tools are built in `src/slices/setup/mcp/data/mcp.gateway.ts`
-- [ ] T008 Write a spec asserting every tool registered by `ToolGateway` declares `effect` (or `effectOf`) in `src/slices/agent/tool/data/tool.gateway.spec.ts`
-- [ ] T009 Change `AgentService.buildSystemPrompt` to return `{ prompt, breakdown: IPromptBreakdown }` with per-section char counts (soul, channel, tooling, agents, user, memory, dailyNotes, heartbeat, skillsCatalog, credentials, runtime) in `src/slices/agent/agent/domain/agent.service.ts`; add `IPromptBreakdown` to `src/slices/agent/agent/domain/agent.types.ts`; update the two callers in `src/slices/agent/agent/agent.module.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts`
-- [ ] T010 Spec for the breakdown: section sums equal prompt length, sections absent for non-admin are reported as 0, in `src/slices/agent/agent/domain/agent.service.spec.ts`
-- [ ] T011 Keep the last `IPromptBreakdown` per session in `RuntimeService` (`lastBreakdown: Map<sessionId, IPromptBreakdown>`) and expose `getLastBreakdown(sessionId)` in `src/slices/runtime/runtime/domain/runtime.service.ts`
-- [ ] T012 Add `inFlight(sessionId): boolean`, `parentTaskId?` on `ITask`, and `getChildren(parentTaskId)` to the task manager in `src/slices/agent/task/domain/task.types.ts`, `src/slices/agent/task/domain/task.service.ts`, `src/slices/agent/task/data/task.gateway.ts`; spec in `src/slices/agent/task/domain/task.service.spec.ts`
+- [X] T006 Annotate every built-in tool with `effect` per the read/write table in contracts/tools.md across `src/slices/agent/tool/data/repositories/**/*.repository.ts` (`file` and `http` decide per call: add `effectOf?(params)` to `Tool` in `src/slices/agent/tool/domain/tool.types.ts` and implement it for those two)
+- [X] T007 Map MCP `readOnlyHint` annotations to `effect: "read"` and default the rest to `"write"` where MCP tools are built in `src/slices/setup/mcp/data/mcp.gateway.ts`
+- [X] T008 Write a spec asserting every tool registered by `ToolGateway` declares `effect` (or `effectOf`) in `src/slices/agent/tool/data/tool.gateway.spec.ts`
+- [X] T009 Change `AgentService.buildSystemPrompt` to return `{ prompt, breakdown: IPromptBreakdown }` with per-section char counts (soul, channel, tooling, agents, user, memory, dailyNotes, heartbeat, skillsCatalog, credentials, runtime) in `src/slices/agent/agent/domain/agent.service.ts`; add `IPromptBreakdown` to `src/slices/agent/agent/domain/agent.types.ts`; update the two callers in `src/slices/agent/agent/agent.module.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts`
+- [X] T010 Spec for the breakdown: section sums equal prompt length, sections absent for non-admin are reported as 0, in `src/slices/agent/agent/domain/agent.service.spec.ts`
+- [X] T011 Keep the last `IPromptBreakdown` per session in `RuntimeService` (`lastBreakdown: Map<sessionId, IPromptBreakdown>`) and expose `getLastBreakdown(sessionId)` in `src/slices/runtime/runtime/domain/runtime.service.ts`
+- [X] T012 Add `inFlight(sessionId): boolean`, `parentTaskId?` on `ITask`, and `getChildren(parentTaskId)` to the task manager in `src/slices/agent/task/domain/task.types.ts`, `src/slices/agent/task/domain/task.service.ts`, `src/slices/agent/task/data/task.gateway.ts`; spec in `src/slices/agent/task/domain/task.service.spec.ts`
 
 **Checkpoint**: `bun test` green; no user-visible behaviour change.
 

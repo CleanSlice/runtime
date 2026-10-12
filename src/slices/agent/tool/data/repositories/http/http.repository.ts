@@ -12,6 +12,12 @@ export const HttpTool: Tool = {
   name: "http",
   description: "Make an HTTP request and return the response",
   schema,
+  // GET/HEAD/OPTIONS observe; anything else may change the other side (CLEAN-150).
+  effectOf(params: unknown) {
+    const p = schema.safeParse(params)
+    const method = (p.success ? p.data.method : "GET").toUpperCase()
+    return ["GET", "HEAD", "OPTIONS"].includes(method) ? "read" : "write"
+  },
   // Hostname only — paths/queries may carry tokens (FR-008).
   stepLabel(params: unknown): string | undefined {
     const p = schema.safeParse(params)
