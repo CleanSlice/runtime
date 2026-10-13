@@ -59,4 +59,5 @@ Marker semantics: `[x]` = verified by an automated check that passed; `[ ]` = ma
 ## Open
 
 - Manual scenarios above need a dev agent with a channel; none of them changes the code paths the automated checks cover.
+- The full manual run is scripted in [manual-acceptance.md](manual-acceptance.md), including scenarios that have no automated counterpart.
 - The ranch admin agent's `SOUL.md` reorganisation (endpoint table → `ranch` skill) is a platform-template change, outside this repository.
