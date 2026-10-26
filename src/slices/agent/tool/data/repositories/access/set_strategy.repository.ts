@@ -16,6 +16,8 @@ const schema = z.object({
 
 export const SetAccessStrategyTool: Tool = {
   name: "set_access_strategy",
+
+  effect: "write",
   description:
     "Switch the bot's access strategy at runtime. The change is persisted to data/access.json " +
     "and survives restarts. Admin-only.",

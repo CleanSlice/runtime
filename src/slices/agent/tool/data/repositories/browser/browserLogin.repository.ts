@@ -141,6 +141,8 @@ const loginSchema = z.object({
 
 export const BrowserLoginTool: Tool = {
   name: "browser_login",
+
+  effect: "write",
   description: `Open a remote browser session for the user to log in manually. Use this when browser_play returns needsLogin or when a profile has never been authenticated.
 
 Flow:
@@ -190,6 +192,8 @@ const loginDoneSchema = z.object({
 
 export const BrowserLoginDoneTool: Tool = {
   name: "browser_login_done",
+
+  effect: "write",
   description: `Finalize a browser login: extract cookies from the pool session into the local profile state file. Call this AFTER the user has confirmed they finished signing in via the vncUrl returned by browser_login.
 
 After this returns ok, subsequent browser_play calls with the same profile reuse the captured cookies and run locally — no more VNC needed unless cookies expire.`,

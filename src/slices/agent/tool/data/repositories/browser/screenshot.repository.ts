@@ -23,6 +23,8 @@ const schema = z.object({
 
 export const BrowserScreenshotTool: Tool = {
   name: "browser_screenshot",
+
+  effect: "read",
   description:
     "Take a viewport-only screenshot of a website and post it to the current chat as an image. " +
     "For multi-step browser flows (login, fill, click, submit) use browser_play instead.",

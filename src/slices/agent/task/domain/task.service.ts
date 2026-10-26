@@ -1,4 +1,5 @@
 import type { ITaskGateway, Task } from "./task.gateway"
+import type { ITaskStartOptions } from "./task.types"
 
 export type { Task }
 
@@ -6,8 +7,18 @@ export class TaskManager {
   constructor(private gateway: ITaskGateway) {}
 
   /** Register and fire a background task. Used by RuntimeService to execute each user message. */
-  start(sessionId: string, label: string, fn: (task: Task) => Promise<void>, options?: { internal?: boolean }): Task {
+  start(sessionId: string, label: string, fn: (task: Task) => Promise<void>, options?: ITaskStartOptions): Task {
     return this.gateway.start(sessionId, label, fn, options)
+  }
+
+  /** True while any task of the session runs — compaction waits for this to clear (CLEAN-150 US4). */
+  inFlight(sessionId: string): boolean {
+    return this.gateway.getRunningBySessionId(sessionId).length > 0
+  }
+
+  /** Delegated workers of a task (CLEAN-150 US6). */
+  getChildren(parentTaskId: string): Task[] {
+    return this.gateway.getChildren(parentTaskId)
   }
 
   /** Push a follow-up message into a running task's inbox. Used by BotService on "join" dispatch. */

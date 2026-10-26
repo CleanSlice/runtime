@@ -1,6 +1,39 @@
 import type { MemoryLimits, MemoryReviewConfig } from "../../../agent/memory/domain/memory.types"
 import { DEFAULT_MEMORY_LIMITS, DEFAULT_MEMORY_REVIEW } from "../../../agent/memory/domain/memory.types"
 
+/**
+ * Learned-behaviour ("instinct") tuning. Confidence runs 0.1–0.95; the three
+ * bands decide what a behaviour may do: below `suggested` it is invisible,
+ * from `suggested` it is listed for the operator only, from `apply` it shapes
+ * the agent's actions, from `core` it reads as a standing rule.
+ */
+export interface IInstinctConfig {
+  enabled: boolean
+  bands: { suggested: number; apply: number; core: number }
+  /** Starting confidence per source. Explicit operator rules start pinned at `explicitRule`. */
+  start: { correction: number; errorResolution: number; repetition: number; explicitRule: number }
+  /** Added on each uncorrected application. */
+  reinforce: number
+  /** Subtracted on an explicit correction. */
+  correct: number
+  /** Subtracted per `decayDays` without reinforcement (pinned behaviours exempt). */
+  decay: number
+  decayDays: number
+  /** Most behaviours rendered into the prompt, highest confidence first. */
+  maxInjected: number
+}
+
+export const DEFAULT_INSTINCT_CONFIG: IInstinctConfig = {
+  enabled: true,
+  bands: { suggested: 0.3, apply: 0.5, core: 0.8 },
+  start: { correction: 0.6, errorResolution: 0.5, repetition: 0.5, explicitRule: 0.9 },
+  reinforce: 0.05,
+  correct: 0.2,
+  decay: 0.05,
+  decayDays: 14,
+  maxInjected: 8,
+}
+
 /** Runtime configuration loaded from agent.config.json */
 export interface IAgentConfig {
   maxIterations: number
@@ -36,6 +69,17 @@ export interface IAgentConfig {
      * (CLEAN-124). ~4 chars per token: 400 000 is ~100k tokens.
      */
     contextBudgetChars: number
+    /**
+     * Sessions idle for this many minutes and over the compaction threshold
+     * are compacted by the heartbeat sweep (CLEAN-150 US4). 0 disables.
+     */
+    idleCompactMin: number
+    /**
+     * Size-triggered compaction may interrupt a task in flight only once the
+     * serialized session passes this percentage of contextBudgetChars.
+     * Below it, compaction waits for the task boundary.
+     */
+    hardLimitPct: number
   }
 
   /**
@@ -44,10 +88,57 @@ export interface IAgentConfig {
    *   the top when a file exceeds its limit. Bounds system-prompt size.
    * - `review`: background self-improvement review — every N turns, promote
    *   durable facts from the conversation into MEMORY.md.
+   * - `instincts`: confidence-weighted learned behaviours (CLEAN-150 US3).
    */
   memory: {
     limits: MemoryLimits
     review: MemoryReviewConfig
+    instincts: IInstinctConfig
+  }
+
+  /**
+   * Character budget for the always-on system prompt, per section. The
+   * runtime reports the actual split per turn (`/context`, `agent_status`)
+   * and warns at start-up when a section overflows (CLEAN-150 US2).
+   */
+  contextBudget: {
+    total: number
+    sections: {
+      soul: number
+      tooling: number
+      skillsCatalog: number
+      memory: number
+      dailyNotes: number
+      alwaysSkills: number
+      instincts: number
+    }
+  }
+
+  skills: {
+    /**
+     * How a skill gets into a turn. `model`: the agent calls `skill_load`
+     * when a catalogue description matches. `keyword`: the legacy word-overlap
+     * matcher — kept for one release as a fallback.
+     */
+    selection: "model" | "keyword"
+    /** A loaded skill stays in the conversation for this many turns after its last use. */
+    retainTurns: number
+  }
+
+  /** Guardrails around tool calls (CLEAN-150 US1). Rules live in `.agent/rules/`. */
+  guard: {
+    /** Upper bound for a `record` rule's handler; slower observers are abandoned. */
+    observerTimeoutMs: number
+    /** Tool-call record file, relative to the agent dir. */
+    recordFile: string
+    /** Rotate the record file once it passes this size. */
+    recordMaxBytes: number
+  }
+
+  /** Post-turn check of completion claims against mutating tool outcomes (CLEAN-150 US5). */
+  verification: {
+    enabled: boolean
+    timeoutMs: number
   }
 
   s3: {
@@ -79,6 +170,17 @@ export interface IAgentConfig {
      * result size hands back the same guesswork the preview already forced.
      */
     maxOutputChars: number
+    /**
+     * Tools whose full description is always in the prompt. Every other tool
+     * gets a one-line stub and `tool_describe` on demand (CLEAN-150 US2).
+     */
+    coreCatalogue: string[]
+    /** `delegate_task` worker budgets (CLEAN-150 US6). */
+    delegate: {
+      timeoutMs: number
+      maxParallel: number
+      summaryChars: number
+    }
   }
 
   /** Caps on user message text reaching the model. See messageTruncation.ts. */
@@ -190,11 +292,43 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     compactionBytesThreshold: 200_000,
     recentKeep: 20,
     contextBudgetChars: 400_000,
+    idleCompactMin: 30,
+    hardLimitPct: 90,
   },
 
   memory: {
     limits: { ...DEFAULT_MEMORY_LIMITS },
     review: { ...DEFAULT_MEMORY_REVIEW },
+    instincts: structuredClone(DEFAULT_INSTINCT_CONFIG),
+  },
+
+  contextBudget: {
+    total: 48_000,
+    sections: {
+      soul: DEFAULT_MEMORY_LIMITS.soul,
+      tooling: 6000,
+      skillsCatalog: 3000,
+      memory: DEFAULT_MEMORY_LIMITS.memory,
+      dailyNotes: DEFAULT_MEMORY_LIMITS.daily * 2,
+      alwaysSkills: 12_000,
+      instincts: 2500,
+    },
+  },
+
+  skills: {
+    selection: "model",
+    retainTurns: 3,
+  },
+
+  guard: {
+    observerTimeoutMs: 2000,
+    recordFile: "data/toolcalls.jsonl",
+    recordMaxBytes: 10 * 1024 * 1024,
+  },
+
+  verification: {
+    enabled: true,
+    timeoutMs: 8000,
   },
 
   s3: {
@@ -214,6 +348,12 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
       maxChars: 8000,
     },
     maxOutputChars: 16_000,
+    coreCatalogue: ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    delegate: {
+      timeoutMs: 300_000,
+      maxParallel: 5,
+      summaryChars: 4000,
+    },
   },
 
   message: {

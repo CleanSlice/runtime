@@ -27,6 +27,8 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaT
 
 export const ImageAnalyzeTool: Tool = {
   name: "image_analyze",
+
+  effect: "read",
   description: "Analyze an image from a URL or local file path using Claude vision",
   schema,
   async execute(params: unknown, _ctx: ToolContext): Promise<unknown> {

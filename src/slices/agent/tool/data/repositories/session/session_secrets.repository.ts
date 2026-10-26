@@ -23,6 +23,8 @@ const schema = z.object({
 
 export const SessionSecretsTool: Tool = {
   name: "session_secrets",
+
+  effect: "read",
   description: `Resolve the connected secret-mechanism sessions into a flat env map. Called whenever the agent needs an API key the user connected — OpenAI, GitHub, Stripe, etc.
 
 Returns { env: { ENV_NAME: "value", … } }. Empty object if there is no matching connected session — in that case, ask the user to open the /sessions admin page and connect the service.

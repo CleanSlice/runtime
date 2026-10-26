@@ -9,6 +9,8 @@ const schema = z.object({
 
 export const TelegramSendTool: Tool = {
   name: "telegram_send",
+
+  effect: "write",
   description: "Send a Telegram message to any chat ID. Use this to proactively message users. For group chats, resolve the chat ID first via channel_groups.",
   schema,
   adminOnly: true,

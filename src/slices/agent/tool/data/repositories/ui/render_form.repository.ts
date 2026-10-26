@@ -84,6 +84,8 @@ type Params = z.infer<typeof schema>
 
 export const RenderFormTool: Tool = {
   name: "render_form",
+
+  effect: "read",
   description: `Render an interactive form inside the chat bubble — radio groups, checkboxes, text inputs, selects — and wait for the visitor to submit.
 
 Use this INSTEAD of asking the visitor to type structured answers ("type basic/pro/team", "say yes or no") when the channel can render forms. Saves them keystrokes and you get structured values back.
