@@ -517,6 +517,7 @@ export class LoopService {
               instincts: this.deps.instincts,
               turn: ctx.turn,
               promptBreakdown: ctx.breakdown,
+              lastCompaction: this.deps.session.lastCompaction?.(sessionId),
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)

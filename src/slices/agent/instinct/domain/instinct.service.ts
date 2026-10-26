@@ -77,8 +77,8 @@ export class InstinctService {
     const ts = this.now()
     const instinct: IInstinct = {
       id,
-      trigger: input.trigger.trim(),
-      action: input.action.trim(),
+      trigger: plainLine(input.trigger, 300),
+      action: plainLine(input.action, 600),
       confidence: clamp(start),
       scope: input.scope ?? "agent",
       source: input.source,
@@ -272,6 +272,16 @@ export class InstinctService {
     this.items.set(i.id, i)
     this.gateway.write(i)
   }
+}
+
+/**
+ * Learned text comes from a model reading user messages and is rendered back
+ * into prompts: keep it to one plain line of bounded length so it cannot
+ * open a heading, a code fence or a fake system block of its own.
+ */
+function plainLine(text: string, max: number): string {
+  const line = text.replace(/\s+/g, " ").replace(/^[#>\-*\s]+/, "").replace(/[`[\]]/g, "'").trim()
+  return line.length > max ? line.slice(0, max - 1).trimEnd() + "…" : line
 }
 
 function clamp(n: number): number {

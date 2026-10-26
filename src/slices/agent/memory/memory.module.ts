@@ -43,12 +43,12 @@ export class MemoryModule {
     this.service.ensureAdminInMemory(adminIds)
   }
 
-  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number): void {
-    this.service.flushAndCompact(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold)
+  flushAndCompact(sessionId: string, history: Event[], llm: LlmModule, session: SessionModule, compactionThreshold: number, compactionBytesThreshold: number, inFlight = false): void {
+    this.service.flushAndCompact(sessionId, history, llm, session, compactionThreshold, compactionBytesThreshold, inFlight)
   }
 
-  reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule): void {
-    this.service.reviewMemory(sessionId, llm, session)
+  reviewMemory(sessionId: string, llm: LlmModule, session: SessionModule, opts?: { isAdmin?: boolean }): void {
+    this.service.reviewMemory(sessionId, llm, session, opts)
   }
 
   flushReview(sessionId: string, llm: LlmModule, session: SessionModule): Promise<void> {

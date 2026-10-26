@@ -117,8 +117,10 @@ export class AgentService {
     if (memory)            push("memory", `# Memory\n\n${memory}`)
 
     // Learned behaviours with confidence (CLEAN-150 US3): standing rules and
-    // apply-band behaviours, rendered by the instinct slice.
-    if (opts?.instincts?.trim()) push("instincts", `# Learned from experience\n\n${opts.instincts.trim()}`)
+    // apply-band behaviours, rendered by the instinct slice. Admin sessions
+    // only — what the operator taught may name people, hosts and procedures
+    // a visitor has no business reading.
+    if (isAdmin && opts?.instincts?.trim()) push("instincts", `# Learned from experience\n\n${opts.instincts.trim()}`)
 
     if (opts?.dailyMemory) {
       push("dailyNotes", `## Recent Notes\n\n${opts.dailyMemory}`)
@@ -129,7 +131,10 @@ export class AgentService {
     // Skill catalog: only names + descriptions (full content loaded on demand)
     const allSkills = [...config.skills, ...(opts?.skills ?? [])]
     if (allSkills.length > 0) {
+      // Why a skill is unavailable names env vars and binaries — admins only;
+      // visitors simply do not see a skill that cannot be loaded.
       const catalog = allSkills
+        .filter(s => isAdmin || !s.unavailable)
         .map(s => `- **${s.name}**: ${s.description}${s.unavailable ? ` (unavailable: ${s.unavailable})` : ""}`)
         .join("\n")
       push("skillsCatalog", `# Available Skills\n\n${SKILL_CATALOGUE_INSTRUCTIONS}\n\n${catalog}`)

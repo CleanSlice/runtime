@@ -2,33 +2,50 @@ import type { Event } from "../../setup/event"
 import type { ILlmGateway } from "../../setup/llm/domain/llm.gateway"
 import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
-import { CompactionService } from "./domain/compaction.service"
+import { CompactionService, type CompactionReason, type ICompactOptions } from "./domain/compaction.service"
 import type { IActivityReporter } from "./domain/activity"
+import { createLogger } from "../../setup/logger"
+
+const log = createLogger("session")
+
+export type { CompactionReason, ICompactOptions, IInFlightNote } from "./domain/compaction.service"
 
 export interface SessionConfig {
   compactionThreshold?: number
   recentKeep?: number
   compactionBytesThreshold?: number
+  /** The model's history budget; the in-flight hard limit is a percentage of it (CLEAN-150 US4). */
+  contextBudgetChars?: number
+  hardLimitPct?: number
+  /** Sessions idle this long and over threshold are compacted by the heartbeat sweep; 0 disables. */
+  idleCompactMin?: number
 }
 
 export const SESSION_CONFIG_DEFAULTS: Required<SessionConfig> = {
   compactionThreshold: 60,
   recentKeep: 20,
   compactionBytesThreshold: 200_000,
+  contextBudgetChars: 400_000,
+  hardLimitPct: 90,
+  idleCompactMin: 30,
 }
 
 export class SessionModule {
   private service: SessionService
   private compaction: CompactionService
+  private idleCompactMin: number
 
   constructor(agentDir: string, config?: SessionConfig) {
+    const c = { ...SESSION_CONFIG_DEFAULTS, ...stripUndefined(config) }
     this.service = new SessionService(new SessionGateway(agentDir))
     this.compaction = new CompactionService(
       this.service,
-      config?.compactionThreshold ?? SESSION_CONFIG_DEFAULTS.compactionThreshold,
-      config?.recentKeep ?? SESSION_CONFIG_DEFAULTS.recentKeep,
-      config?.compactionBytesThreshold ?? SESSION_CONFIG_DEFAULTS.compactionBytesThreshold,
+      c.compactionThreshold,
+      c.recentKeep,
+      c.compactionBytesThreshold,
+      { contextBudgetChars: c.contextBudgetChars, hardLimitPct: c.hardLimitPct },
     )
+    this.idleCompactMin = c.idleCompactMin
   }
 
   /**
@@ -37,11 +54,12 @@ export class SessionModule {
    * can't pick up a config reload (e.g. after an S3 restore) on their own.
    */
   updateCompactionConfig(config?: SessionConfig): void {
-    this.compaction.updateConfig(
-      config?.compactionThreshold ?? SESSION_CONFIG_DEFAULTS.compactionThreshold,
-      config?.recentKeep ?? SESSION_CONFIG_DEFAULTS.recentKeep,
-      config?.compactionBytesThreshold ?? SESSION_CONFIG_DEFAULTS.compactionBytesThreshold,
-    )
+    const c = { ...SESSION_CONFIG_DEFAULTS, ...stripUndefined(config) }
+    this.compaction.updateConfig(c.compactionThreshold, c.recentKeep, c.compactionBytesThreshold, {
+      contextBudgetChars: c.contextBudgetChars,
+      hardLimitPct: c.hardLimitPct,
+    })
+    this.idleCompactMin = c.idleCompactMin
   }
 
   getOrCreate(channelId: string, userId: string) {
@@ -73,11 +91,39 @@ export class SessionModule {
     return all.filter(e => !e.taskId || e.taskId === taskId)
   }
 
-  async compact(sessionId: string, llm: ILlmGateway): Promise<void> {
-    return this.compaction.compact(sessionId, llm)
+  async compact(sessionId: string, llm: ILlmGateway, opts?: ICompactOptions): Promise<void> {
+    return this.compaction.compact(sessionId, llm, opts)
   }
 
-  compactAsync(sessionId: string, llm: ILlmGateway): void {
-    this.compaction.compactAsync(sessionId, llm)
+  compactAsync(sessionId: string, llm: ILlmGateway, opts?: ICompactOptions): void {
+    this.compaction.compactAsync(sessionId, llm, opts)
   }
+
+  lastCompaction(sessionId: string): { reason: CompactionReason; ts: number } | undefined {
+    return this.compaction.lastCompaction(sessionId)
+  }
+
+  /**
+   * Idle sweep (CLEAN-150 US4): compact every session that has been quiet
+   * for `idleCompactMin` and is over threshold, skipping sessions with a
+   * task in flight. Returns the session ids compacted.
+   */
+  async compactIdle(llm: ILlmGateway, now: number, inFlight: (sessionId: string) => boolean): Promise<string[]> {
+    if (this.idleCompactMin <= 0) return []
+    const cutoff = now - this.idleCompactMin * 60_000
+    const swept: string[] = []
+    for (const s of this.service.listSessions()) {
+      if (s.updatedAt > cutoff || inFlight(s.id)) continue
+      const before = (await this.service.read(s.id)).length
+      await this.compaction.compact(s.id, llm, { reason: "idle" })
+      if ((await this.service.read(s.id)).length < before) swept.push(s.id)
+    }
+    if (swept.length > 0) log.info(`idle sweep compacted ${swept.length} session(s)`)
+    return swept
+  }
+}
+
+function stripUndefined<T extends object>(o: T | undefined): Partial<T> {
+  if (!o) return {}
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 }

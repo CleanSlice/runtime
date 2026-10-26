@@ -31,6 +31,11 @@ export class SessionService {
     return session
   }
 
+  /** Every session seen since start — the idle sweep walks these. */
+  listSessions(): Session[] {
+    return [...this.sessions.values()]
+  }
+
   touch(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (session) session.updatedAt = Date.now()
