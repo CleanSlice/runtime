@@ -6,6 +6,8 @@ import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { VoiceModule } from "../../../bot/voice/voice.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
+import { effectOfCall } from "../../../agent/tool/domain/tool.types"
+import type { GuardModule, IGuardCall, CallOutcome } from "../../../agent/guard"
 import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble, ISource } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
 import { SourceRegistry, citeBlock, extractSources, finalizeBubble, stripMarkers } from "./sources"
@@ -26,6 +28,8 @@ interface LoopServiceDeps {
   voice: VoiceModule
   channel: ChannelModule
   tools: Tool[]
+  /** Guardrails around every tool call (CLEAN-150 US1). Absent in tests that exercise the bare loop. */
+  guard?: GuardModule
 }
 
 // Channels that support live token-by-token streaming. The channel repository
@@ -439,14 +443,41 @@ export class LoopService {
       history.push(callEvent)
 
       let result: unknown
+      // Guardrails: the rules see every call with the same params the tool
+      // would get; a block never reaches the tool, a redact rewrites params.
+      const guardCall: IGuardCall = {
+        tool: call.name,
+        params: call.params,
+        agentDir: ctx.agentDir,
+        sessionId,
+        turnId,
+        effect: tool ? effectOfCall(tool, call.params) : "write",
+      }
+      const startedMs = Date.now()
+      let outcome: CallOutcome = "ok"
+      let rulesFired: string[] = []
+      let params = call.params
 
-      if (tool && tool.adminOnly && !ctx.isAdmin) {
+      const adminBlocked = tool && tool.adminOnly && !ctx.isAdmin
+      const verdict = tool && !adminBlocked && this.deps.guard ? this.deps.guard.before(guardCall) : undefined
+      if (verdict?.kind === "allow") {
+        params = verdict.params
+        rulesFired = verdict.rulesFired
+      }
+
+      if (adminBlocked) {
         rlog.warn(`admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
         result = { error: `Tool "${call.name}" is admin-only and cannot be called by this user.` }
+        outcome = "blocked"
+      } else if (verdict?.kind === "block") {
+        rlog.warn(`blocked by rule ${verdict.ruleId}: ${call.name}`)
+        result = { error: `blocked by rule ${verdict.ruleId}: ${verdict.reason}` }
+        outcome = "blocked"
+        rulesFired = [verdict.ruleId]
       } else if (tool) {
         try {
           result = await Promise.race([
-            tool.execute(call.params, {
+            tool.execute(params, {
               sessionId,
               agentDir: ctx.agentDir,
               from: ctx.from,
@@ -463,6 +494,7 @@ export class LoopService {
               usage: this.deps.usage,
               lastTurnStats: this.lastTurnStats,
               tools: ctx.tools,
+              guard: this.deps.guard,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)
@@ -470,14 +502,17 @@ export class LoopService {
           ])
         } catch (err) {
           result = { error: String(err) }
+          outcome = String(err).includes("timed out") ? "timeout" : "error"
         }
       } else {
         result = { error: `Unknown tool: ${call.name}` }
+        outcome = "error"
       }
 
       const errorValue = result && typeof result === "object" ? (result as Record<string, unknown>).error : undefined
       if (errorValue) {
         iterationHadError = true
+        if (outcome === "ok") outcome = "error"
         rlog.warn(`tool error: ${String(errorValue).slice(0, 80)}`)
       }
 
@@ -492,17 +527,35 @@ export class LoopService {
         const n = registry.numberOf(consulted[i])
         if (!citable.some((c) => c.n === n)) citable.push({ n, source: consulted[i] })
       }
+      // After-rules: redaction for the model's copy, records for the audit
+      // trail. The transcript keeps the raw result (same split as the size
+      // cap, CLEAN-124); the model only ever sees the redacted one.
+      let modelResult = result
+      let redacted = false
+      if (this.deps.guard) {
+        const after = await this.deps.guard.after(guardCall, result, { outcome, durationMs: Date.now() - startedMs, rulesFired })
+        modelResult = after.result
+        redacted = after.redacted
+      }
 
       const resultEvent: Event = {
         id: randomUUID(),
         type: "tool_result",
         ts: Date.now(),
-        data: { toolUseId, result },
+        data: {
+          toolUseId,
+          result,
+          ...(outcome === "blocked" ? { blocked: true } : {}),
+          ...(redacted ? { redacted: true } : {}),
+        },
       }
       await this.deps.session.append(sessionId, resultEvent)
       // The transcript keeps the full result; the model gets one that fits
       // (CLEAN-124). Same cap the next turn's history rebuild applies.
-      const capped = capPayload(resultEvent.data, this.config.maxToolOutputChars)
+      const modelData = modelResult === result
+        ? resultEvent.data
+        : { ...(resultEvent.data as Record<string, unknown>), result: modelResult }
+      const capped = capPayload(modelData, this.config.maxToolOutputChars)
       // Only the model's copy learns which numbers it may cite, and only
       // when the client can show them — the stored event is the tool's
       // result as returned.
@@ -568,6 +621,10 @@ export class LoopService {
       rlog.info(`${iterTag} llm → NO_REPLY (suppressed)`)
       return
     }
+
+    // A credential the model repeats from a tool result must not reach the
+    // person either (CLEAN-150 FR-005).
+    if (this.deps.guard) fullText = this.deps.guard.redactOutgoing(fullText)
 
     // If we streamed — message already sent via streamSend, skip re-send
     const wasStreamed = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()

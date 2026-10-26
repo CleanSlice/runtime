@@ -7,6 +7,7 @@ import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
+import type { GuardModule } from "../../guard/guard.module"
 
 export type ToolEffect = "read" | "write"
 
@@ -58,6 +59,8 @@ export interface ToolContext {
   llm?: LlmModule
   usage?: UsageModule
   lastTurnStats?: LastTurnStatsTracker
+  /** Guardrails — lets `agent_status` report the rule set and recent firings (CLEAN-150). */
+  guard?: GuardModule
   /**
    * Tools visible to THIS session's caller (admin-only tools are already
    * filtered out upstream for non-admins). Lets introspection tools like
