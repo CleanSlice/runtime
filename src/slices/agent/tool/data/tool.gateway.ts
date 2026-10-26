@@ -38,6 +38,7 @@ import { AgentStatusTool } from "./repositories/status/agent_status.repository"
 import { RenderFormTool } from "./repositories/ui/render_form.repository"
 import { SkillLoadTool } from "./repositories/skill/skill_load.repository"
 import { ToolDescribeTool } from "./repositories/tool/tool_describe.repository"
+import { DelegateTaskTool } from "./repositories/delegate/delegate.repository"
 
 export class ToolGateway implements IToolGateway {
   private tools: Map<string, Tool> = new Map()
@@ -84,6 +85,7 @@ export class ToolGateway implements IToolGateway {
     this.register(RenderFormTool)
     this.register(SkillLoadTool)
     this.register(ToolDescribeTool)
+    this.register(DelegateTaskTool)
   }
 
   private register(tool: Tool): void {

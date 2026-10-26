@@ -1,4 +1,5 @@
 import type { IInstinct } from "../instinct.types"
+import { extractJsonObject } from "../../../../setup/llm/domain/extractJson"
 
 /**
  * The background review prompt (CLEAN-150 US3). Replaces the `[fact]/[workflow]`
@@ -43,16 +44,10 @@ ${known}`
 export function parseInstinctReview(text: string | undefined): { facts: string[]; instincts: unknown[] } | null {
   const t = (text ?? "").trim()
   if (!t || t === "NOTHING") return null
-  const start = t.indexOf("{")
-  const end = t.lastIndexOf("}")
-  if (start === -1 || end === -1) return null
-  try {
-    const parsed = JSON.parse(t.slice(start, end + 1)) as { facts?: unknown; instincts?: unknown }
-    return {
-      facts: Array.isArray(parsed.facts) ? parsed.facts.filter((f): f is string => typeof f === "string") : [],
-      instincts: Array.isArray(parsed.instincts) ? parsed.instincts : [],
-    }
-  } catch {
-    return null
+  const parsed = extractJsonObject(t) as { facts?: unknown; instincts?: unknown } | null
+  if (!parsed) return null
+  return {
+    facts: Array.isArray(parsed.facts) ? parsed.facts.filter((f): f is string => typeof f === "string") : [],
+    instincts: Array.isArray(parsed.instincts) ? parsed.instincts : [],
   }
 }

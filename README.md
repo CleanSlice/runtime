@@ -386,6 +386,14 @@ Outcomes compose strictest-first (block > redact > record). The platform ships p
 
 A rule file that does not parse fails closed: the previous set stays in force on `/rules reload`, and on start-up every tool call is blocked with the reason until the file is fixed. Observers (`record`) fail open and are bounded by `guard.observerTimeoutMs`. `/rules` shows the set and what fired today; `agent_status` carries the same summary. `bun run eval tests/evals/guardrails.jsonl` checks the baseline against 31 extraction attempts.
 
+### Verified completion
+
+"No tool call = no claim" is enforced structurally, not just in the identity file. When a turn ran a mutating tool (`effect: "write"` — commands, file writes, non-GET HTTP, messages, secrets, cron, MCP tools without `readOnlyHint`), the final reply is not streamed; the auxiliary model compares the draft with the tools' real outcomes (`verification.timeoutMs` bound) and rewrites a claim the outcomes do not support into a factual report that quotes the error, status or block reason. Past the timeout the draft goes out with `(unverified)`. Read-only turns skip the check entirely. `bun run eval tests/evals/completion-claims.jsonl` checks the verifier against false "done" replies.
+
+### Delegation
+
+`delegate_task` (admin) runs sub-tasks in isolated workers inside the runtime: each gets a fresh history with the goal and the context the parent passed, the parent's identity, and the parent's tools minus everything that leaves the conversation (`telegram_send`, `tts`, `memory_save`, `skill_*`, `secret_set/delete`, `cron_*`, `channel_*`, `spawn_agent`, and `delegate_task` itself). Independent sub-tasks run concurrently up to `tools.delegate.maxParallel`; each has a time budget and returns one summary cut to `summaryChars`. The parent owns collection: a turn cannot end while its workers run — the loop waits up to the budget, cancels the rest, and hands the model a note listing what finished and what was cancelled so it reports facts rather than "waiting". `/tasks` shows workers indented under their parent. `spawn_agent` remains the way to run an external Claude Code coding agent.
+
 ### Learning
 
 The agent learns behaviours, not just notes. Every `memory.review.everyTurns` turns (and on `/clear`) the auxiliary model reviews the conversation and reports, in JSON, durable facts for `MEMORY.md` plus **instincts** — one trigger, one action, with evidence pointing at the exchange. Each instinct lives as one markdown file in `.agent/memory/instincts/` and carries a confidence:

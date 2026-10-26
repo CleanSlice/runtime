@@ -120,6 +120,8 @@ export interface ILoopContext {
   breakdown?: IPromptBreakdown
   /** Called when the model pulls a skill or a tool description in mid-turn, so the breakdown can list it. */
   onDemandLoad?: (load: IOnDemandLoad) => void
+  /** This context is a delegated worker: no further delegation, no completion-contract wait (CLEAN-150 US6). */
+  worker?: boolean
 }
 
 export interface ILoopResult {

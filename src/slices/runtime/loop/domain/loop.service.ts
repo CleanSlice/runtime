@@ -10,6 +10,10 @@ import { effectOfCall } from "../../../agent/tool/domain/tool.types"
 import type { GuardModule, IGuardCall, CallOutcome } from "../../../agent/guard"
 import type { SkillModule } from "../../../agent/skill/skill.module"
 import type { InstinctModule } from "../../../agent/instinct/instinct.module"
+import type { VerificationService } from "./verification.service"
+import type { DelegateService } from "./delegate.service"
+import type { TaskManager } from "../../../agent/task/domain/task.service"
+import { OUTCOME_PREVIEW_CHARS, type IToolOutcome } from "./prompts/verification.prompt"
 import { skillEvent } from "../../../agent/skill/domain/skillEvent"
 import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble, ISource } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
@@ -37,6 +41,10 @@ interface LoopServiceDeps {
   skills?: SkillModule
   /** Learned behaviours — `agent_status` reports the counts (CLEAN-150 US3). */
   instincts?: InstinctModule
+  /** Completion check after mutating tools (CLEAN-150 US5). */
+  verification?: VerificationService
+  /** Task manager — the completion contract looks up a turn's delegated workers (CLEAN-150 US6). */
+  tasks?: TaskManager
 }
 
 // Channels that support live token-by-token streaming. The channel repository
@@ -44,6 +52,17 @@ interface LoopServiceDeps {
 // events to the browser). Internal/cron/heartbeat traffic is excluded — there's
 // no UI to update.
 const STREAMING_CHANNELS = new Set(["telegram", "bridle"])
+
+/** The head of a serialized tool result, for the verifier. */
+function previewOf(result: unknown): string {
+  let text: string
+  try {
+    text = typeof result === "string" ? result : (JSON.stringify(result) ?? "")
+  } catch {
+    text = String(result)
+  }
+  return text.length > OUTCOME_PREVIEW_CHARS ? text.slice(0, OUTCOME_PREVIEW_CHARS) + "…" : text
+}
 
 function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
@@ -122,6 +141,16 @@ function isDebugEnabled(deps: LoopServiceDeps): boolean {
 export class LoopService {
   private config: ILoopConfig
   public readonly lastTurnStats = new LastTurnStatsTracker()
+  /** Per task: mutating tool outcomes of the turn (CLEAN-150 US5). */
+  private mutating = new Map<string, IToolOutcome[]>()
+  /** Per task: whether the latest LLM call streamed to the channel. */
+  private streamed = new Map<string, boolean>()
+  /** Delegation — set after construction because the service needs this loop to run workers. */
+  private delegate?: DelegateService
+
+  setDelegate(delegate: DelegateService): void {
+    this.delegate = delegate
+  }
 
   constructor(
     private deps: LoopServiceDeps,
@@ -146,6 +175,12 @@ export class LoopService {
     let consecutiveErrors = 0
     let errorLimitHit = false
     let accumulatedText = ""
+    // Mutating tool outcomes of this turn — what the final reply is checked
+    // against (CLEAN-150 US5). While any exist, the final call does not
+    // stream: a rewritten reply has to be sent whole.
+    this.mutating.set(task.id, [])
+    this.streamed.delete(task.id)
+    let childrenSettled = false
     // What the person actually saw: on a streaming channel every iteration
     // with text went out as its own bubble, under its own id. The turn is
     // still stored as ONE assistant event (the model-facing history must not
@@ -320,12 +355,25 @@ export class LoopService {
           await this.deps.session.append(sessionId, continueEvent)
           history.push(continueEvent)
         } else {
+          // Completion contract (CLEAN-150 US6): a turn does not end while
+          // its delegated workers run. Wait for them within the budget, then
+          // cancel what is left and give the model the facts for one more
+          // iteration — once per turn.
+          const note = !childrenSettled && !ctx.worker ? await this.settleChildren(ctx) : undefined
+          if (note) {
+            childrenSettled = true
+            const noteEvent: Event = { id: randomUUID(), type: "user", ts: Date.now(), data: { text: note, from: ctx.from, transient: true } }
+            await this.deps.session.append(sessionId, noteEvent)
+            history.push(noteEvent)
+            continue
+          }
           if (response.text) accumulatedText += response.text
           continueLoop = false
         }
 
         // Send only when the loop is done (all continuations complete)
         if (!continueLoop && accumulatedText) {
+          accumulatedText = await this.verifyCompletion(ctx, accumulatedText)
           await this.sendFinalResponse(ctx, accumulatedText, iterations, bubbles, bubbleSources, finalize)
         }
       }
@@ -340,7 +388,69 @@ export class LoopService {
       await ctx.send("⚠️ Multiple attempts failed. The requested resource may be unavailable.")
     }
 
+    this.mutating.delete(task.id)
+    this.streamed.delete(task.id)
     return { text: accumulatedText, errorLimitHit }
+  }
+
+  /**
+   * Completion contract (CLEAN-150 US6). Returns a system note when workers
+   * of this turn were still running: they are given the delegate budget to
+   * finish, the rest are cancelled, and the note lists what happened so the
+   * model reports it instead of ending with "waiting". Undefined when there
+   * was nothing to wait for.
+   */
+  private async settleChildren(ctx: ILoopContext): Promise<string | undefined> {
+    const tasks = this.deps.tasks
+    if (!tasks) return undefined
+    const running = () => tasks.getChildren(ctx.task.id).filter(t => t.status === "running")
+    if (running().length === 0) return undefined
+
+    const rlog = log.child(ctx.task.id.slice(0, 6))
+    const budgetMs = ctx.agentConfig.tools?.delegate?.timeoutMs ?? 300_000
+    rlog.warn(`${running().length} delegated worker(s) still running at turn end — waiting up to ${Math.round(budgetMs / 1000)}s`)
+    const deadline = Date.now() + budgetMs
+    while (running().length > 0 && Date.now() < deadline) {
+      if (ctx.task.controller.signal.aborted) break
+      await new Promise(r => setTimeout(r, 100))
+    }
+    const children = tasks.getChildren(ctx.task.id)
+    const cancelled = running()
+    for (const c of cancelled) tasks.cancel(c.id)
+    const finished = children.filter(c => !cancelled.includes(c))
+    const line = (t: { label: string; status: string }) => `${t.label} (${t.status})`
+    return (
+      `[System: your delegated workers were still running when you tried to finish. ` +
+      `Finished since: ${finished.map(line).join("; ") || "none"}. ` +
+      `Cancelled at the budget: ${cancelled.map(c => c.label).join("; ") || "none"}. ` +
+      `Report exactly this to the person — what completed, what did not — without claiming results you do not have.]`
+    )
+  }
+
+  /**
+   * Verified completion (CLEAN-150 US5): after mutating tools, the draft is
+   * checked against their outcomes. An unsupported claim is replaced by the
+   * verifier's factual rewrite; a timeout lets the draft through, marked.
+   */
+  private async verifyCompletion(ctx: ILoopContext, draft: string): Promise<string> {
+    const outcomes = this.mutating.get(ctx.task.id) ?? []
+    if (!this.deps.verification || outcomes.length === 0 || isSilentReply(draft)) return draft
+    const rlog = log.child(ctx.task.id.slice(0, 6))
+    const v = await this.deps.verification.verify(draft, outcomes)
+    if (v.timedOut) {
+      rlog.warn(`verification: timeout (${v.elapsedMs}ms) — delivering unverified`)
+      return `${draft} (unverified)`
+    }
+    if (v.skipped) {
+      rlog.info(`verification: skipped`)
+      return draft
+    }
+    if (!v.ok && v.reply) {
+      rlog.info(`verification: rewritten (${v.elapsedMs}ms)`)
+      return v.reply
+    }
+    rlog.info(`verification: ok (${v.elapsedMs}ms)`)
+    return draft
   }
 
   // ─── Private helpers ───────────────────────────────────────────────
@@ -378,7 +488,10 @@ export class LoopService {
     const history = fitEventsToBudget(ctx.history, this.config.contextBudgetChars).events
     const channelOk = canStreamOnChannel(channel, isInternal)
     const llmOk = this.deps.llm.canStream()
-    const canStream = channelOk && llmOk
+    // A turn that already changed something gets a complete, verifiable
+    // final reply rather than a stream (CLEAN-150 US5).
+    const verifiable = !!this.deps.verification && (this.mutating.get(ctx.task.id)?.length ?? 0) > 0
+    const canStream = channelOk && llmOk && !verifiable
     const tid = ctx.task.id.slice(0, 6)
     log.child(tid).info(
       `llm call: channel=${channel} internal=${isInternal} ` +
@@ -405,8 +518,12 @@ export class LoopService {
         return fixed.text
       })
       if (messageId) onBubble?.(messageId, cited)
-      if (streamedResponse) return streamedResponse
+      if (streamedResponse) {
+        this.streamed.set(ctx.task.id, true)
+        return streamedResponse
+      }
     }
+    this.streamed.set(ctx.task.id, false)
     // Not streamed: the text is one bubble sent once at the end of the turn,
     // and may be several iterations glued together — sendFinalResponse runs
     // the check over the whole of it.
@@ -518,6 +635,8 @@ export class LoopService {
               turn: ctx.turn,
               promptBreakdown: ctx.breakdown,
               lastCompaction: this.deps.session.lastCompaction?.(sessionId),
+              // Workers cannot delegate further (CLEAN-150 US6).
+              delegate: this.delegate && !ctx.worker ? (requests) => this.delegate!.run(ctx, requests) : undefined,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${call.name}" timed out after ${this.config.toolTimeout / 1000}s`)), this.config.toolTimeout)
@@ -585,6 +704,15 @@ export class LoopService {
         ? withCitations(capped, citeBlock(citable))
         : capped
       history.push(forModel === resultEvent.data ? resultEvent : { ...resultEvent, data: forModel })
+
+      // Mutating outcomes feed the completion check (CLEAN-150 US5).
+      if (guardCall.effect === "write") {
+        this.mutating.get(task.id)?.push({
+          tool: call.name,
+          outcome,
+          result: previewOf(modelResult),
+        })
+      }
 
       // On-demand context (CLEAN-150 US2): a loaded skill's body enters the
       // history ahead of the conversation — not the system prompt, whose
@@ -672,8 +800,10 @@ export class LoopService {
     // person either (CLEAN-150 FR-005).
     if (this.deps.guard) fullText = this.deps.guard.redactOutgoing(fullText)
 
-    // If we streamed — message already sent via streamSend, skip re-send
-    const wasStreamed = canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream()
+    // If we streamed — message already sent via streamSend, skip re-send.
+    // The last call records whether it actually streamed (a verifiable turn
+    // deliberately does not); fall back to the channel check when unknown.
+    const wasStreamed = this.streamed.get(ctx.task.id) ?? (canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream())
 
     // Streamed bubbles had their citations checked one by one as they went
     // out (callLlm). A non-streamed turn is one bubble sent once, even when
