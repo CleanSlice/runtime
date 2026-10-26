@@ -114,7 +114,8 @@
     "delegate": {
       "timeoutMs": 300000,
       "maxParallel": 5,
-      "summaryChars": 4000
+      "summaryChars": 4000,
+    "allowWrite": false
     }
   }
 }

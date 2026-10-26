@@ -225,12 +225,12 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T085 [P] Complete `scripts/eval.ts`: run every `tests/evals/*.jsonl`, print pass rates, exit non-zero when any SC threshold (100 % / 90 % / 5 % / 90 % / 50 %) is missed; add an `eval` job to `.github/workflows/publish-runtime.yml` that runs on `main` only
-- [ ] T086 [P] Update `IMPROVEMENT_PLAN.md`: mark #4 Curator, #6 Delegation, #10 Safety pipeline, #15 Lifecycle hooks as superseded by this feature with links to the phases
-- [ ] T087 [P] Add the new commands to `/help` and the README "Bot commands" table in `src/slices/bot/command/domain/command.service.ts` and `README.md`
-- [ ] T088 [P] Update slice READMEs with the `guard` and `instinct` rows in `src/slices/agent/README.md`
-- [ ] T089 Run quickstart.md end-to-end against a dev agent and record results in `specs/001-ecc-agent-principles/checklists/quickstart-results.md`
-- [ ] T090 Release: bump `package.json` version, changelog entry, tag per `release.yml`
+- [X] T085 [P] Complete `scripts/eval.ts`: run every `tests/evals/*.jsonl`, print pass rates, exit non-zero when any SC threshold (100 % / 90 % / 5 % / 90 % / 50 %) is missed; add an `eval` job to `.github/workflows/publish-runtime.yml` that runs on `main` only
+- [X] T086 [P] Update `IMPROVEMENT_PLAN.md`: mark #4 Curator, #6 Delegation, #10 Safety pipeline, #15 Lifecycle hooks as superseded by this feature with links to the phases
+- [X] T087 [P] Add the new commands to `/help` and the README "Bot commands" table in `src/slices/bot/command/domain/command.service.ts` and `README.md`
+- [X] T088 [P] Update slice READMEs with the `guard` and `instinct` rows in `src/slices/agent/README.md`
+- [X] T089 Run quickstart.md end-to-end against a dev agent and record results in `specs/001-ecc-agent-principles/checklists/quickstart-results.md`
+- [X] T090 Release: bump `package.json` version, changelog entry, tag per `release.yml`
 
 ---
 

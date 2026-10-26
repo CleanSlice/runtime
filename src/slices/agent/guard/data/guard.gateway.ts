@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "fs"
 import { dirname, join } from "path"
-import matter from "gray-matter"
+import { safeMatter } from "../../../setup/frontmatter/safeMatter"
 import type { IGuardGateway } from "../domain/guard.gateway"
 import type { IRuleFile, IToolCallRecord, RuleSource } from "../domain/guard.types"
 
@@ -51,7 +51,7 @@ export class GuardGateway implements IGuardGateway {
         const path = join(dir, f)
         const file = `${source === "baseline" ? "baseline" : "rules"}/${f}`
         try {
-          const parsed = matter(readFileSync(path, "utf-8"))
+          const parsed = safeMatter(readFileSync(path, "utf-8"))
           return { file, source, data: parsed.data as Record<string, unknown>, body: parsed.content }
         } catch (err) {
           return { file, source, data: {}, body: "", error: `frontmatter did not parse: ${(err as Error).message}` }

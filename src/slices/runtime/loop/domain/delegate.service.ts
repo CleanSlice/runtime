@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import type { Event } from "../../../setup/event"
 import type { TaskManager, Task } from "../../../agent/task/domain/task.service"
-import { isDelegateBlocked, type IDelegateRequest, type IDelegateResult } from "../../../agent/task/domain/delegate.types"
+import { isDelegateAllowed, type IDelegateRequest, type IDelegateResult } from "../../../agent/task/domain/delegate.types"
 import type { ILoopContext, ILoopResult } from "./loop.types"
 import { createLogger } from "../../../setup/logger"
 
@@ -11,6 +11,8 @@ export interface IDelegateConfig {
   timeoutMs: number
   maxParallel: number
   summaryChars: number
+  /** Let workers call write-effect tools. Off by default: workers observe, the parent acts. */
+  allowWrite?: boolean
 }
 
 /** The slice of LoopService a worker needs: run a context to completion. */
@@ -110,7 +112,9 @@ export class DelegateService {
       worker: true,
       systemPrompt: parent.systemPrompt,
       history: [goal],
-      tools: parent.tools.filter(t => !isDelegateBlocked(t.name)),
+      // Same person, same privileges, fewer tools: a worker never gains what
+      // its parent lacked, and by default only observes.
+      tools: parent.tools.filter(t => isDelegateAllowed(t, this.deps.config.allowWrite === true)),
       send: async (text) => { collected.push(text) },
       streamSend: async () => undefined,
       agentConfig: parent.agentConfig,

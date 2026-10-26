@@ -284,6 +284,31 @@ describe("LoopService completion contract (CLEAN-150 US6)", () => {
     expect(sent).toEqual(["One worker was cancelled at the budget; four results are below."])
   })
 
+  test("inside a worker a write call is refused per call, even on an allowed per-call tool", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "delegate-loop-"))
+    const seen: unknown[] = []
+    const file: Tool = {
+      name: "file", description: "rw", schema: z.object({ action: z.string(), path: z.string() }),
+      effectOf: (p) => ((p as { action: string }).action === "read" ? "read" : "write"),
+      execute: async (p) => { seen.push(p); return { ok: true } },
+    }
+    const { llm } = scriptedLlm([
+      { text: "", toolCalls: [{ name: "file", params: { action: "write", path: "x" } }, { name: "file", params: { action: "read", path: "x" } }], stopReason: "tool_use" },
+    ])
+    const { session, events } = recordingSession()
+    const ctx = makeCtx(agentDir, [file], [])
+    ctx.worker = true
+    await new LoopService({
+      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
+      voice: {} as never, channel: {} as never, tools: [file],
+    }).run(ctx)
+    expect(seen).toEqual([{ action: "read", path: "x" }])
+    const results = events.filter(e => e.type === "tool_result").map(e => e.data as { result: { error?: string }; blocked?: boolean })
+    expect(results[0]!.blocked).toBe(true)
+    expect(results[0]!.result.error).toMatch(/^Workers are read-only/)
+    expect(results[1]!.blocked).toBeUndefined()
+  })
+
   test("without running workers the turn ends as usual, and a worker context never waits", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "delegate-loop-"))
     const tasks = new TaskManager(new TaskGateway())

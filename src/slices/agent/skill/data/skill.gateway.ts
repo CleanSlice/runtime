@@ -2,7 +2,7 @@ import type { ISkillGateway } from "../domain/skill.gateway"
 import type { Skill, SkillSource, SkillMetadata, RegistryEntry, SkillRegistry } from "../domain/skill.types"
 import { existsSync, readdirSync, rmSync } from "fs"
 import { join, resolve, dirname } from "path"
-import matter from "gray-matter"
+import { safeMatter } from "../../../setup/frontmatter/safeMatter"
 
 const REGISTRY_URL = "https://raw.githubusercontent.com/cleanslice/skills/main/registry.json"
 const REGISTRY_CACHE_TTL = 60 * 60 * 1000 // 1 hour
@@ -125,7 +125,7 @@ export class SkillGateway implements ISkillGateway {
 
     try {
       const raw = await Bun.file(skillPath).text()
-      const { data, content } = matter(raw)
+      const { data, content } = safeMatter(raw)
 
       const metadata: SkillMetadata = {}
       if (data.metadata) {
