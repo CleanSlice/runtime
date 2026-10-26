@@ -1,0 +1,101 @@
+{"mode":"skill-loaded","threshold":90,"maxFalseLoadPct":5,"description":"SC-003: given the skill catalogue of the example agent plus the four ranch skills, the model loads the right skill for a message (expect = skill name) and loads nothing for messages no skill covers (expect = null). Needs LLM_API_KEY; skipped as pending without it.","skills":[{"name":"ranch","description":"Operate the ranch platform through its API: agents (list, create, restart, delete, pods and their state, logs, usage and spend, admin rights, the files of an agent such as SOUL.md), templates and their files, the platform skill catalogue (import from GitHub), knowledge bases (attach, query, sources, freshness), LLM credentials, users and settings."},{"name":"ranch-sessions","description":"Third-party services connected or linked to a ranch agent (Instagram, X/Twitter, Google): list the connected sessions and accounts, request or renew a login, disconnect a service, read session secrets and cookie profiles."},{"name":"runtime-tools","description":"What the agent itself can do and which built-in tool does it: shell commands and background processes, HTTP and fetching URLs, web search, browser and screenshots, PDF and image analysis, unzip, voice messages, scheduling, memory and secrets. Consult for any question about the agent's own tools or capabilities, or before invoking an unknown command name."},{"name":"skill-creator","description":"Create, validate, fix and manage agent skills: write a new skill, turn a procedure into a reusable skill, SKILL.md frontmatter and description rules, size limits, directory layout (scripts, references)."},{"name":"github","description":"Work with GitHub repositories: open, review and merge pull requests, issues and labels, releases and tags, release notes, commit and file history."}]}
+{"id":"r01","message":"how many knowledge bases are stale?","expect":"ranch"}
+{"id":"r02","message":"restart the billing bot, it's stuck","expect":"ranch"}
+{"id":"r03","message":"spin up a new support assistant from the FAQ template","expect":"ranch"}
+{"id":"r04","message":"which of our bots are crashlooping right now?","expect":"ranch"}
+{"id":"r05","message":"show me the pods that aren't running","expect":"ranch"}
+{"id":"r06","message":"delete the test agent I made yesterday","expect":"ranch"}
+{"id":"r07","message":"what templates do we have?","expect":"ranch"}
+{"id":"r08","message":"attach the pricing knowledge base to the sales bot","expect":"ranch"}
+{"id":"r09","message":"rotate the anthropic key for all agents","expect":"ranch"}
+{"id":"r10","message":"who has access to the platform?","expect":"ranch"}
+{"id":"r11","message":"the onboarding bot answers slowly, check its logs","expect":"ranch"}
+{"id":"r12","message":"how much did the top three agents spend this month?","expect":"ranch"}
+{"id":"r13","message":"rename the template 'Support v2' to 'Support'","expect":"ranch"}
+{"id":"r14","message":"import that skill from github into the platform catalogue","expect":"ranch"}
+{"id":"r15","message":"is the rancher template up to date?","expect":"ranch"}
+{"id":"r16","message":"list agents that use the gpt credential","expect":"ranch"}
+{"id":"r17","message":"change the setting that controls the default model","expect":"ranch"}
+{"id":"r18","message":"add a knowledge source for the docs site","expect":"ranch"}
+{"id":"r19","message":"what does the sales bot's SOUL.md say?","expect":"ranch"}
+{"id":"r20","message":"give the marketing bot admin rights","expect":"ranch"}
+{"id":"r21","message":"which credentials are inactive?","expect":"ranch"}
+{"id":"r22","message":"create a bot for HR with the standard template and the policies knowledge","expect":"ranch"}
+{"id":"r23","message":"query the product knowledge base for refund rules","expect":"ranch"}
+{"id":"r24","message":"save this file into the support template","expect":"ranch"}
+{"id":"r25","message":"why is agent 42 pending for 20 minutes?","expect":"ranch"}
+{"id":"s01","message":"is my instagram connected?","expect":"ranch-sessions"}
+{"id":"s02","message":"log the agent into X so it can post","expect":"ranch-sessions"}
+{"id":"s03","message":"which services are linked to this agent?","expect":"ranch-sessions"}
+{"id":"s04","message":"the google session expired, request a new login","expect":"ranch-sessions"}
+{"id":"s05","message":"show the cookies profile for instagram","expect":"ranch-sessions"}
+{"id":"s06","message":"disconnect twitter from this bot","expect":"ranch-sessions"}
+{"id":"s07","message":"can you read my connected accounts?","expect":"ranch-sessions"}
+{"id":"s08","message":"we need a login link for the client's instagram","expect":"ranch-sessions"}
+{"id":"s09","message":"what session secrets do you hold for X?","expect":"ranch-sessions"}
+{"id":"s10","message":"re-authenticate the google workspace connection","expect":"ranch-sessions"}
+{"id":"t01","message":"what tools do you have for reading PDFs?","expect":"runtime-tools"}
+{"id":"t02","message":"can you take a screenshot of a page?","expect":"runtime-tools"}
+{"id":"t03","message":"how do you run a long build in the background?","expect":"runtime-tools"}
+{"id":"t04","message":"which command fetches a URL as text?","expect":"runtime-tools"}
+{"id":"t05","message":"do you have something to search the web?","expect":"runtime-tools"}
+{"id":"t06","message":"what's the difference between browser and browser_play?","expect":"runtime-tools"}
+{"id":"t07","message":"how do you send a voice message?","expect":"runtime-tools"}
+{"id":"t08","message":"list the built-in tools you can call","expect":"runtime-tools"}
+{"id":"t09","message":"can you unzip a file I send?","expect":"runtime-tools"}
+{"id":"t10","message":"how do I schedule a recurring check?","expect":"runtime-tools"}
+{"id":"k01","message":"write a new skill for weather lookups","expect":"skill-creator"}
+{"id":"k02","message":"what's the right frontmatter for a SKILL.md?","expect":"skill-creator"}
+{"id":"k03","message":"validate the skill I just added","expect":"skill-creator"}
+{"id":"k04","message":"make a skill that wraps our internal CRM API","expect":"skill-creator"}
+{"id":"k05","message":"how long can a skill file be?","expect":"skill-creator"}
+{"id":"k06","message":"where do scripts go inside a skill folder?","expect":"skill-creator"}
+{"id":"k07","message":"turn these steps into a reusable skill","expect":"skill-creator"}
+{"id":"k08","message":"the skill description should say when to use it — fix mine","expect":"skill-creator"}
+{"id":"k09","message":"create a skill for daily digests","expect":"skill-creator"}
+{"id":"k10","message":"check that my skill lists its required env vars","expect":"skill-creator"}
+{"id":"g01","message":"open a pull request for the fix branch","expect":"github"}
+{"id":"g02","message":"what issues are assigned to me?","expect":"github"}
+{"id":"g03","message":"review PR 42 and leave comments","expect":"github"}
+{"id":"g04","message":"cut a release tagged v1.2.0","expect":"github"}
+{"id":"g05","message":"close the stale issues older than a year","expect":"github"}
+{"id":"g06","message":"who last changed the README in the runtime repo?","expect":"github"}
+{"id":"g07","message":"merge the dependabot PRs","expect":"github"}
+{"id":"g08","message":"label issue 17 as bug","expect":"github"}
+{"id":"g09","message":"how many open PRs do we have?","expect":"github"}
+{"id":"g10","message":"draft release notes from the merged PRs","expect":"github"}
+{"id":"n01","message":"hi","expect":null}
+{"id":"n02","message":"thanks, that's all","expect":null}
+{"id":"n03","message":"what's 17% of 2300?","expect":null}
+{"id":"n04","message":"translate 'good morning' to spanish","expect":null}
+{"id":"n05","message":"summarize this paragraph: The quick brown fox jumps over the lazy dog repeatedly.","expect":null}
+{"id":"n06","message":"what day of the week is 2026-12-25?","expect":null}
+{"id":"n07","message":"write a haiku about rain","expect":null}
+{"id":"n08","message":"explain what a mutex is","expect":null}
+{"id":"n09","message":"remind me what we discussed about the budget","expect":null}
+{"id":"n10","message":"convert 5 miles to km","expect":null}
+{"id":"n11","message":"can you speak german?","expect":null}
+{"id":"n12","message":"what's your name?","expect":null}
+{"id":"n13","message":"rewrite this email to sound friendlier: We need the report now.","expect":null}
+{"id":"n14","message":"give me three ideas for a team offsite","expect":null}
+{"id":"n15","message":"is 97 a prime number?","expect":null}
+{"id":"n16","message":"what time zone is Berlin in?","expect":null}
+{"id":"n17","message":"sort these: pear, apple, fig","expect":null}
+{"id":"n18","message":"ok","expect":null}
+{"id":"n19","message":"what did I ask you earlier?","expect":null}
+{"id":"n20","message":"spell 'necessary'","expect":null}
+{"id":"n21","message":"how are you today?","expect":null}
+{"id":"n22","message":"what's the capital of Australia?","expect":null}
+{"id":"n23","message":"draft a two-line apology for a late delivery","expect":null}
+{"id":"n24","message":"count the words in: one two three four","expect":null}
+{"id":"n25","message":"what's a good name for a grey cat?","expect":null}
+{"id":"m01","message":"fetch https://example.com and tell me the title","expect":null,"allow":["runtime-tools"]}
+{"id":"m02","message":"run ls in the workspace","expect":null,"allow":["runtime-tools"]}
+{"id":"m03","message":"save my API key: abc123","expect":null,"allow":["runtime-tools"]}
+{"id":"m04","message":"remember that I prefer short answers","expect":null,"allow":["runtime-tools"]}
+{"id":"m05","message":"search the web for bun 1.2 release notes","expect":null,"allow":["runtime-tools"]}
+{"id":"m06","message":"what did the http call return last time?","expect":null,"allow":["runtime-tools"]}
+{"id":"m07","message":"schedule a reminder for 9am tomorrow","expect":null,"allow":["runtime-tools"]}
+{"id":"m08","message":"analyze the image I just sent","expect":null,"allow":["runtime-tools"]}
+{"id":"m09","message":"what's in my memory about the client?","expect":null,"allow":["runtime-tools"]}
+{"id":"m10","message":"read workspace/notes.md","expect":null,"allow":["runtime-tools"]}

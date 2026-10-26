@@ -4,7 +4,7 @@ import type { SkillSummary } from "../skill/domain/skill.types"
 import type { IBuiltPrompt } from "./domain/agent.types"
 
 export type { IBuiltPrompt, IPromptBreakdown, IPromptSection, IOnDemandLoad, PromptSectionName } from "./domain/agent.types"
-export { SECTION_SEPARATOR } from "./domain/agent.service"
+export { SECTION_SEPARATOR, SKILL_CATALOGUE_INSTRUCTIONS } from "./domain/agent.service"
 
 export class AgentModule {
   private service: AgentService

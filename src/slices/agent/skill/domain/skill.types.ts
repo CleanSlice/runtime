@@ -19,6 +19,27 @@ export interface SkillSummary {
   name: string
   description: string
   metadata?: SkillMetadata
+  /** Why the skill cannot be loaded right now (missing env / binary), shown in the catalogue. */
+  unavailable?: string
+}
+
+/** How skills enter a turn: pulled by the model with `skill_load`, or the legacy keyword matcher. */
+export type SkillSelection = "model" | "keyword"
+
+export interface SkillServiceOptions {
+  selection: SkillSelection
+  /** A loaded skill stays active this many turns after its last use. */
+  retainTurns: number
+  /** Environment seen by `requires.env` checks. */
+  env: Record<string, string | undefined>
+  /** Binary lookup for `requires.bins` checks. */
+  hasBin: (bin: string) => boolean
+}
+
+export interface LoadedSkillInfo {
+  name: string
+  chars: number
+  retainedForTurns: number
 }
 
 // ─── Skill (full — loaded on demand) ─────────────────────────────────────────

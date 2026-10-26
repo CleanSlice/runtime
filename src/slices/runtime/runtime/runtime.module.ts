@@ -127,7 +127,7 @@ export class AgentRuntime {
     this.heartbeat = new HeartbeatModule(agentDir, this.config.heartbeat.intervalMin * 60 * 1000)
 
     // Dynamically loaded skills (markdown files in .agent/skills/)
-    this.skills = new SkillModule(agentDir)
+    this.skills = new SkillModule(agentDir, this.config.skills)
 
     // Per-user voice/TTS toggle
     const voice = new VoiceModule(agentDir)
@@ -159,13 +159,17 @@ export class AgentRuntime {
     this.guard = new GuardModule(agentDir, this.config.guard)
 
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
-    const commands = new CommandService({ access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm, guard: this.guard })
+    const commands = new CommandService({
+      access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm, guard: this.guard,
+      // Resolved at call time: the runtime service is built a few lines below.
+      context: (sessionId) => this.runtimeService.getLastBreakdown(sessionId),
+    })
 
     // ── Runtime slices (orchestration) ─────────────────────────────
 
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills },
       {
         maxIterations: this.config.maxIterations,
         maxToolOutputChars: this.config.tools.maxOutputChars,

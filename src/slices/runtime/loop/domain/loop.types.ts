@@ -4,6 +4,7 @@ import type { Task } from "../../../agent/task/domain/task.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule, IBridleDebugPayload } from "../../../setup/channel"
 import type { IThinkingStep, MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { IOnDemandLoad, IPromptBreakdown } from "../../../agent/agent/domain/agent.types"
 
 export interface ILoopConfig {
   maxIterations: number
@@ -113,6 +114,12 @@ export interface ILoopContext {
    * BRIDLE_DEBUG before calling this — the function itself does not gate.
    */
   sendDebug?: (payload: IBridleDebugPayload) => void
+  /** This session's turn number — skill retention counts in turns (CLEAN-150 US2). */
+  turn?: number
+  /** The system prompt accounting of this turn, handed to `agent_status`. */
+  breakdown?: IPromptBreakdown
+  /** Called when the model pulls a skill or a tool description in mid-turn, so the breakdown can list it. */
+  onDemandLoad?: (load: IOnDemandLoad) => void
 }
 
 export interface ILoopResult {

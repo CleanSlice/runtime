@@ -382,6 +382,8 @@ Outcomes compose strictest-first (block > redact > record). The platform ships p
 | `redact-credentials` | after | Masks API keys, OAuth tokens, bearer headers, JWTs in tool results and in replies |
 | `record-all` | after | Appends every call (tool, outcome, duration, sizes, rules fired) to `data/toolcalls.jsonl` |
 
+**Context budget.** The always-on prompt is accounted per section against `contextBudget`; `/context` shows the last turn's split and what was pulled in on demand, `agent_status` carries the same under `context`. The `## Rules` section of `SOUL.md` is never truncated to fit `memory.limits.soul` — reference material goes first, and an overflow is logged at start-up naming the file. Skills enter a turn when the model calls `skill_load` (their catalogue description says when), stay for `skills.retainTurns` turns, and ride in the history rather than the system prompt so the cached prefix stays stable; a skill whose `requires.env` / `requires.bins` are unmet is listed as `(unavailable: …)`. Tools outside `tools.coreCatalogue` appear as one-line stubs and `tool_describe` returns the full description and parameters.
+
 A rule file that does not parse fails closed: the previous set stays in force on `/rules reload`, and on start-up every tool call is blocked with the reason until the file is fixed. Observers (`record`) fail open and are bounded by `guard.observerTimeoutMs`. `/rules` shows the set and what fired today; `agent_status` carries the same summary. `bun run eval tests/evals/guardrails.jsonl` checks the baseline against 31 extraction attempts.
 
 ### Bot commands
@@ -402,6 +404,7 @@ Users can interact with the bot via Telegram/Slack commands:
 | `/skills reload` | Reload skills from disk (admin only) |
 | `/rules` | Guardrails in force and what fired today (admin only) |
 | `/rules reload` | Re-read `.agent/rules/` — a bad file keeps the previous set (admin only) |
+| `/context` | System prompt size per section vs budget, and what was loaded on demand last turn (admin only) |
 
 ---
 

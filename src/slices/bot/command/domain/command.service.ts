@@ -10,6 +10,7 @@ import type { SessionModule } from "../../../agent/session/session.module"
 import type { MemoryModule } from "../../../agent/memory/memory.module"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { GuardModule } from "../../../agent/guard"
+import type { IPromptBreakdown } from "../../../agent/agent/agent.module"
 
 interface CommandDeps {
   access: AccessModule
@@ -21,6 +22,8 @@ interface CommandDeps {
   llm: LlmModule
   /** Guardrails — `/rules` (CLEAN-150 US1). Optional so bare deployments without rules still command. */
   guard?: GuardModule
+  /** The latest system-prompt accounting of a session — `/context` (CLEAN-150 US2). */
+  context?: (sessionId: string) => IPromptBreakdown | undefined
 }
 
 // Commands only await the send; the id a channel may hand back is not theirs to use.
@@ -45,6 +48,11 @@ export class CommandService {
     // /rules [reload] — guardrails in force and what fired (admin only)
     if (text === "/rules" || text === "/rules reload") {
       return this.handleRules(ctx, text, send)
+    }
+
+    // /context — where the always-on prompt's characters went last turn (admin only)
+    if (text === "/context") {
+      return this.handleContext(ctx, send)
     }
 
     // /voice toggle
@@ -84,7 +92,8 @@ export class CommandService {
         `/access — Show current access strategy\n` +
         `/access <name> — Switch strategy: open|public|allowlist|code|approval (admin only)\n` +
         `/rules — Guardrails in force and what fired today (admin only)\n` +
-        `/rules reload — Re-read .agent/rules/ (admin only)`,
+        `/rules reload — Re-read .agent/rules/ (admin only)\n` +
+        `/context — System prompt size per section vs budget, and what was loaded on demand (admin only)`,
       )
       return { handled: true }
     }
@@ -184,6 +193,31 @@ export class CommandService {
       `${head}\n\n${lines.join("\n") || "(none)"}` +
       `\n\nAgent rules live in \`.agent/rules/*.md\`; protected rules come with the platform. ` +
       (text === "/rules reload" ? "Reloaded from disk." : "Use `/rules reload` after editing."),
+    )
+    return { handled: true }
+  }
+
+  private async handleContext(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
+    if (!this.deps.access.isAdmin(ctx.from)) {
+      await send("🔒 Only admins can see the context breakdown.")
+      return { handled: true }
+    }
+    const b = this.deps.context?.(ctx.sessionId)
+    if (!b) {
+      await send("No turn has run in this session yet — send a message first, then `/context`.")
+      return { handled: true }
+    }
+    const pct = (n: number, d: number) => d > 0 ? ` (${Math.round((n / d) * 100)}%)` : ""
+    const lines = b.sections.map(s =>
+      `• ${s.name}: ${s.chars.toLocaleString()}${s.budget !== undefined ? ` / ${s.budget.toLocaleString()}${pct(s.chars, s.budget)}` : ""}${s.over ? " ⚠ over" : ""}`,
+    )
+    const onDemand = b.onDemand.length > 0
+      ? b.onDemand.map(l => `• ${l.kind} ${l.name}: ${l.chars.toLocaleString()}`).join("\n")
+      : "(nothing loaded on demand this turn)"
+    await send(
+      `📐 *Context — last turn*\n\n` +
+      `Always-on prompt: ${b.total.toLocaleString()} / ${b.budget.toLocaleString()} chars${pct(b.total, b.budget)}${b.total > b.budget ? " ⚠ over budget" : ""}\n\n` +
+      `${lines.join("\n")}\n\n*On demand:*\n${onDemand}`,
     )
     return { handled: true }
   }

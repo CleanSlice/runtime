@@ -3,6 +3,18 @@ import type { AgentConfig, IBuiltPrompt, IPromptSection, PromptSectionName } fro
 
 /** Joins the system prompt's sections; the runtime appends skills with the same separator. */
 export const SECTION_SEPARATOR = "\n\n---\n\n"
+
+/**
+ * How the model is told to use the skill catalogue (CLEAN-150 US2). Shared
+ * with the skill-selection eval so the measured behaviour is the shipped one.
+ * Recall is favoured: a skill loaded and unused costs a few hundred tokens,
+ * a skill missed means acting without its instructions.
+ */
+export const SKILL_CATALOGUE_INSTRUCTIONS =
+  `Each entry says when the skill applies. Before you answer or act, check the list: if the request touches a skill's area — ` +
+  `including questions about what you can do there — call \`skill_load\` with its name first; the full instructions arrive in the ` +
+  `conversation and stay for a few turns. Load at most the one or two skills that fit; when none fits, answer directly without loading. ` +
+  `Skills marked unavailable cannot be loaded until the missing requirement is met.`
 import type { SkillSummary } from "../../skill/domain/skill.types"
 import { SILENT_REPLY_TOKEN } from "./silentReply"
 
@@ -112,9 +124,9 @@ export class AgentService {
     const allSkills = [...config.skills, ...(opts?.skills ?? [])]
     if (allSkills.length > 0) {
       const catalog = allSkills
-        .map(s => `- **${s.name}**: ${s.description}`)
+        .map(s => `- **${s.name}**: ${s.description}${s.unavailable ? ` (unavailable: ${s.unavailable})` : ""}`)
         .join("\n")
-      push("skillsCatalog", `# Available Skills\n\nThese skills are loaded automatically when relevant to the task.\n\n${catalog}`)
+      push("skillsCatalog", `# Available Skills\n\n${SKILL_CATALOGUE_INSTRUCTIONS}\n\n${catalog}`)
     }
 
     if (opts?.secretKeys && opts.secretKeys.length > 0) {
