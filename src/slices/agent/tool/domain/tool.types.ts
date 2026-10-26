@@ -9,6 +9,7 @@ import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-tur
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import type { GuardModule } from "../../guard/guard.module"
 import type { SkillModule } from "../../skill/skill.module"
+import type { InstinctModule } from "../../instinct/instinct.module"
 import type { IPromptBreakdown } from "../../agent/domain/agent.types"
 
 export type ToolEffect = "read" | "write"
@@ -65,6 +66,8 @@ export interface ToolContext {
   guard?: GuardModule
   /** Skills — `skill_load` pulls a skill into the session for a few turns (CLEAN-150 US2). */
   skills?: SkillModule
+  /** Learned behaviours — `agent_status.learned` (CLEAN-150 US3). */
+  instincts?: InstinctModule
   /** This session's turn number, for skill retention. */
   turn?: number
   /** The system-prompt accounting of this turn — `agent_status.context`. */

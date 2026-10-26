@@ -386,6 +386,20 @@ Outcomes compose strictest-first (block > redact > record). The platform ships p
 
 A rule file that does not parse fails closed: the previous set stays in force on `/rules reload`, and on start-up every tool call is blocked with the reason until the file is fixed. Observers (`record`) fail open and are bounded by `guard.observerTimeoutMs`. `/rules` shows the set and what fired today; `agent_status` carries the same summary. `bun run eval tests/evals/guardrails.jsonl` checks the baseline against 31 extraction attempts.
 
+### Learning
+
+The agent learns behaviours, not just notes. Every `memory.review.everyTurns` turns (and on `/clear`) the auxiliary model reviews the conversation and reports, in JSON, durable facts for `MEMORY.md` plus **instincts** — one trigger, one action, with evidence pointing at the exchange. Each instinct lives as one markdown file in `.agent/memory/instincts/` and carries a confidence:
+
+| Source | Starts at | Band |
+|--------|-----------|------|
+| explicit admin rule ("never …", "always …") | 0.9, pinned | core — rendered as a standing rule |
+| correction ("shorter next time") | 0.6 | apply — shapes the agent's actions |
+| resolved error, repeated workflow | 0.5 | apply |
+
+Confidence moves with experience: +0.05 when the review sees the behaviour applied without complaint, −0.2 when the person pushes back, −0.05 per `decayDays` without reinforcement (pinned ones never decay). Bands (`memory.instincts.bands`): below `suggested` a behaviour is hidden, from `suggested` it is listed for the operator only, from `apply` it is rendered into the prompt, from `core` it reads as a rule. A contradicting pair keeps the higher confidence in the prompt and surfaces the conflict. Learned behaviours can never relax a guardrail — they only ever reach the prompt, never the guard.
+
+`/learned` lists everything by band with evidence counts; `/learned show <id>` the evidence; `pin` / `unpin`, `prune [<id>]`, `promote <id…>` (writes `skills/learned-<slug>/SKILL.md` for review), `export`. `agent_status.learned` carries the counts. `bun run eval tests/evals/corrections.jsonl` checks that one correction holds on the next matching messages.
+
 ### Bot commands
 
 Users can interact with the bot via Telegram/Slack commands:
@@ -405,6 +419,7 @@ Users can interact with the bot via Telegram/Slack commands:
 | `/rules` | Guardrails in force and what fired today (admin only) |
 | `/rules reload` | Re-read `.agent/rules/` — a bad file keeps the previous set (admin only) |
 | `/context` | System prompt size per section vs budget, and what was loaded on demand last turn (admin only) |
+| `/learned` | What the agent has learned, with confidence; `show`, `pin`, `unpin`, `prune`, `promote`, `export` (admin only) |
 
 ---
 

@@ -20,6 +20,7 @@ import { CITATIONS_PROMPT } from "../../../agent/agent/domain/prompts/citations"
 import { truncateStrings } from "../../../agent/session/domain/compaction.service"
 import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/contextBudget"
 import { isSkillEvent, skillEvent } from "../../../agent/skill/domain/skillEvent"
+import type { InstinctModule } from "../../../agent/instinct"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
@@ -41,6 +42,8 @@ interface RuntimeDeps {
   access: AccessModule
   agentDir: string
   config: IAgentConfig
+  /** Learned behaviours rendered into the prompt (CLEAN-150 US3). */
+  instincts?: InstinctModule
 }
 
 export class RuntimeService {
@@ -336,6 +339,7 @@ export class RuntimeService {
       channelContext: this.buildChannelContext(msg),
       // Only a client that can draw sources is asked to cite (CLEAN-138).
       ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
+      instincts: this.deps.instincts?.render(),
     })
     let systemPrompt = built.prompt
     const sections = [...built.sections]

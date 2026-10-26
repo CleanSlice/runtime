@@ -1,38 +1,11 @@
 import type { MemoryLimits, MemoryReviewConfig } from "../../../agent/memory/domain/memory.types"
 import { DEFAULT_MEMORY_LIMITS, DEFAULT_MEMORY_REVIEW } from "../../../agent/memory/domain/memory.types"
 
-/**
- * Learned-behaviour ("instinct") tuning. Confidence runs 0.1–0.95; the three
- * bands decide what a behaviour may do: below `suggested` it is invisible,
- * from `suggested` it is listed for the operator only, from `apply` it shapes
- * the agent's actions, from `core` it reads as a standing rule.
- */
-export interface IInstinctConfig {
-  enabled: boolean
-  bands: { suggested: number; apply: number; core: number }
-  /** Starting confidence per source. Explicit operator rules start pinned at `explicitRule`. */
-  start: { correction: number; errorResolution: number; repetition: number; explicitRule: number }
-  /** Added on each uncorrected application. */
-  reinforce: number
-  /** Subtracted on an explicit correction. */
-  correct: number
-  /** Subtracted per `decayDays` without reinforcement (pinned behaviours exempt). */
-  decay: number
-  decayDays: number
-  /** Most behaviours rendered into the prompt, highest confidence first. */
-  maxInjected: number
-}
+import type { IInstinctConfig } from "../../../agent/instinct/domain/instinct.types"
+import { DEFAULT_INSTINCT_CONFIG } from "../../../agent/instinct/domain/instinct.types"
 
-export const DEFAULT_INSTINCT_CONFIG: IInstinctConfig = {
-  enabled: true,
-  bands: { suggested: 0.3, apply: 0.5, core: 0.8 },
-  start: { correction: 0.6, errorResolution: 0.5, repetition: 0.5, explicitRule: 0.9 },
-  reinforce: 0.05,
-  correct: 0.2,
-  decay: 0.05,
-  decayDays: 14,
-  maxInjected: 8,
-}
+export type { IInstinctConfig }
+export { DEFAULT_INSTINCT_CONFIG }
 
 /** Runtime configuration loaded from agent.config.json */
 export interface IAgentConfig {

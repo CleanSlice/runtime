@@ -127,27 +127,27 @@ CleanSlice vertical slices under `src/slices/{setup,agent,bot,runtime}/<slice>/{
 
 ### Tests for User Story 3
 
-- [ ] T045 [P] [US3] Spec: starting confidence per source, `reinforce` +0.05 cap 0.95, `correct` −0.2 floor 0.1, decay −0.05 per `decayDays`, pinned never decays, band boundaries, conflict marks the lower one `conflictsWith`, prune candidates below 0.3 for > 2×decayDays, in `src/slices/agent/instinct/domain/instinct.service.spec.ts`
-- [ ] T046 [P] [US3] Spec: gateway round-trips the frontmatter schema from contracts/commands-and-config.md and ignores malformed files with one warning, in `src/slices/agent/instinct/data/instinct.gateway.spec.ts`
-- [ ] T047 [P] [US3] Spec: `render()` emits core as standing rules, apply as "Learned behaviours", omits suggested, honours `maxInjected`, in `src/slices/agent/instinct/domain/instinct.service.spec.ts`
-- [ ] T048 [P] [US3] Spec: review pass output in instinct shape is parsed into `create()` calls; an explicit "always …" line from an admin creates a pinned core instinct, in `src/slices/agent/memory/domain/memory.service.spec.ts`
+- [X] T045 [P] [US3] Spec: starting confidence per source, `reinforce` +0.05 cap 0.95, `correct` −0.2 floor 0.1, decay −0.05 per `decayDays`, pinned never decays, band boundaries, conflict marks the lower one `conflictsWith`, prune candidates below 0.3 for > 2×decayDays, in `src/slices/agent/instinct/domain/instinct.service.spec.ts`
+- [X] T046 [P] [US3] Spec: gateway round-trips the frontmatter schema from contracts/commands-and-config.md and ignores malformed files with one warning, in `src/slices/agent/instinct/data/instinct.gateway.spec.ts`
+- [X] T047 [P] [US3] Spec: `render()` emits core as standing rules, apply as "Learned behaviours", omits suggested, honours `maxInjected`, in `src/slices/agent/instinct/domain/instinct.service.spec.ts`
+- [X] T048 [P] [US3] Spec: review pass output in instinct shape is parsed into `create()` calls; an explicit "always …" line from an admin creates a pinned core instinct, in `src/slices/agent/memory/domain/memory.service.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T049 [P] [US3] Create `IInstinct`, `IEvidence`, `InstinctSource`, `InstinctBand`, `IInstinctConfig` in `src/slices/agent/instinct/domain/instinct.types.ts`
-- [ ] T050 [P] [US3] Create `IInstinctGateway` (`list()`, `write(instinct)`, `remove(id)`) in `src/slices/agent/instinct/domain/instinct.gateway.ts`
-- [ ] T051 [US3] Implement `InstinctService` (`create`, `reinforce`, `correct`, `decayAll(now)`, `pin`, `unpin`, `prune`, `promote(ids) → skill content`, `conflicts()`, `render(maxInjected)`, `summary()`) in `src/slices/agent/instinct/domain/instinct.service.ts`
-- [ ] T052 [US3] Implement the file gateway over `.agent/memory/instincts/<id>.md` with `gray-matter` in `src/slices/agent/instinct/data/instinct.gateway.ts`
-- [ ] T053 [US3] Write the review prompt that asks the aux model for corrections, error resolutions, repeated workflows and explicit admin rules in instinct shape (trigger / action / source / evidence refs), replacing the `[fact]/[workflow]` prompt, in `src/slices/agent/instinct/domain/prompts/instinct-review.prompt.ts`
-- [ ] T054 [US3] Create `InstinctModule` and `index.ts` in `src/slices/agent/instinct/instinct.module.ts` and `src/slices/agent/instinct/index.ts`
-- [ ] T055 [US3] Retarget `MemoryService.doReview` to call the instinct prompt, attach the turn's tool-call records as evidence, and hand results to `InstinctService.create`; keep `MEMORY.md ## Learned` writes only for `[fact]` lines, in `src/slices/agent/memory/domain/memory.service.ts` and `src/slices/agent/memory/memory.module.ts`
-- [ ] T056 [US3] Reinforce on use: when a turn ends without a correction and an `apply`/`core` instinct was injected, call `reinforce` for the injected ids (loop passes the injected list via `ILoopContext`), in `src/slices/runtime/loop/domain/loop.service.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts`
-- [ ] T057 [US3] Inject `render()` output under `# Memory` in `buildSystemPrompt` with its own `instincts` budget section in `src/slices/agent/agent/domain/agent.service.ts`
-- [ ] T058 [US3] Run `decayAll` from the heartbeat tick (once per day, persisted `lastDecay` in `.agent/data/instincts.json`) in `src/slices/agent/heartbeat/heartbeat.module.ts` and wire in `src/slices/runtime/runtime/runtime.module.ts`
-- [ ] T059 [US3] Add `/learned`, `/learned show <id>`, `/learned pin|unpin <id>`, `/learned prune [<id>]`, `/learned promote <id…>` (writes via the skill gateway to `.agent/skills/learned-<slug>/SKILL.md`, marks `promotedTo`, reloads skills), `/learned export` (attachment), in `src/slices/bot/command/domain/command.service.ts`
-- [ ] T060 [US3] Add the `learned` summary to `agent_status` in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
-- [ ] T061 [US3] Create the corrections eval set (correction turn + 10 follow-ups each, expected behaviour) in `tests/evals/corrections.jsonl` and the `holds-after-correction` assertion mode in `scripts/eval.ts`
-- [ ] T062 [US3] Document instincts (bands, numbers, commands, FR-016 guarantee) in a "Learning" section of `README.md`
+- [X] T049 [P] [US3] Create `IInstinct`, `IEvidence`, `InstinctSource`, `InstinctBand`, `IInstinctConfig` in `src/slices/agent/instinct/domain/instinct.types.ts`
+- [X] T050 [P] [US3] Create `IInstinctGateway` (`list()`, `write(instinct)`, `remove(id)`) in `src/slices/agent/instinct/domain/instinct.gateway.ts`
+- [X] T051 [US3] Implement `InstinctService` (`create`, `reinforce`, `correct`, `decayAll(now)`, `pin`, `unpin`, `prune`, `promote(ids) → skill content`, `conflicts()`, `render(maxInjected)`, `summary()`) in `src/slices/agent/instinct/domain/instinct.service.ts`
+- [X] T052 [US3] Implement the file gateway over `.agent/memory/instincts/<id>.md` with `gray-matter` in `src/slices/agent/instinct/data/instinct.gateway.ts`
+- [X] T053 [US3] Write the review prompt that asks the aux model for corrections, error resolutions, repeated workflows and explicit admin rules in instinct shape (trigger / action / source / evidence refs), replacing the `[fact]/[workflow]` prompt, in `src/slices/agent/instinct/domain/prompts/instinct-review.prompt.ts`
+- [X] T054 [US3] Create `InstinctModule` and `index.ts` in `src/slices/agent/instinct/instinct.module.ts` and `src/slices/agent/instinct/index.ts`
+- [X] T055 [US3] Retarget `MemoryService.doReview` to call the instinct prompt, attach the turn's tool-call records as evidence, and hand results to `InstinctService.create`; keep `MEMORY.md ## Learned` writes only for `[fact]` lines, in `src/slices/agent/memory/domain/memory.service.ts` and `src/slices/agent/memory/memory.module.ts`
+- [X] T056 [US3] Reinforce on use: when a turn ends without a correction and an `apply`/`core` instinct was injected, call `reinforce` for the injected ids (loop passes the injected list via `ILoopContext`), in `src/slices/runtime/loop/domain/loop.service.ts` and `src/slices/runtime/runtime/domain/runtime.service.ts`
+- [X] T057 [US3] Inject `render()` output under `# Memory` in `buildSystemPrompt` with its own `instincts` budget section in `src/slices/agent/agent/domain/agent.service.ts`
+- [X] T058 [US3] Run `decayAll` from the heartbeat tick (once per day, persisted `lastDecay` in `.agent/data/instincts.json`) in `src/slices/agent/heartbeat/heartbeat.module.ts` and wire in `src/slices/runtime/runtime/runtime.module.ts`
+- [X] T059 [US3] Add `/learned`, `/learned show <id>`, `/learned pin|unpin <id>`, `/learned prune [<id>]`, `/learned promote <id…>` (writes via the skill gateway to `.agent/skills/learned-<slug>/SKILL.md`, marks `promotedTo`, reloads skills), `/learned export` (attachment), in `src/slices/bot/command/domain/command.service.ts`
+- [X] T060 [US3] Add the `learned` summary to `agent_status` in `src/slices/agent/tool/data/repositories/status/agent_status.repository.ts`
+- [X] T061 [US3] Create the corrections eval set (correction turn + 10 follow-ups each, expected behaviour) in `tests/evals/corrections.jsonl` and the `holds-after-correction` assertion mode in `scripts/eval.ts`
+- [X] T062 [US3] Document instincts (bands, numbers, commands, FR-016 guarantee) in a "Learning" section of `README.md`
 
 **Checkpoint**: US3 works independently of US2; `bun test` green; corrections eval ≥9/10.
 
