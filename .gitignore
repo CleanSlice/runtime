@@ -8,3 +8,9 @@ dist/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Local second-agent runtime (mock / multi-process)
+.local/
+
+# Per-developer tracker/API tokens — never committed (copied into worktrees via .worktreeinclude)
+.env.project
