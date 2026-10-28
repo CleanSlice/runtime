@@ -280,8 +280,9 @@ export class AgentRuntime {
   }
 
   /**
-   * Fail closed: a rule file that does not parse keeps every tool call
-   * blocked with the reason, and the operator fixes the file (CLEAN-150 FR-004).
+   * A bad agent rule file is skipped and reported (`/rules`, agent_status);
+   * only a bad baseline file — a platform defect — fails closed and keeps
+   * every tool call blocked with the reason (CLEAN-150 FR-004).
    */
   private async loadGuard(): Promise<void> {
     try {

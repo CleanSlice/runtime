@@ -45,7 +45,9 @@ export class GuardGateway implements IGuardGateway {
   private readDir(dir: string, source: RuleSource): IRuleFile[] {
     if (!existsSync(dir)) return []
     return readdirSync(dir)
-      .filter(f => f.endsWith(".md") && !f.startsWith("."))
+      // README.md documents the folder (the scaffold ships one); read as a
+      // rule it has no id, fails the load and blocks every tool call.
+      .filter(f => f.endsWith(".md") && !f.startsWith(".") && f.toLowerCase() !== "readme.md")
       .sort()
       .map(f => {
         const path = join(dir, f)

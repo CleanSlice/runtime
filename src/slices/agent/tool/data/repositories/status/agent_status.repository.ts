@@ -132,6 +132,7 @@ Safe for any caller — the report is trimmed to what the current user is allowe
           count: ctx.guard.listRules().filter(r => r.enabled).length,
           loaded: ctx.guard.isLoaded,
           ...(ctx.guard.lastLoadError ? { loadError: ctx.guard.lastLoadError } : {}),
+          ...(ctx.guard.skippedFiles.length ? { skippedFiles: ctx.guard.skippedFiles } : {}),
           firedLast24h: ctx.guard.recentFirings(24),
         }
       }

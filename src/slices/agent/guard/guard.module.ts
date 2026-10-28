@@ -19,7 +19,10 @@ export class GuardModule {
     this.service = new GuardService(gateway, { observerTimeoutMs: cfg.observerTimeoutMs })
   }
 
-  /** Load (or reload) every rule file. Throws `GuardLoadError`; the previous set stays active on failure. */
+  /**
+   * Load (or reload) every rule file. Bad agent files are skipped (`skippedFiles`);
+   * only a bad baseline file throws `GuardLoadError`, keeping the previous set active.
+   */
   load(): Promise<void> {
     return this.service.load()
   }
@@ -34,6 +37,10 @@ export class GuardModule {
 
   get lastLoadError(): string | undefined {
     return this.service.lastLoadError
+  }
+
+  get skippedFiles(): Array<{ file: string; problem: string }> {
+    return this.service.skippedFiles
   }
 
   before(call: IGuardCall): IBeforeVerdict {

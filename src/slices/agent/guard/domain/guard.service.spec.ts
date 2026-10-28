@@ -72,22 +72,51 @@ describe("parseRule", () => {
 })
 
 describe("GuardService.load", () => {
-  test("a malformed file fails the whole load, naming file and problem", async () => {
+  test("a malformed agent file is skipped, not fatal: the rest load and calls run", async () => {
     const { gw } = gateway([blockSecrets, ruleFile({ id: "broken", event: "before", match: { tool: "exec" } })])
     const guard = new GuardService(gw, { observerTimeoutMs: 50 })
-    await expect(guard.load()).rejects.toBeInstanceOf(GuardLoadError)
-    await expect(guard.load()).rejects.toThrow(/agent\/broken\.md.*action/)
+    await guard.load()
+    expect(guard.isLoaded).toBe(true)
+    expect(guard.listRules().map(r => r.id)).toEqual(["no-secret-store-reads"])
+    expect(guard.skippedFiles).toEqual([{ file: "agent/broken.md", problem: expect.stringMatching(/action/) }])
+    expect(guard.before(call({ params: { command: "ls" } })).kind).toBe("allow")
+    expect(guard.before(call()).kind).toBe("block") // baseline still enforced
   })
 
-  test("a file whose frontmatter did not parse is reported the same way", async () => {
+  test("an agent file whose frontmatter did not parse is skipped and reported", async () => {
     const { gw } = gateway([{ file: "agent/bad.md", source: "agent", data: {}, body: "", error: "bad indentation" }])
-    await expect(new GuardService(gw, { observerTimeoutMs: 50 }).load()).rejects.toThrow(/agent\/bad\.md.*bad indentation/)
+    const guard = new GuardService(gw, { observerTimeoutMs: 50 })
+    await guard.load()
+    expect(guard.isLoaded).toBe(true)
+    expect(guard.skippedFiles[0]?.problem).toMatch(/bad indentation/)
   })
 
   test("an agent rule cannot override a protected baseline rule of the same id", async () => {
     const override = ruleFile({ id: "no-secret-store-reads", event: "before", action: "record", match: { tool: "exec" } }, "agent")
     const { gw } = gateway([blockSecrets, override])
-    await expect(new GuardService(gw, { observerTimeoutMs: 50 }).load()).rejects.toThrow(/protected/)
+    const guard = new GuardService(gw, { observerTimeoutMs: 50 })
+    await guard.load()
+    expect(guard.skippedFiles[0]?.problem).toMatch(/protected/)
+    expect(guard.listRules().find(r => r.id === "no-secret-store-reads")?.source).toBe("baseline")
+    expect(guard.before(call()).kind).toBe("block")
+  })
+
+  test("a malformed baseline file still fails the whole load, naming file and problem", async () => {
+    const { gw } = gateway([ruleFile({ id: "broken", event: "before", match: { tool: "exec" } }, "baseline")])
+    const guard = new GuardService(gw, { observerTimeoutMs: 50 })
+    await expect(guard.load()).rejects.toBeInstanceOf(GuardLoadError)
+    await expect(guard.load()).rejects.toThrow(/baseline\/broken\.md.*action/)
+  })
+
+  test("a fixed agent file clears the skipped list on reload", async () => {
+    const files: IRuleFile[] = [blockSecrets, ruleFile({ id: "broken" })]
+    const { gw } = gateway(files)
+    const guard = new GuardService(gw, { observerTimeoutMs: 50 })
+    await guard.load()
+    expect(guard.skippedFiles).toHaveLength(1)
+    files.pop()
+    await guard.load()
+    expect(guard.skippedFiles).toEqual([])
   })
 
   test("an agent rule may override an unprotected baseline rule", async () => {
@@ -98,12 +127,12 @@ describe("GuardService.load", () => {
     expect(guard.before(call({ params: { command: "ls" } })).kind).toBe("allow")
   })
 
-  test("a failed load leaves the previous rule set in place", async () => {
+  test("a failed baseline load leaves the previous rule set in place", async () => {
     const files: IRuleFile[] = [blockSecrets]
     const { gw } = gateway(files)
     const guard = new GuardService(gw, { observerTimeoutMs: 50 })
     await guard.load()
-    files.push(ruleFile({ id: "broken" }))
+    files.push(ruleFile({ id: "broken" }, "baseline"))
     await expect(guard.load()).rejects.toThrow()
     expect(guard.listRules().map(r => r.id)).toEqual(["no-secret-store-reads"])
     expect(guard.before(call()).kind).toBe("block")

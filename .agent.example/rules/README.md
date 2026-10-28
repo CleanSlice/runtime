@@ -23,5 +23,5 @@ Deleting through the API is done from the console, not by the agent.
 ```
 
 The body is the reason the agent sees when the rule fires. A file that does
-not parse keeps the previous rule set in force and blocks every tool call on
-start-up until it is fixed.
+not parse is skipped: the other rules and the protected ones stay in force,
+and `/rules` names the file and the problem until it is fixed.
