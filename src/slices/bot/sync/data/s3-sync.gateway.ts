@@ -25,6 +25,11 @@ export interface S3SyncConfig {
   secretAccessKey?: string
   endpoint?: string    // e.g. "http://host.k3d.internal:9000" for local MinIO
   watcherDebounceMs?: number
+  /** Key prefixes (relative to the agent dir) downloaded in the background after
+   *  boot instead of blocking pull(). Default: chat transcripts. */
+  deferredPrefixes?: string[]
+  /** Parallel S3 GETs during pull. */
+  pullConcurrency?: number
 }
 
 interface ManifestEntry {
@@ -36,7 +41,9 @@ interface ManifestEntry {
  * S3SyncService — syncs the entire .agent/ directory to/from S3.
  *
  * Sync model:
- *  - Pull on startup (full restore)
+ *  - Pull on startup: everything except deferred prefixes (chat transcripts)
+ *    blocks boot; deferred keys download in the background, and hydrate()
+ *    fetches one ahead of the queue when it is needed before its turn
  *  - Event-driven push: fs.watch enqueues dirty paths, debounced flush
  *    diffs against an in-memory manifest (mtime+size) and pushes only changes
  *  - Optional periodic full sweep as safety net (disabled by default)
@@ -61,6 +68,12 @@ export class S3SyncService implements ISyncGateway {
   // Differential push manifest: relPath -> {mtimeMs, size}
   private manifest = new Map<string, ManifestEntry>()
 
+  // Background restore state: deferred keys not yet on disk, and in-flight downloads
+  private deferredPrefixes: string[]
+  private pullConcurrency: number
+  private pending = new Set<string>()
+  private inflight = new Map<string, Promise<void>>()
+
   // Files/dirs to skip — binary blobs that change too often or shouldn't be synced
   private static readonly SKIP_PATTERNS = [
     /\.sqlite-shm$/,
@@ -77,6 +90,8 @@ export class S3SyncService implements ISyncGateway {
     this.agentDir = agentDir
     this.s3Config = config
     this.debounceMs = config.watcherDebounceMs ?? 30_000
+    this.deferredPrefixes = config.deferredPrefixes ?? ["data/sessions/"]
+    this.pullConcurrency = Math.max(1, config.pullConcurrency ?? 32)
 
     mkdirSync(agentDir, { recursive: true })
   }
@@ -223,41 +238,106 @@ export class S3SyncService implements ISyncGateway {
   // ── Public API ────────────────────────────────────────────────────────────────
 
   /**
-   * Pull entire .agent/ from S3 on startup. Populates the manifest only with
-   * files that actually exist in S3 — local-only files (e.g. freshly scaffolded
-   * from .agent.example on first run) are intentionally left out so the next
-   * push() sweep uploads them.
-   */
-  /**
    * Copy S3 → local. Without `subdir` the whole agent state (boot restore);
    * with one, only that folder — e.g. `data/secrets` when the hub says a
    * token just landed (CLEAN-79): Ranch's file-provider secret gateway
    * writes to this same bucket, and a running agent otherwise sees the new
    * bundle only on its next boot.
+   *
+   * Populates the manifest only with files that actually exist in S3 —
+   * local-only files (e.g. freshly scaffolded from .agent.example on first
+   * run) are intentionally left out so the next push() sweep uploads them.
+   *
+   * On the boot restore, keys under a deferred prefix (chat transcripts —
+   * tens of thousands on an old agent) are only queued; startBackgroundPull()
+   * downloads them after boot so the pod passes its probes instead of timing
+   * out on the restore.
    */
   async pull(subdir?: string): Promise<void> {
-    let count = 0
     const scope = subdir ? `${this.prefix}/${subdir.replace(/^\/|\/$/g, "")}/` : `${this.prefix}/`
     const keys = await this.s3List(scope)
-
+    const eager: string[] = []
     for (const key of keys) {
       const relPath = key.slice(`${this.prefix}/`.length)
       if (!relPath) continue
-      const localPath = join(this.agentDir, relPath)
-      // `join` uses the platform separator; slicing at "/" left an empty
-      // directory on Windows and every pull died on mkdir.
-      const dir = dirname(localPath)
-      mkdirSync(dir, { recursive: true })
-      const body = await this.s3Get(key)
-      if (body) {
-        writeFileSync(localPath, body)
-        const stat = statSync(localPath)
-        this.manifest.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size })
-        count++
-      }
+      if (!subdir && this.deferredPrefixes.some((p) => relPath.startsWith(p))) this.pending.add(relPath)
+      else eager.push(relPath)
     }
 
-    log.info(`pulled ${count} files`)
+    let count = 0
+    await this.runPool(eager, async (relPath) => {
+      if (await this.download(relPath)) count++
+    })
+
+    log.info(subdir ? `pulled ${count} files` : `pulled ${count} files, ${this.pending.size} deferred to background`)
+  }
+
+  /** Download the deferred keys queued by pull(). Resolves when the queue drains. */
+  async startBackgroundPull(): Promise<void> {
+    if (this.pending.size === 0) return
+    const total = this.pending.size
+    const started = Date.now()
+    log.info(`background pull of ${total} deferred files started`)
+    let failed = 0
+    await this.runPool(Array.from(this.pending), async (relPath) => {
+      try {
+        await this.hydrate(relPath)
+      } catch (err) {
+        failed++
+        log.error(`background pull of ${relPath} failed`, err)
+      }
+    })
+    log.info(`background pull done: ${total - failed}/${total} files in ${Math.round((Date.now() - started) / 1000)}s`)
+  }
+
+  /**
+   * Make sure a deferred file is on disk before it is read or written. Without
+   * this, a message arriving mid-restore would append to an empty local file,
+   * and the background download would then overwrite it (losing the message)
+   * — or the watcher would push it over the full transcript in S3.
+   */
+  async hydrate(relPath: string): Promise<void> {
+    const running = this.inflight.get(relPath)
+    if (running) return running
+    if (!this.pending.has(relPath)) return
+    const job = this.download(relPath, true)
+      .then(() => { this.pending.delete(relPath) })
+      .finally(() => { this.inflight.delete(relPath) })
+    this.inflight.set(relPath, job)
+    return job
+  }
+
+  /**
+   * Drop a deferred file without downloading it (its owner deleted it locally).
+   * Tracking it in the manifest lets the next flush propagate the delete to S3,
+   * same as for a file that had been pulled.
+   */
+  discard(relPath: string): void {
+    if (!this.pending.delete(relPath)) return
+    this.manifest.set(relPath, { mtimeMs: 0, size: 0 })
+    this.dirty.add(relPath)
+    this.scheduleFlush()
+  }
+
+  private async download(relPath: string, deferred = false): Promise<boolean> {
+    const localPath = join(this.agentDir, relPath)
+    mkdirSync(dirname(localPath), { recursive: true })
+    const body = await this.s3Get(this.s3Key(relPath))
+    if (!body) return false
+    // discard() ran while the GET was in flight — writing now would resurrect it
+    if (deferred && !this.pending.has(relPath)) return false
+    writeFileSync(localPath, body)
+    const stat = statSync(localPath)
+    this.manifest.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size })
+    return true
+  }
+
+  private async runPool<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
+    let next = 0
+    const worker = async () => {
+      while (next < items.length) await fn(items[next++])
+    }
+    await Promise.all(Array.from({ length: Math.min(this.pullConcurrency, items.length) }, worker))
   }
 
   /**
