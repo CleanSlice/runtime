@@ -205,8 +205,12 @@ export class CommandService {
     const head = guard.isLoaded
       ? `🛡 *Rules in force (${rules.length})*`
       : `⛔ *Rules failed to load — every tool call is blocked*\n${guard.lastLoadError ?? ""}`
+    const skipped = guard.skippedFiles
+    const skippedNote = skipped.length
+      ? `\n\n⚠️ *Skipped ${skipped.length} rule file(s) — fix and \`/rules reload\`:*\n${skipped.map(f => `• ${f.file}: ${f.problem}`).join("\n")}`
+      : ""
     await send(
-      `${head}\n\n${lines.join("\n") || "(none)"}` +
+      `${head}\n\n${lines.join("\n") || "(none)"}${skippedNote}` +
       `\n\nAgent rules live in \`.agent/rules/*.md\`; protected rules come with the platform. ` +
       (text === "/rules reload" ? "Reloaded from disk." : "Use `/rules reload` after editing."),
     )

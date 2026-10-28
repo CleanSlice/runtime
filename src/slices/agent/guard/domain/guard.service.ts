@@ -94,9 +94,12 @@ interface IGuardOptions {
  * tool-call record through the gateway. Outcomes compose strictest-first
  * (block > redact > record).
  *
- * Fail semantics: `load()` is all-or-nothing — one bad file and the previous
- * rule set stays in force while the error is reported. Until the first
- * successful load (or after `markFailed`) every call is blocked. Guard rules
+ * Fail semantics: a bad agent file (`rules/*.md`) is skipped and reported —
+ * one typo in an operator's rule must not take every tool away from the
+ * agent, and the protected baseline still applies. A bad baseline file is a
+ * platform defect: that load fails as a whole, the previous rule set stays in
+ * force, and until the first successful load (or after `markFailed`) every
+ * call is blocked. Guard rules
  * fail closed (an evaluator exception blocks); observers fail open (logged
  * once per rule, bounded by `observerTimeoutMs`, never change the result).
  */
@@ -104,36 +107,49 @@ export class GuardService {
   private rules: IRule[] = []
   private loaded = false
   private loadError: string | undefined
+  private skipped: Array<{ file: string; problem: string }> = []
   private firings = new Map<string, number[]>()
   private failures = new Map<string, number>()
 
   constructor(private gateway: IGuardGateway, private opts: IGuardOptions) {}
 
-  /** Read and validate every rule file; replaces the active set only when all of them pass. */
+  /**
+   * Read and validate every rule file. Bad agent files are skipped (see
+   * `skippedFiles`); a bad baseline file throws and keeps the previous set.
+   */
   async load(): Promise<void> {
     const files = this.gateway.loadRuleFiles()
     const problems: Array<{ file: string; problem: string }> = []
+    const skipped: Array<{ file: string; problem: string }> = []
     const next = new Map<string, IRule>()
     for (const file of files) {
+      const reject = (problem: string) => (file.source === "agent" ? skipped : problems).push({ file: file.file, problem })
       let rule: IRule
       try {
         rule = parseRule(file)
       } catch (err) {
-        problems.push({ file: file.file, problem: (err as Error).message })
+        reject((err as Error).message)
         continue
       }
       const existing = next.get(rule.id)
       if (existing?.protected && rule.source === "agent") {
-        problems.push({ file: file.file, problem: `rule "${rule.id}" is protected by the platform and cannot be overridden` })
+        reject(`rule "${rule.id}" is protected by the platform and cannot be overridden`)
         continue
       }
       next.set(rule.id, rule)
     }
     if (problems.length > 0) throw new GuardLoadError(problems)
     this.rules = [...next.values()]
+    this.skipped = skipped
     this.loaded = true
     this.loadError = undefined
-    log.info(`loaded ${this.rules.length} rules (${this.rules.filter(r => r.source === "baseline").length} baseline)`)
+    for (const s of skipped) log.warn(`skipped rule file ${s.file}: ${s.problem}`)
+    log.info(`loaded ${this.rules.length} rules (${this.rules.filter(r => r.source === "baseline").length} baseline)${skipped.length ? `, skipped ${skipped.length} bad agent file(s)` : ""}`)
+  }
+
+  /** Agent rule files the last successful load left out, and why. */
+  get skippedFiles(): Array<{ file: string; problem: string }> {
+    return [...this.skipped]
   }
 
   /** Record that rules could not be loaded; every call is blocked until `load()` succeeds. */
