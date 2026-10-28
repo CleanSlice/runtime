@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "../domain/channel.gateway"
-import type { ChannelConfig, IChannelGroup, IThinkingStep, Message, MessagePart } from "../domain/channel.types"
+import type { ChannelConfig, IChannelGroup, IThinkingStep, Message, MessagePart, Streamer } from "../domain/channel.types"
+import { streamedText } from "../domain/channel.types"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import type { SessionActivity } from "../../../agent/session/domain/activity"
@@ -55,11 +56,12 @@ export class ChannelGateway implements IChannelGateway {
     this.repository.onMessage(handler)
   }
 
-  streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+  streamSend(to: string, streamer: Streamer): Promise<string | void> {
     if ('streamSend' in this.repository && typeof this.repository.streamSend === 'function') {
       return this.repository.streamSend(to, streamer)
     }
-    return streamer(() => {}).then(text => {
+    return streamer(() => {}).then(result => {
+      const text = streamedText(result)
       if (isSilentReply(text)) return
       return this.repository.send(to, text)
     })

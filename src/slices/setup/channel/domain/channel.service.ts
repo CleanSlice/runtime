@@ -1,5 +1,6 @@
 import type { IChannelGateway } from "./channel.gateway"
-import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart, Streamer } from "./channel.types"
+import { streamedText } from "./channel.types"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
 import { isSilentReply } from "../../../agent/agent/domain/silentReply"
 import { createLogger } from "../../logger"
@@ -145,13 +146,13 @@ export class ChannelService {
     }
   }
 
-  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+  async streamSend(channel: string, to: string, streamer: Streamer): Promise<string | void> {
     const ch = this.channels.find(c => c.name === channel)
     if (!ch) throw new Error(`Channel not found: ${channel}`)
     if (ch.streamSend) {
       return ch.streamSend(to, streamer)
     } else {
-      const text = await streamer(() => {})
+      const text = streamedText(await streamer(() => {}))
       if (isSilentReply(text)) return
       await ch.send(to, text)
     }

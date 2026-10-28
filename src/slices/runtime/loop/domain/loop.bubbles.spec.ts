@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { LoopService } from "./loop.service"
 import type { ILoopContext } from "./loop.types"
 import type { Event } from "../../../setup/event"
+import { streamedInterim, streamedText, type Streamer } from "../../../setup/channel/domain/channel.types"
 
 /**
  * A turn on a streaming channel reaches the person as several bubbles — the
@@ -44,6 +45,9 @@ function makeLoop(script: IScriptedResponse[], streams = true) {
 
   let bubble = 0
   const sent: string[] = []
+  // What each bubble's streamer handed back, as the bridle repository would
+  // see it: the text, and whether the loop called it interim (CLEAN-189).
+  const streamed: Array<{ text: string; interim: boolean }> = []
   const ctx = {
     task: { id: "task-0001", controller: new AbortController(), inbox: [] },
     sessionId: "bridle:admin",
@@ -57,8 +61,10 @@ function makeLoop(script: IScriptedResponse[], streams = true) {
     send: async (text: string) => { sent.push(text) },
     // Stands in for the bridle repository: a bubble, and therefore an id,
     // exists only when the iteration produced text.
-    streamSend: async (_c: string, _to: string, streamer: (onChunk: (t: string) => void) => Promise<string>) => {
-      const text = await streamer(() => undefined)
+    streamSend: async (_c: string, _to: string, streamer: Streamer) => {
+      const result = await streamer(() => undefined)
+      const text = streamedText(result)
+      if (text) streamed.push({ text, interim: streamedInterim(result) })
       return text ? `wire-${++bubble}` : undefined
     },
     agentConfig: {},
@@ -66,7 +72,7 @@ function makeLoop(script: IScriptedResponse[], streams = true) {
     isAdmin: true,
   } as unknown as ILoopContext
 
-  return { loop, ctx, appended, sent }
+  return { loop, ctx, appended, sent, streamed }
 }
 
 const assistantEvents = (events: Event[]) => events.filter((e) => e.type === "assistant")
@@ -91,6 +97,35 @@ describe("LoopService — bubbles of a streamed turn", () => {
       ["wire-2", "Done!"],
     ])
     expect(data.messages.every((m) => typeof m.ts === "number")).toBe(true)
+  })
+
+  it("marks the narration before a tool call as interim — on the wire and in the stored bubbles (CLEAN-189)", async () => {
+    // Production, 2026-10-28: "I cannot provide a definitive list of 2026
+    // CX-30 trims…" went out as a bubble while the agent went on to search
+    // twice more and found the list. The person had already read a refusal.
+    const { loop, ctx, appended, streamed } = makeLoop([
+      { text: "Let me search for the 26MY CX-30 lineup.", toolCalls: [{ name: "missing_tool", params: {} }] },
+      { text: "The 2026 CX-30 comes in eight trims." },
+    ])
+
+    await loop.run(ctx)
+
+    // The channel is told which bubble was narration, at stream end.
+    expect(streamed).toEqual([
+      { text: "Let me search for the 26MY CX-30 lineup.", interim: true },
+      { text: "The 2026 CX-30 comes in eight trims.", interim: false },
+    ])
+    // The stored boundaries carry it too, so a replay can fold it the same way.
+    const data = assistantEvents(appended)[0].data as {
+      text: string
+      messages: Array<{ id: string; text: string; interim?: true }>
+    }
+    expect(data.messages.map((m) => [m.id, m.interim ?? false])).toEqual([
+      ["wire-1", true],
+      ["wire-2", false],
+    ])
+    // The model-facing text is still the whole turn.
+    expect(data.text).toBe("Let me search for the 26MY CX-30 lineup.The 2026 CX-30 comes in eight trims.")
   })
 
   it("records nothing for an iteration that showed no bubble", async () => {
