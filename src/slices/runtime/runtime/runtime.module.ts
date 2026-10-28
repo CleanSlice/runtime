@@ -227,6 +227,12 @@ export class AgentRuntime {
     // (e.g. admin clicks "Sync" in the file editor and wants to see fresh state).
     if (this.s3sync) {
       const s3sync = this.s3sync
+      // Transcripts restore in the background after boot; a session touched
+      // before its turn is fetched on demand.
+      this.session.setHydrator({
+        ensure: (relPath) => s3sync.hydrate(relPath),
+        discard: (relPath) => s3sync.discard(relPath),
+      })
       this.channel.onBridleSync(async () => ({ pushed: await s3sync.push() }))
     }
 
@@ -404,6 +410,9 @@ export class AgentRuntime {
     this.s3sync.startWatcher()
     // Periodic full sweep is opt-in (0 = off); watcher handles changes in real time.
     this.s3sync.startAutoSync(this.config.s3?.syncIntervalSec ?? 0)
+    // Chat transcripts were deferred by pull() — download them without
+    // blocking boot (an agent with ~30k sessions otherwise never gets ready).
+    this.s3sync.startBackgroundPull().catch(err => s3Log.error("background pull failed", err))
   }
 
   /** Load memory, skills, and start usage tracking. */

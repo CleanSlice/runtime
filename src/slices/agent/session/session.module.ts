@@ -4,6 +4,7 @@ import { SessionGateway } from "./data/session.gateway"
 import { SessionService } from "./domain/session.service"
 import { CompactionService, type CompactionReason, type ICompactOptions } from "./domain/compaction.service"
 import type { IActivityReporter } from "./domain/activity"
+import type { ISessionHydrator } from "./domain/session.gateway"
 import { createLogger } from "../../setup/logger"
 
 const log = createLogger("session")
@@ -34,10 +35,12 @@ export class SessionModule {
   private service: SessionService
   private compaction: CompactionService
   private idleCompactMin: number
+  private gateway: SessionGateway
 
   constructor(agentDir: string, config?: SessionConfig) {
     const c = { ...SESSION_CONFIG_DEFAULTS, ...stripUndefined(config) }
-    this.service = new SessionService(new SessionGateway(agentDir))
+    this.gateway = new SessionGateway(agentDir)
+    this.service = new SessionService(this.gateway)
     this.compaction = new CompactionService(
       this.service,
       c.compactionThreshold,
@@ -60,6 +63,11 @@ export class SessionModule {
       hardLimitPct: c.hardLimitPct,
     })
     this.idleCompactMin = c.idleCompactMin
+  }
+
+  /** Route transcript access through the remote-storage restore (S3 background pull). */
+  setHydrator(hydrator: ISessionHydrator): void {
+    this.gateway.setHydrator(hydrator)
   }
 
   getOrCreate(channelId: string, userId: string) {
