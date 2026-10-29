@@ -6,7 +6,6 @@ import type { TaskManager } from "../../agent/task/domain/task.service"
 import type { SessionModule } from "../../agent/session/session.module"
 import type { MemoryModule } from "../../agent/memory/memory.module"
 import type { LlmModule } from "../../setup/llm/llm.module"
-import type { GuardModule } from "../../agent/guard"
 import type { IPromptBreakdown } from "../../agent/agent/agent.module"
 import type { InstinctModule } from "../../agent/instinct"
 
@@ -21,7 +20,6 @@ interface CommandModuleDeps {
   session: SessionModule
   memory: MemoryModule
   llm: LlmModule
-  guard?: GuardModule
   context?: (sessionId: string) => IPromptBreakdown | undefined
   instincts?: InstinctModule
 }

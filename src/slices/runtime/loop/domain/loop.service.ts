@@ -7,13 +7,10 @@ import type { VoiceModule } from "../../../bot/voice/voice.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Tool } from "../../../agent/tool"
 import { effectOfCall } from "../../../agent/tool/domain/tool.types"
-import type { GuardModule, IGuardCall, CallOutcome } from "../../../agent/guard"
 import type { SkillModule } from "../../../agent/skill/skill.module"
 import type { InstinctModule } from "../../../agent/instinct/instinct.module"
-import type { VerificationService } from "./verification.service"
 import type { DelegateService } from "./delegate.service"
 import type { TaskManager } from "../../../agent/task/domain/task.service"
-import { OUTCOME_PREVIEW_CHARS, type IToolOutcome } from "./prompts/verification.prompt"
 import { skillEvent } from "../../../agent/skill/domain/skillEvent"
 import type { ILoopContext, ILoopConfig, ILoopResult, IAssistantBubble, ISource } from "./loop.types"
 import { LOOP_DEFAULTS } from "./loop.types"
@@ -35,14 +32,10 @@ interface LoopServiceDeps {
   voice: VoiceModule
   channel: ChannelModule
   tools: Tool[]
-  /** Guardrails around every tool call (CLEAN-150 US1). Absent in tests that exercise the bare loop. */
-  guard?: GuardModule
   /** Skills — the body of a skill the model pulls in with `skill_load` goes into the history (CLEAN-150 US2). */
   skills?: SkillModule
   /** Learned behaviours — `agent_status` reports the counts (CLEAN-150 US3). */
   instincts?: InstinctModule
-  /** Completion check after mutating tools (CLEAN-150 US5). */
-  verification?: VerificationService
   /** Task manager — the completion contract looks up a turn's delegated workers (CLEAN-150 US6). */
   tasks?: TaskManager
 }
@@ -52,17 +45,6 @@ interface LoopServiceDeps {
 // events to the browser). Internal/cron/heartbeat traffic is excluded — there's
 // no UI to update.
 const STREAMING_CHANNELS = new Set(["telegram", "bridle"])
-
-/** The head of a serialized tool result, for the verifier. */
-function previewOf(result: unknown): string {
-  let text: string
-  try {
-    text = typeof result === "string" ? result : (JSON.stringify(result) ?? "")
-  } catch {
-    text = String(result)
-  }
-  return text.length > OUTCOME_PREVIEW_CHARS ? text.slice(0, OUTCOME_PREVIEW_CHARS) + "…" : text
-}
 
 function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
@@ -141,8 +123,6 @@ function isDebugEnabled(deps: LoopServiceDeps): boolean {
 export class LoopService {
   private config: ILoopConfig
   public readonly lastTurnStats = new LastTurnStatsTracker()
-  /** Per task: mutating tool outcomes of the turn (CLEAN-150 US5). */
-  private mutating = new Map<string, IToolOutcome[]>()
   /** Per task: whether the latest LLM call streamed to the channel. */
   private streamed = new Map<string, boolean>()
   /** Delegation — set after construction because the service needs this loop to run workers. */
@@ -175,10 +155,6 @@ export class LoopService {
     let consecutiveErrors = 0
     let errorLimitHit = false
     let accumulatedText = ""
-    // Mutating tool outcomes of this turn — what the final reply is checked
-    // against (CLEAN-150 US5). While any exist, the final call does not
-    // stream: a rewritten reply has to be sent whole.
-    this.mutating.set(task.id, [])
     this.streamed.delete(task.id)
     let childrenSettled = false
     // What the person actually saw: on a streaming channel every iteration
@@ -296,16 +272,13 @@ export class LoopService {
         // only covers the LLM call, not the tool execution that follows.
         ctx.sendTyping?.()
         if (ctx.sendThinking) thinkingStepsEmitted = true
-        // The reasoning prose rides the thinking timeline to the person, so
-        // it gets the same redaction as a reply.
-        const detail = response.text || undefined
         const iterationHadError = await this.executeToolCalls(
           ctx,
           response,
           iterations,
           turnId,
           registry,
-          streamsToClient ? undefined : (detail && this.deps.guard ? this.deps.guard.redactOutgoing(detail) : detail),
+          streamsToClient ? undefined : (response.text || undefined),
         )
 
         if (iterationHadError) {
@@ -383,7 +356,6 @@ export class LoopService {
 
         // Send only when the loop is done (all continuations complete)
         if (!continueLoop && accumulatedText) {
-          accumulatedText = await this.verifyCompletion(ctx, accumulatedText)
           await this.sendFinalResponse(ctx, accumulatedText, iterations, bubbles, bubbleSources, finalize)
         }
       }
@@ -398,7 +370,6 @@ export class LoopService {
       await ctx.send("⚠️ Multiple attempts failed. The requested resource may be unavailable.")
     }
 
-    this.mutating.delete(task.id)
     this.streamed.delete(task.id)
     return { text: accumulatedText, errorLimitHit }
   }
@@ -437,32 +408,6 @@ export class LoopService {
     )
   }
 
-  /**
-   * Verified completion (CLEAN-150 US5): after mutating tools, the draft is
-   * checked against their outcomes. An unsupported claim is replaced by the
-   * verifier's factual rewrite; a timeout lets the draft through, marked.
-   */
-  private async verifyCompletion(ctx: ILoopContext, draft: string): Promise<string> {
-    const outcomes = this.mutating.get(ctx.task.id) ?? []
-    if (!this.deps.verification || outcomes.length === 0 || isSilentReply(draft)) return draft
-    const rlog = log.child(ctx.task.id.slice(0, 6))
-    const v = await this.deps.verification.verify(draft, outcomes)
-    if (v.timedOut) {
-      rlog.warn(`verification: timeout (${v.elapsedMs}ms) — delivering unverified`)
-      return `${draft} (unverified)`
-    }
-    if (v.skipped) {
-      rlog.info(`verification: skipped`)
-      return draft
-    }
-    if (!v.ok && v.reply) {
-      rlog.info(`verification: rewritten (${v.elapsedMs}ms)`)
-      return v.reply
-    }
-    rlog.info(`verification: ok (${v.elapsedMs}ms)`)
-    return draft
-  }
-
   // ─── Private helpers ───────────────────────────────────────────────
 
   private async drainInbox(ctx: ILoopContext): Promise<void> {
@@ -498,10 +443,7 @@ export class LoopService {
     const history = fitEventsToBudget(ctx.history, this.config.contextBudgetChars).events
     const channelOk = canStreamOnChannel(channel, isInternal)
     const llmOk = this.deps.llm.canStream()
-    // A turn that already changed something gets a complete, verifiable
-    // final reply rather than a stream (CLEAN-150 US5).
-    const verifiable = !!this.deps.verification && (this.mutating.get(ctx.task.id)?.length ?? 0) > 0
-    const canStream = channelOk && llmOk && !verifiable
+    const canStream = channelOk && llmOk
     const tid = ctx.task.id.slice(0, 6)
     log.child(tid).info(
       `llm call: channel=${channel} internal=${isInternal} ` +
@@ -511,19 +453,13 @@ export class LoopService {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       let cited: ISource[] = []
       let interim = false
-      // Chunks carry the accumulated text; a streamed reply must not show a
-      // credential the final redaction would have masked (CLEAN-150 FR-005).
-      const guard = this.deps.guard
       const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
-        const safeChunk = guard ? (text: string) => onChunk(guard.redactStreaming(text)) : onChunk
-        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, safeChunk)
-        const finalText = streamedResponse.text ?? ""
-        const safeText = guard ? guard.redactOutgoing(finalText) : finalText
+        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
         // The bubble is complete here and the channel has not sent its final
         // text yet — what the streamer returns is what `stream_end` (bridle)
         // or the last edit (telegram) carries. Check the citations now, so
         // the text the person keeps is the corrected one (CLEAN-138).
-        const fixed = finalize(safeText)
+        const fixed = finalize(streamedResponse.text ?? "")
         streamedResponse = { ...streamedResponse, text: fixed.text }
         cited = fixed.sources
         // Text that arrives together with tool calls is the model narrating
@@ -582,61 +518,36 @@ export class LoopService {
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "active" })
 
       const toolUseId = randomUUID()
-      // Persisted params are credential-masked: the transcript syncs to S3,
-      // and a token the model typed out would otherwise live there forever.
       const callEvent: Event = {
         id: randomUUID(),
         type: "tool_call",
         ts: Date.now(),
-        data: { name: call.name, params: this.deps.guard ? this.deps.guard.redactValue(call.params) : call.params, toolUseId },
+        data: { name: call.name, params: call.params, toolUseId },
       }
       await this.deps.session.append(sessionId, callEvent)
       history.push(callEvent)
 
       let result: unknown
-      // Guardrails: the rules see every call with the same params the tool
-      // would get; a block never reaches the tool, a redact rewrites params.
-      const guardCall: IGuardCall = {
-        tool: call.name,
-        params: call.params,
-        agentDir: ctx.agentDir,
-        sessionId,
-        turnId,
-        effect: tool ? effectOfCall(tool, call.params) : "write",
-      }
-      const startedMs = Date.now()
-      let outcome: CallOutcome = "ok"
-      let rulesFired: string[] = []
-      let params = call.params
+      let blocked = false
 
       const adminBlocked = tool && tool.adminOnly && !ctx.isAdmin
       // Workers observe unless tools.delegate.allowWrite is on — enforced per
       // call so `file` write / `http` POST are caught even though the tool
       // itself is allowed (CLEAN-150 US6).
-      const workerBlocked = tool && ctx.worker && guardCall.effect === "write" && ctx.agentConfig.tools?.delegate?.allowWrite !== true
-      const verdict = tool && !adminBlocked && !workerBlocked && this.deps.guard ? this.deps.guard.before(guardCall) : undefined
-      if (verdict?.kind === "allow") {
-        params = verdict.params
-        rulesFired = verdict.rulesFired
-      }
+      const workerBlocked = tool && ctx.worker && effectOfCall(tool, call.params) === "write" && ctx.agentConfig.tools?.delegate?.allowWrite !== true
 
       if (adminBlocked) {
         rlog.warn(`admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
         result = { error: `Tool "${call.name}" is admin-only and cannot be called by this user.` }
-        outcome = "blocked"
+        blocked = true
       } else if (workerBlocked) {
         rlog.warn(`write call refused inside a worker: ${call.name}`)
         result = { error: `Workers are read-only: "${call.name}" would change something. Report what you found; the parent decides what to do.` }
-        outcome = "blocked"
-      } else if (verdict?.kind === "block") {
-        rlog.warn(`blocked by rule ${verdict.ruleId}: ${call.name}`)
-        result = { error: `blocked by rule ${verdict.ruleId}: ${verdict.reason}` }
-        outcome = "blocked"
-        rulesFired = [verdict.ruleId]
+        blocked = true
       } else if (tool) {
         try {
           result = await Promise.race([
-            tool.execute(params, {
+            tool.execute(call.params, {
               sessionId,
               agentDir: ctx.agentDir,
               from: ctx.from,
@@ -653,7 +564,6 @@ export class LoopService {
               usage: this.deps.usage,
               lastTurnStats: this.lastTurnStats,
               tools: ctx.tools,
-              guard: this.deps.guard,
               skills: this.deps.skills,
               instincts: this.deps.instincts,
               turn: ctx.turn,
@@ -668,17 +578,14 @@ export class LoopService {
           ])
         } catch (err) {
           result = { error: String(err) }
-          outcome = String(err).includes("timed out") ? "timeout" : "error"
         }
       } else {
         result = { error: `Unknown tool: ${call.name}` }
-        outcome = "error"
       }
 
       const errorValue = result && typeof result === "object" ? (result as Record<string, unknown>).error : undefined
       if (errorValue) {
         iterationHadError = true
-        if (outcome === "ok") outcome = "error"
         rlog.warn(`tool error: ${String(errorValue).slice(0, 80)}`)
       }
 
@@ -694,28 +601,11 @@ export class LoopService {
         if (!citable.some((c) => c.n === n)) citable.push({ n, source: consulted[i] })
       }
 
-      // After-rules: redaction and records. Credentials are masked in the
-      // copy the model sees AND in the persisted one (the transcript is a log
-      // that leaves the box); only the size cap keeps the CLEAN-124 split of
-      // full-on-disk / trimmed-in-context.
-      let modelResult = result
-      let redacted = false
-      if (this.deps.guard) {
-        const after = await this.deps.guard.after(guardCall, result, { outcome, durationMs: Date.now() - startedMs, rulesFired })
-        modelResult = after.result
-        redacted = after.redacted
-      }
-
       const resultEvent: Event = {
         id: randomUUID(),
         type: "tool_result",
         ts: Date.now(),
-        data: {
-          toolUseId,
-          result: modelResult,
-          ...(outcome === "blocked" ? { blocked: true } : {}),
-          ...(redacted ? { redacted: true } : {}),
-        },
+        data: { toolUseId, result, ...(blocked ? { blocked: true } : {}) },
       }
       await this.deps.session.append(sessionId, resultEvent)
       // The transcript keeps the full result; the model gets one that fits
@@ -729,20 +619,11 @@ export class LoopService {
         : capped
       history.push(forModel === resultEvent.data ? resultEvent : { ...resultEvent, data: forModel })
 
-      // Mutating outcomes feed the completion check (CLEAN-150 US5).
-      if (guardCall.effect === "write") {
-        this.mutating.get(task.id)?.push({
-          tool: call.name,
-          outcome,
-          result: previewOf(modelResult),
-        })
-      }
-
       // On-demand context (CLEAN-150 US2): a loaded skill's body enters the
       // history ahead of the conversation — not the system prompt, whose
       // cached prefix must stay stable — and both kinds of load are reported
       // so the turn's breakdown shows what came in late.
-      if (outcome === "ok") this.noteOnDemandLoad(ctx, call.name, result)
+      if (!errorValue) this.noteOnDemandLoad(ctx, call.name, result)
 
       ctx.sendThinking?.(turnId, { ...thinkingStep, state: "done" })
     }
@@ -785,7 +666,7 @@ export class LoopService {
         systemPrompt: ctx.systemPrompt,
         history: ctx.history,
         response: {
-          text: this.deps.guard ? this.deps.guard.redactOutgoing(response.text ?? "") : (response.text ?? ""),
+          text: response.text ?? "",
           toolCalls: response.toolCalls,
           stopReason: response.stopReason,
         },
@@ -820,13 +701,10 @@ export class LoopService {
       return
     }
 
-    // A credential the model repeats from a tool result must not reach the
-    // person either (CLEAN-150 FR-005).
-    if (this.deps.guard) fullText = this.deps.guard.redactOutgoing(fullText)
-
     // If we streamed — message already sent via streamSend, skip re-send.
-    // The last call records whether it actually streamed (a verifiable turn
-    // deliberately does not); fall back to the channel check when unknown.
+    // The last call records whether it actually streamed (a stream that
+    // yielded nothing fell back to complete); the channel check is the
+    // fallback when unknown.
     const wasStreamed = this.streamed.get(ctx.task.id) ?? (canStreamOnChannel(ctx.channel, ctx.isInternal) && this.deps.llm.canStream())
 
     // Streamed bubbles had their citations checked one by one as they went

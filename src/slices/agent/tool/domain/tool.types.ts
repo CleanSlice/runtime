@@ -7,7 +7,6 @@ import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
-import type { GuardModule } from "../../guard/guard.module"
 import type { SkillModule } from "../../skill/skill.module"
 import type { InstinctModule } from "../../instinct/instinct.module"
 import type { IDelegateRequest, IDelegateResult } from "../../task/domain/delegate.types"
@@ -63,8 +62,6 @@ export interface ToolContext {
   llm?: LlmModule
   usage?: UsageModule
   lastTurnStats?: LastTurnStatsTracker
-  /** Guardrails — lets `agent_status` report the rule set and recent firings (CLEAN-150). */
-  guard?: GuardModule
   /** Skills — `skill_load` pulls a skill into the session for a few turns (CLEAN-150 US2). */
   skills?: SkillModule
   /** Learned behaviours — `agent_status.learned` (CLEAN-150 US3). */
@@ -109,9 +106,10 @@ export interface Tool {
   adminOnly?: boolean
   /**
    * Whether a call changes anything outside the conversation. Unset means
-   * `write`: an unannotated tool is verified rather than skipped. Tools whose
-   * effect depends on the call (`file` read/write, `http` GET/POST) implement
-   * `effectOf` instead and leave this unset.
+   * `write`: an unannotated tool is treated as mutating, so a delegated
+   * worker may not call it (CLEAN-150 US6). Tools whose effect depends on
+   * the call (`file` read/write, `http` GET/POST) implement `effectOf`
+   * instead and leave this unset.
    */
   effect?: ToolEffect
   /** Per-call effect for tools whose params decide it; wins over `effect`. */

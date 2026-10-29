@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, existsSync, readFileSync } from "fs"
+import { mkdtempSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { z } from "zod"
@@ -8,8 +8,6 @@ import type { ILoopContext } from "./loop.types"
 import type { Event } from "../../../setup/event"
 import type { Tool } from "../../../agent/tool"
 import type { ModelResponse } from "../../../setup/llm/domain/llm.types"
-import { GuardModule } from "../../../agent/guard"
-import { VerificationService } from "./verification.service"
 import { TaskManager } from "../../../agent/task/domain/task.service"
 import { TaskGateway } from "../../../agent/task/data/task.gateway"
 import { AGENT_CONFIG_DEFAULTS } from "../../init/domain/init.types"
@@ -52,16 +50,10 @@ const execTool = (seen: unknown[]): Tool => ({
   effect: "write",
   schema: z.object({ command: z.string() }),
   adminOnly: true,
-  execute: async (params) => { seen.push(params); return { stdout: "sk-ant-oat01-abcdefghijklmnop\n" } },
+  execute: async (params) => { seen.push(params); return { stdout: "ok\n" } },
 })
 
-async function guardFor(agentDir: string) {
-  const guard = new GuardModule(agentDir, { ...AGENT_CONFIG_DEFAULTS.guard, observerTimeoutMs: 200 })
-  await guard.load()
-  return guard
-}
-
-function makeLoop(deps: { llm: unknown; session: unknown; guard?: GuardModule; tools: Tool[] }) {
+function makeLoop(deps: { llm: unknown; session: unknown; tools: Tool[] }) {
   return new LoopService({
     llm: deps.llm as never,
     session: deps.session as never,
@@ -70,7 +62,6 @@ function makeLoop(deps: { llm: unknown; session: unknown; guard?: GuardModule; t
     voice: {} as never,
     channel: {} as never,
     tools: deps.tools,
-    guard: deps.guard,
   })
 }
 
@@ -93,166 +84,21 @@ function makeCtx(agentDir: string, tools: Tool[], sent: string[]): ILoopContext 
   }
 }
 
-describe("LoopService with guardrails (CLEAN-150 US1)", () => {
-  test("a blocked call never reaches the tool, carries the reason, and is recorded", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
+describe("LoopService tool calls", () => {
+  test("a tool call runs with the params the model gave and the final text is sent", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "loop-"))
     const seen: unknown[] = []
     const tools = [execTool(seen)]
     const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "exec", params: { command: "cat data/secrets/key" } }], stopReason: "tool_use" },
-    ])
-    const { session, events } = recordingSession()
-    const guard = await guardFor(agentDir)
-    const sent: string[] = []
-
-    await makeLoop({ llm, session, guard, tools }).run(makeCtx(agentDir, tools, sent))
-
-    expect(seen).toEqual([])
-    const result = events.find(e => e.type === "tool_result")!
-    const data = result.data as { result: { error: string }; blocked?: boolean }
-    expect(data.blocked).toBe(true)
-    expect(data.result.error).toMatch(/^blocked by rule no-secret-store-reads: /)
-
-    const recordFile = join(agentDir, "data", "toolcalls.jsonl")
-    expect(existsSync(recordFile)).toBe(true)
-    const line = JSON.parse(readFileSync(recordFile, "utf8").trim().split("\n").pop()!)
-    expect(line.tool).toBe("exec")
-    expect(line.outcome).toBe("blocked")
-    expect(line.rulesFired).toEqual(["no-secret-store-reads", "record-all"])
-    expect(line.effect).toBe("write")
-  })
-
-  test("a credential in a tool result is redacted for the model and in the persisted transcript", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
-    const seen: unknown[] = []
-    const tools = [execTool(seen)]
-    const { llm, calls } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "exec", params: { command: "echo key" } }], stopReason: "tool_use" },
-    ])
-    const { session, events } = recordingSession()
-    const guard = await guardFor(agentDir)
-    const sent: string[] = []
-
-    await makeLoop({ llm, session, guard, tools }).run(makeCtx(agentDir, tools, sent))
-
-    expect(seen).toHaveLength(1)
-    const modelSaw = JSON.stringify(calls[1]!.history)
-    expect(modelSaw).not.toContain("abcdefghijklmnop")
-    expect(modelSaw).toContain("sk-ant")
-    const stored = events.find(e => e.type === "tool_result")!.data as { result: unknown; redacted?: boolean }
-    expect(JSON.stringify(stored.result)).not.toContain("abcdefghijklmnop")
-    expect(stored.redacted).toBe(true)
-  })
-
-  test("a credential the model typed into tool params is masked in the persisted tool_call", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
-    const seen: unknown[] = []
-    const tools = [execTool(seen)]
-    const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "exec", params: { command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz' https://x.test" } }], stopReason: "tool_use" },
-    ])
-    const { session, events } = recordingSession()
-    const guard = await guardFor(agentDir)
-
-    await makeLoop({ llm, session, guard, tools }).run(makeCtx(agentDir, tools, []))
-
-    // The tool itself still gets the real params — only the record is masked.
-    expect(JSON.stringify(seen[0])).toContain("abcdefghijklmnopqrstuvwxyz")
-    const stored = events.find(e => e.type === "tool_call")!.data as { params: unknown }
-    expect(JSON.stringify(stored.params)).not.toContain("abcdefghijklmnopqrstuvwxyz")
-  })
-
-  test("without a guard the loop behaves as before", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "guard-loop-"))
-    const seen: unknown[] = []
-    const tools = [execTool(seen)]
-    const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "exec", params: { command: "cat data/secrets/key" } }], stopReason: "tool_use" },
+      { text: "", toolCalls: [{ name: "exec", params: { command: "ls" } }], stopReason: "tool_use" },
     ])
     const { session } = recordingSession()
     const sent: string[] = []
 
     await makeLoop({ llm, session, tools }).run(makeCtx(agentDir, tools, sent))
 
-    expect(seen).toHaveLength(1)
+    expect(seen).toEqual([{ command: "ls" }])
     expect(sent).toEqual(["done"])
-  })
-})
-
-describe("LoopService with verified completion (CLEAN-150 US5)", () => {
-  function verifier(answer: string) {
-    const calls: string[] = []
-    const service = new VerificationService({ auxComplete: async (system) => { calls.push(system); return { text: answer } } }, { enabled: true, timeoutMs: 1000 })
-    return { calls, service }
-  }
-  const failingHttp: Tool = {
-    name: "http", description: "call", effect: "write", schema: z.object({ url: z.string() }),
-    execute: async () => ({ error: "500 Internal Server Error" }),
-  }
-  const readOnly: Tool = {
-    name: "web_fetch", description: "fetch", effect: "read", schema: z.object({ url: z.string() }),
-    execute: async () => ({ text: "hello" }),
-  }
-
-  test("a 'done' after a failed mutating tool is rewritten before delivery", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
-    const tools = [failingHttp]
-    const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "http", params: { url: "https://api.test/agents/1" } }], stopReason: "tool_use" },
-      { text: "Done — the agent name is updated.", stopReason: "end_turn" },
-    ])
-    const { session, events } = recordingSession()
-    const sent: string[] = []
-    const { calls, service } = verifier('{"ok":false,"reply":"The update failed: the API returned 500 Internal Server Error."}')
-
-    await new LoopService({
-      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
-      voice: {} as never, channel: {} as never, tools, verification: service,
-    }).run(makeCtx(agentDir, tools, sent))
-
-    expect(calls).toHaveLength(1)
-    expect(sent).toEqual(["The update failed: the API returned 500 Internal Server Error."])
-    const assistant = events.find(e => e.type === "assistant")!.data as { text: string }
-    expect(assistant.text).toContain("500")
-  })
-
-  test("a read-only turn never calls the verifier", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
-    const tools = [readOnly]
-    const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "web_fetch", params: { url: "https://x.test" } }], stopReason: "tool_use" },
-      { text: "It says hello.", stopReason: "end_turn" },
-    ])
-    const { session } = recordingSession()
-    const sent: string[] = []
-    const { calls, service } = verifier('{"ok":false,"reply":"should not be used"}')
-
-    await new LoopService({
-      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
-      voice: {} as never, channel: {} as never, tools, verification: service,
-    }).run(makeCtx(agentDir, tools, sent))
-
-    expect(calls).toHaveLength(0)
-    expect(sent).toEqual(["It says hello."])
-  })
-
-  test("a verifier timeout delivers the draft marked unverified", async () => {
-    const agentDir = mkdtempSync(join(tmpdir(), "verify-loop-"))
-    const tools = [failingHttp]
-    const { llm } = scriptedLlm([
-      { text: "", toolCalls: [{ name: "http", params: { url: "https://api.test/agents/1" } }], stopReason: "tool_use" },
-      { text: "Done.", stopReason: "end_turn" },
-    ])
-    const { session } = recordingSession()
-    const sent: string[] = []
-    const slow = new VerificationService({ auxComplete: () => new Promise(res => setTimeout(() => res({ text: '{"ok":true}' }), 300)) }, { enabled: true, timeoutMs: 20 })
-
-    await new LoopService({
-      llm: llm as never, session: session as never, activity: { updateStep: () => {} } as never, usage: { add: () => {} } as never,
-      voice: {} as never, channel: {} as never, tools, verification: slow,
-    }).run(makeCtx(agentDir, tools, sent))
-
-    expect(sent).toEqual(["Done. (unverified)"])
   })
 })
 

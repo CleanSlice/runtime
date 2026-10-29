@@ -34,8 +34,6 @@ interface IAgentStatusReport {
   channels?: IChannelInfo[]
   usageToday?: { inputTokens: number; outputTokens: number; callCount: number }
   environment?: { ranchAdmin: boolean; bridleConnected: boolean; s3Sync: boolean }
-  /** Guardrails: how many rules are active, which fired in the last day, and whether the set loaded (CLEAN-150). */
-  rules?: { count: number; loaded: boolean; loadError?: string; firedLast24h: Array<{ id: string; times: number }> }
   /** System-prompt accounting of this turn against `contextBudget` (CLEAN-150 US2). */
   context?: IPromptBreakdown
   /** Learned behaviours by band (CLEAN-150 US3). */
@@ -127,15 +125,6 @@ Safe for any caller — the report is trimmed to what the current user is allowe
       if (ctx.promptBreakdown) report.context = ctx.promptBreakdown
       if (ctx.instincts) report.learned = ctx.instincts.summary()
       if (ctx.lastCompaction) report.lastCompaction = ctx.lastCompaction
-      if (ctx.guard) {
-        report.rules = {
-          count: ctx.guard.listRules().filter(r => r.enabled).length,
-          loaded: ctx.guard.isLoaded,
-          ...(ctx.guard.lastLoadError ? { loadError: ctx.guard.lastLoadError } : {}),
-          ...(ctx.guard.skippedFiles.length ? { skippedFiles: ctx.guard.skippedFiles } : {}),
-          firedLast24h: ctx.guard.recentFirings(24),
-        }
-      }
       report.environment = {
         ranchAdmin: process.env.RANCH_ADMIN === "true",
         bridleConnected: !!process.env.BRIDLE_URL,

@@ -21,8 +21,7 @@ import { InitModule, type IAgentConfig } from "../init"
 import { SecretModule } from "../../setup/secret/secret.module"
 import { ActivityModule } from "../../bot/activity/activity.module"
 import { CommandService } from "../../bot/command/domain/command.service"
-import { LoopModule, VerificationService, DelegateService } from "../loop/loop.module"
-import { GuardModule } from "../../agent/guard"
+import { LoopModule, DelegateService } from "../loop/loop.module"
 import { InstinctModule } from "../../agent/instinct"
 import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
@@ -30,7 +29,6 @@ import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
 
 const s3Log = createLogger("s3")
-const guardLog = createLogger("guard")
 const msgLog = createLogger("msg")
 
 /** External config passed by the entrypoint (index.ts / multi.ts) */
@@ -73,7 +71,6 @@ export class AgentRuntime {
   private access: AccessModule
   private init: InitModule
   private loop: LoopModule
-  private guard: GuardModule
   private instincts: InstinctModule
   private tasks: TaskManager
 
@@ -165,13 +162,9 @@ export class AgentRuntime {
     this.access = AccessModule.create(agentDir, adminIds, this.config)
     const access = this.access
 
-    // Guardrails around every tool call — rules in .agent/rules/ plus the
-    // platform baseline. Loaded in start(); until then every call is blocked.
-    this.guard = new GuardModule(agentDir, this.config.guard)
-
     // Slash command handler (/help, /tasks, /cancel, /voice, etc.)
     const commands = new CommandService({
-      access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm, guard: this.guard,
+      access, skills: this.skills, voice, tasks, session: this.session, memory: this.memory, llm: this.llm,
       instincts: this.instincts,
       // Resolved at call time: the runtime service is built a few lines below.
       context: (sessionId) => this.runtimeService.getLastBreakdown(sessionId),
@@ -179,16 +172,9 @@ export class AgentRuntime {
 
     // ── Runtime slices (orchestration) ─────────────────────────────
 
-    // Completion check after mutating tools — the auxiliary model compares
-    // the draft reply with what the tools actually returned (CLEAN-150 US5).
-    const verification = new VerificationService(
-      { auxComplete: (system, history, toolList) => this.llm.auxComplete(system, history, toolList) },
-      this.config.verification,
-    )
-
     // LLM ↔ tools execution loop
     this.loop = new LoopModule(
-      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, guard: this.guard, skills: this.skills, instincts: this.instincts, verification, tasks },
+      { llm: this.llm, session: this.session, activity: activityService, usage: this.usage, voice, channel: this.channel, tools, skills: this.skills, instincts: this.instincts, tasks },
       {
         maxIterations: this.config.maxIterations,
         maxToolOutputChars: this.config.tools.maxOutputChars,
@@ -272,26 +258,10 @@ export class AgentRuntime {
   /** Boot the agent: restore state, connect channels, start background jobs. */
   async start(): Promise<void> {
     await this.restoreState()
-    await this.loadGuard()
     await this.loadState()
     await this.connectChannels()
     this.checkRecovery()
     this.startBackgroundJobs()
-  }
-
-  /**
-   * A bad agent rule file is skipped and reported (`/rules`, agent_status);
-   * only a bad baseline file — a platform defect — fails closed and keeps
-   * every tool call blocked with the reason (CLEAN-150 FR-004).
-   */
-  private async loadGuard(): Promise<void> {
-    try {
-      await this.guard.load()
-    } catch (err) {
-      const message = (err as Error).message
-      guardLog.error(`rules failed to load — tool calls are blocked until fixed: ${message}`)
-      this.guard.markFailed(message)
-    }
   }
 
   /** Graceful shutdown: disconnect channels, flush state, push to S3. */

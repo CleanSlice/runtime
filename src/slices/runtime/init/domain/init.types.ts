@@ -98,22 +98,6 @@ export interface IAgentConfig {
     retainTurns: number
   }
 
-  /** Guardrails around tool calls (CLEAN-150 US1). Rules live in `.agent/rules/`. */
-  guard: {
-    /** Upper bound for a `record` rule's handler; slower observers are abandoned. */
-    observerTimeoutMs: number
-    /** Tool-call record file, relative to the agent dir. */
-    recordFile: string
-    /** Rotate the record file once it passes this size. */
-    recordMaxBytes: number
-  }
-
-  /** Post-turn check of completion claims against mutating tool outcomes (CLEAN-150 US5). */
-  verification: {
-    enabled: boolean
-    timeoutMs: number
-  }
-
   s3: {
     /**
      * Optional periodic full-sweep backup. 0 disables it.
@@ -293,17 +277,6 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
   skills: {
     selection: "model",
     retainTurns: 3,
-  },
-
-  guard: {
-    observerTimeoutMs: 2000,
-    recordFile: "data/toolcalls.jsonl",
-    recordMaxBytes: 10 * 1024 * 1024,
-  },
-
-  verification: {
-    enabled: true,
-    timeoutMs: 8000,
   },
 
   s3: {

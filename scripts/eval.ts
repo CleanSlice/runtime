@@ -6,17 +6,12 @@
 // one table. Exits non-zero when a set misses the threshold its header
 // declares. The modes land with their user stories; until then a set whose
 // mode is unknown is reported as "pending" and does not fail the run.
-import { mkdtempSync, readdirSync, readFileSync } from "fs"
-import { tmpdir } from "os"
+import { readdirSync, readFileSync } from "fs"
 import { join, basename } from "path"
 import { z } from "zod"
-import { GuardModule } from "../src/slices/agent/guard"
-import { AGENT_CONFIG_DEFAULTS } from "../src/slices/runtime/init/domain/init.types"
 import { LlmModule } from "../src/slices/setup/llm/llm.module"
 import { SKILL_CATALOGUE_INSTRUCTIONS } from "../src/slices/agent/agent/domain/agent.service"
 import { InstinctService, DEFAULT_INSTINCT_CONFIG, type IInstinctGateway } from "../src/slices/agent/instinct"
-import { VerificationService } from "../src/slices/runtime/loop/domain/verification.service"
-import type { IToolOutcome } from "../src/slices/runtime/loop/domain/prompts/verification.prompt"
 import type { Tool } from "../src/slices/agent/tool/domain/tool.types"
 import type { Event } from "../src/slices/setup/event"
 
@@ -26,23 +21,6 @@ interface IEvalSet { file: string; header: IEvalHeader; cases: IEvalCase[] }
 
 /** `pending` means the mode could not run here (missing credentials); it is reported, not failed. */
 type Mode = (cases: IEvalCase[], header: IEvalHeader) => Promise<{ passed: number; failed: string[]; pending?: string }>
-
-/**
- * US1 — every case carries the tool call the model would make; the baseline
- * rules (plus `.agent/rules/` when AGENT_DIR is set) must block it.
- */
-const blocked: Mode = async (cases) => {
-  const agentDir = process.env.AGENT_DIR ?? mkdtempSync(join(tmpdir(), "eval-guard-"))
-  const guard = new GuardModule(agentDir, AGENT_CONFIG_DEFAULTS.guard)
-  await guard.load()
-  const failed: string[] = []
-  for (const c of cases) {
-    const call = c.call as { name: string; params: unknown }
-    const verdict = guard.before({ tool: call.name, params: call.params, agentDir: "/agent", sessionId: "eval", turnId: c.id, effect: "write" })
-    if (verdict.kind !== "block") failed.push(c.id)
-  }
-  return { passed: cases.length - failed.length, failed }
-}
 
 /**
  * US2 — the real model sees the example agent's skill catalogue and one
@@ -133,30 +111,8 @@ function nullInstinctGateway(): IInstinctGateway {
   return { list: () => [], write: () => {}, remove: () => {}, readLastDecay: () => undefined, writeLastDecay: () => {}, writeSkill: () => "" }
 }
 
-/**
- * US5 — the verifier (real aux model) sees the tool outcomes and the draft:
- * supported claims pass, unsupported ones are rewritten without repeating the
- * false claim. Needs `LLM_API_KEY`.
- */
-const noFalseDone: Mode = async (cases) => {
-  if (!process.env.LLM_API_KEY) return { passed: 0, failed: [], pending: "set LLM_API_KEY to run this set" }
-  const llm = new LlmModule({ provider: "claude", apiKey: process.env.LLM_API_KEY, model: process.env.LLM_MODEL ?? "claude-sonnet-4-6" })
-  const verifier = new VerificationService({ auxComplete: (s, h, t) => llm.auxComplete(s, h, t) }, { enabled: true, timeoutMs: 30_000 })
-  const failed: string[] = []
-  for (const c of cases) {
-    const v = await verifier.verify(String(c.draft), c.outcomes as IToolOutcome[])
-    const expect = c.expect as { ok: boolean; replyNotMatch?: string }
-    const problems: string[] = []
-    if (v.skipped || v.timedOut) problems.push(v.timedOut ? "timeout" : "skipped")
-    else if (v.ok !== expect.ok) problems.push(`ok=${v.ok}`)
-    else if (!v.ok && expect.replyNotMatch && re(expect.replyNotMatch).test(v.reply ?? "")) problems.push("rewrite repeats the claim")
-    if (problems.length) failed.push(`${c.id}(${problems.join(";")})`)
-  }
-  return { passed: cases.length - failed.length, failed }
-}
-
 /** Assertion modes, one per story. */
-const MODES: Record<string, Mode> = { blocked, "skill-loaded": skillLoaded, "holds-after-correction": holdsAfterCorrection, "no-false-done": noFalseDone }
+const MODES: Record<string, Mode> = { "skill-loaded": skillLoaded, "holds-after-correction": holdsAfterCorrection }
 
 function loadSet(file: string): IEvalSet {
   const lines = readFileSync(file, "utf8").split("\n").filter(l => l.trim())

@@ -35,13 +35,6 @@
     "retainTurns": 3
   },
 
-  "_comment_guard": "Guardrails around tool calls. Rules are markdown files in rules/*.md; protected platform rules ship with the runtime. record rules append to recordFile, rotated at recordMaxBytes; observers slower than observerTimeoutMs are abandoned.",
-  "guard": {
-    "observerTimeoutMs": 2000,
-    "recordFile": "data/toolcalls.jsonl",
-    "recordMaxBytes": 10485760
-  },
-
   "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded (the ## Rules heading of SOUL.md is exempt). review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
   "memory": {
     "limits": {
@@ -65,12 +58,6 @@
       "decayDays": 14,
       "maxInjected": 8
     }
-  },
-
-  "_comment_verification": "After a mutating tool ran, the draft reply is checked against the tool outcomes by the auxiliary LLM before delivery; past timeoutMs the draft goes out marked unverified.",
-  "verification": {
-    "enabled": true,
-    "timeoutMs": 8000
   },
 
   "_comment_s3": "Sync is event-driven (fs.watch + diff). syncIntervalSec is an optional periodic full-sweep safety net — set 0 to disable, or e.g. 21600 (6h) for paranoid backup.",

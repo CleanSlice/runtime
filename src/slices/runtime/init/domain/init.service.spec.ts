@@ -19,12 +19,10 @@ describe("agent.config.json harness sections", () => {
     expect(d.skills).toEqual({ selection: "model", retainTurns: 3 })
     expect(d.tools.coreCatalogue).toContain("exec")
     expect(d.tools.delegate).toEqual({ timeoutMs: 300_000, maxParallel: 5, summaryChars: 4000, allowWrite: false })
-    expect(d.guard).toEqual({ observerTimeoutMs: 2000, recordFile: "data/toolcalls.jsonl", recordMaxBytes: 10_485_760 })
     expect(d.memory.instincts.bands).toEqual({ suggested: 0.3, apply: 0.5, core: 0.8 })
     expect(d.memory.instincts.decayDays).toBe(14)
     expect(d.session.idleCompactMin).toBe(30)
     expect(d.session.hardLimitPct).toBe(90)
-    expect(d.verification).toEqual({ enabled: true, timeoutMs: 8000 })
   })
 
   test("a partial file keeps every default it does not mention", () => {
@@ -36,6 +34,13 @@ describe("agent.config.json harness sections", () => {
     expect(config.memory.instincts.start.explicitRule).toBe(0.9)
     expect(config.memory.limits.soul).toBe(12_000)
     expect(config.memory.review.everyTurns).toBe(10)
-    expect(config.verification.timeoutMs).toBe(8000)
+  })
+
+  test("sections a past release knew (guard, verification) are ignored, not an error", () => {
+    const dir = agentDirWith({ guard: { observerTimeoutMs: 1 }, verification: { enabled: false } })
+    const config = new InitGateway().loadConfig(dir)
+
+    expect(config.maxIterations).toBe(AGENT_CONFIG_DEFAULTS.maxIterations)
+    expect(config.memory.review.everyTurns).toBe(10)
   })
 })
