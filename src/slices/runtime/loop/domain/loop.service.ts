@@ -209,9 +209,19 @@ export class LoopService {
       try {
         let bubbleId: string | undefined
         let bubbleCited: ISource[] = []
-        response = await this.callLlm(ctx, finalize, (id, cited) => { bubbleId = id; bubbleCited = cited })
+        let bubbleInterim = false
+        response = await this.callLlm(ctx, finalize, (id, cited, interim) => {
+          bubbleId = id
+          bubbleCited = cited
+          bubbleInterim = interim
+        })
         if (bubbleId && response.text) {
-          bubbles.push({ id: bubbleId, text: response.text, ts: Date.now() })
+          bubbles.push({
+            id: bubbleId,
+            text: response.text,
+            ts: Date.now(),
+            ...(bubbleInterim ? { interim: true as const } : {}),
+          })
           // `stream_end` is out by now, so the list follows as its own event.
           if (bubbleCited.length > 0) {
             bubbleSources.push({ messageId: bubbleId, sources: bubbleCited })
@@ -425,7 +435,7 @@ export class LoopService {
   private async callLlm(
     ctx: ILoopContext,
     finalize: BubbleFinalizer,
-    onBubble?: (messageId: string, cited: ISource[]) => void,
+    onBubble?: (messageId: string, cited: ISource[], interim: boolean) => void,
   ) {
     const { channel, isInternal, systemPrompt, tools } = ctx
     // Tool results pile up inside one turn too; the model always gets a
@@ -442,6 +452,7 @@ export class LoopService {
     if (canStream) {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       let cited: ISource[] = []
+      let interim = false
       const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
         streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
         // The bubble is complete here and the channel has not sent its final
@@ -451,9 +462,14 @@ export class LoopService {
         const fixed = finalize(streamedResponse.text ?? "")
         streamedResponse = { ...streamedResponse, text: fixed.text }
         cited = fixed.sources
-        return fixed.text
+        // Text that arrives together with tool calls is the model narrating
+        // what it is about to do, not an answer — the channel marks the
+        // bubble `interim` so a console folds it into the thinking timeline
+        // and a synchronous caller keeps waiting for the real reply (CLEAN-189).
+        interim = (streamedResponse.toolCalls?.length ?? 0) > 0
+        return { text: fixed.text, interim }
       })
-      if (messageId) onBubble?.(messageId, cited)
+      if (messageId) onBubble?.(messageId, cited, interim)
       if (streamedResponse) {
         this.streamed.set(ctx.task.id, true)
         return streamedResponse
