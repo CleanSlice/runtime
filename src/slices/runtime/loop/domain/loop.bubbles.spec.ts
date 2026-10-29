@@ -128,6 +128,44 @@ describe("LoopService — bubbles of a streamed turn", () => {
     expect(data.text).toBe("Let me search for the 26MY CX-30 lineup.The 2026 CX-30 comes in eight trims.")
   })
 
+  it("sends the turn's text as the reply when every bubble was interim and the model ended silent (CLEAN-193)", async () => {
+    // The answer arrived next to a tool call, so the console folded it into
+    // the thinking block; the model then ended with nothing. Without this
+    // the person reads no reply and a synchronous caller waits forever.
+    const answer = "AFS is standard on 2.5 S Premium and 2.5 Turbo Premium Plus."
+    const { loop, ctx, appended, sent, streamed } = makeLoop([
+      { text: answer, toolCalls: [{ name: "missing_tool", params: {} }] },
+      { text: "" },
+    ])
+    let replies = 0
+    ctx.send = async (text: string) => { sent.push(text); return `reply-${++replies}` }
+
+    await loop.run(ctx)
+
+    expect(streamed).toEqual([{ text: answer, interim: true }])
+    expect(sent).toEqual([answer])
+    const data = assistantEvents(appended)[0].data as {
+      text: string
+      messages: Array<{ id: string; text: string; interim?: true }>
+    }
+    expect(data.messages.map((m) => [m.id, m.interim ?? false])).toEqual([
+      ["wire-1", true],
+      ["reply-1", false],
+    ])
+    expect(data.text).toBe(answer)
+  })
+
+  it("does not repeat the reply when a real bubble followed the narration", async () => {
+    const { loop, ctx, sent } = makeLoop([
+      { text: "Let me check the deck.", toolCalls: [{ name: "missing_tool", params: {} }] },
+      { text: "Eight trims." },
+    ])
+
+    await loop.run(ctx)
+
+    expect(sent).toEqual([])
+  })
+
   it("records nothing for an iteration that showed no bubble", async () => {
     const { loop, ctx, appended } = makeLoop([
       { toolCalls: [{ name: "missing_tool", params: {} }] },
