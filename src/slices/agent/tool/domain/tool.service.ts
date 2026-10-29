@@ -79,6 +79,7 @@ export class ToolService {
       "Default: do not narrate routine, low-risk tool calls (just call the tool).",
       "Narrate only when it helps: multi-step work, sensitive actions (e.g. deletions), or when the user explicitly asks.",
       "Keep narration brief and value-dense; avoid repeating obvious steps.",
+      "Text written in the same response as a tool call is shown as a progress note inside the thinking timeline, not as your reply. Put the answer — anything the person must read — in a response that calls no tools.",
       "",
       "- If a tool can answer the question — call it immediately. No preamble.",
       "- Every claim MUST be backed by an actual tool call result. No tool call = no claim.",

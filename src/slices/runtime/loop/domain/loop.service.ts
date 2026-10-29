@@ -855,6 +855,20 @@ export class LoopService {
       }
     }
 
+    // Every bubble of this streamed turn was narration before a tool call and
+    // the model then ended without an answer. Consoles fold interim bubbles
+    // into the thinking timeline and a synchronous caller waits for a bubble
+    // that is not interim (CLEAN-189), so the person would see no reply at
+    // all. The turn's text goes out once more as the reply, under its own id
+    // so a replay shows it too (CLEAN-193).
+    let storedBubbles = bubbles
+    if (wasStreamed && bubbles.length > 0 && bubbles.every(b => b.interim)) {
+      rlog.warn(`${iterTag} every bubble was interim — sending the turn's text as the reply`)
+      const messageId = await ctx.send(text)
+      sentEarly = true
+      storedBubbles = messageId ? [...bubbles, { id: messageId, text, ts: Date.now() }] : []
+    }
+
     const assistantEvent: Event = {
       id: randomUUID(),
       type: "assistant",
@@ -864,7 +878,7 @@ export class LoopService {
       // `sources` is display-only too: what each bubble cites (CLEAN-138).
       data: {
         text,
-        ...(bubbles.length ? { messages: bubbles } : {}),
+        ...(storedBubbles.length ? { messages: storedBubbles } : {}),
         ...(sources.length ? { sources } : {}),
       },
     }
