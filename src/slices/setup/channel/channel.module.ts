@@ -1,4 +1,4 @@
-import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./domain/channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart, Streamer } from "./domain/channel.types"
 import type { ISource } from "../../runtime/loop/domain/loop.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
@@ -263,7 +263,7 @@ export class ChannelModule {
     return this.service.listGroups(channel)
   }
 
-  async streamSend(channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+  async streamSend(channel: string, to: string, streamer: Streamer): Promise<string | void> {
     return this.service.streamSend(channel, to, streamer)
   }
 

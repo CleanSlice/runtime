@@ -112,6 +112,27 @@ export type MessagePart =
   | IMessageUiPart
   | IMessageUiSubmitPart
 
+// ── Streaming (one bubble at a time) ──────────────────────────
+
+/**
+ * What a streamer hands back once a streamed bubble is complete. A plain
+ * string is the bubble's text. The object form adds `interim`: the same model
+ * response went on to call tools, so this text is narration between steps
+ * ("Let me check the spec deck…"), not the answer (CLEAN-189). A channel that
+ * can say so marks the bubble on the wire and the consoles fold it into the
+ * thinking timeline instead of showing it as a reply.
+ */
+export type StreamerResult = string | { text: string; interim?: boolean }
+export type Streamer = (onChunk: (text: string) => void) => Promise<StreamerResult>
+
+export function streamedText(result: StreamerResult): string {
+  return typeof result === "string" ? result : result.text
+}
+
+export function streamedInterim(result: StreamerResult): boolean {
+  return typeof result !== "string" && result.interim === true
+}
+
 // ── Thinking (live reasoning steps) ───────────────────────────
 
 /**

@@ -1,4 +1,4 @@
-import { buildMessage, type IChannelGroup, type Message } from "../../../domain/channel.types"
+import { buildMessage, streamedText, type IChannelGroup, type Message, type Streamer } from "../../../domain/channel.types"
 import { isSilentReply, isSilentReplyPrefix } from "../../../../../agent/agent/domain/silentReply"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../../logger"
@@ -249,11 +249,11 @@ export class TelegramRepository {
    * Stream text to Telegram: sends placeholder "…", then edits every ~500ms as chunks arrive.
    * streamer is a function that calls onChunk(accumulatedText) and returns final text.
    */
-  async streamSend(chatId: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+  async streamSend(chatId: string, streamer: Streamer): Promise<string | void> {
     const messageId = await this.sendPlaceholder(chatId)
     if (!messageId) {
       // Fallback: just get the full text and send
-      const text = await streamer(() => {})
+      const text = streamedText(await streamer(() => {}))
       if (isSilentReply(text)) return
       await this.send(chatId, text)
       return
@@ -283,9 +283,10 @@ export class TelegramRepository {
 
     let finalText = ""
     try {
-      finalText = await streamer((accumulated: string) => {
+      // Telegram has no way to show "interim"; the text is all it keeps.
+      finalText = streamedText(await streamer((accumulated: string) => {
         pendingText = accumulated
-      })
+      }))
       pendingText = finalText
     } finally {
       clearInterval(interval)

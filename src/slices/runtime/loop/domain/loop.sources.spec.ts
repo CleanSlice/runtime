@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { LoopService } from "./loop.service"
 import type { ILoopContext, ISource } from "./loop.types"
 import type { Event } from "../../../setup/event"
+import { streamedText, type Streamer } from "../../../setup/channel/domain/channel.types"
 import type { Tool } from "../../../agent/tool"
 import { z } from "zod"
 
@@ -81,8 +82,8 @@ function makeLoop(script: IScriptedResponse[], opts: { streams?: boolean; citeSo
     // Stands in for the bridle repository: `send` mints a wire id like the
     // real one does, and a streamed bubble has an id only when it had text.
     send: async (text: string) => { sent.push(text); return `wire-${++bubble}` },
-    streamSend: async (_c: string, _to: string, streamer: (onChunk: (t: string) => void) => Promise<string>) => {
-      const text = await streamer(() => undefined)
+    streamSend: async (_c: string, _to: string, streamer: Streamer) => {
+      const text = streamedText(await streamer(() => undefined))
       if (text) sent.push(text)
       return text ? `wire-${++bubble}` : undefined
     },

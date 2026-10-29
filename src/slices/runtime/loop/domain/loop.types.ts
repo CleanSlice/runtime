@@ -3,7 +3,7 @@ import type { Tool } from "../../../agent/tool"
 import type { Task } from "../../../agent/task/domain/task.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule, IBridleDebugPayload } from "../../../setup/channel"
-import type { IThinkingStep, MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { IThinkingStep, MessagePart, Streamer } from "../../../setup/channel/domain/channel.types"
 import type { IOnDemandLoad, IPromptBreakdown } from "../../../agent/agent/domain/agent.types"
 
 export interface ILoopConfig {
@@ -70,7 +70,7 @@ export interface ILoopContext {
   tools: Tool[]
   /** Resolves to the wire message id when the channel mints one (bridle). */
   send: (text: string, parts?: MessagePart[]) => Promise<string | void>
-  streamSend: (channel: string, to: string, streamer: (onChunk: (text: string) => void) => Promise<string>) => Promise<string | void>
+  streamSend: (channel: string, to: string, streamer: Streamer) => Promise<string | void>
   /**
    * Best-effort "agent is working" signal to the originating channel's UI.
    * Fired at turn start and before each tool batch so the user never stares
@@ -142,4 +142,10 @@ export interface IAssistantBubble {
   id: string
   text: string
   ts: number
+  /**
+   * The model went on to call tools in the same response: this bubble is
+   * narration between steps, not the answer (CLEAN-189). A replay folds it
+   * into the thinking timeline the way the live client did.
+   */
+  interim?: true
 }

@@ -2,6 +2,9 @@ import type { IChannelGateway } from "../../../domain/channel.gateway"
 import {
   MessagePartTypes,
   buildMessage,
+  streamedInterim,
+  streamedText,
+  type Streamer,
   type IMessageAttachment,
   type IThinkingStep,
   type Message,
@@ -386,7 +389,7 @@ export class BridleRepository implements IChannelGateway {
     this.handler = handler
   }
 
-  async streamSend(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void> {
+  async streamSend(to: string, streamer: Streamer): Promise<string | void> {
     const messageId = randomUUID()
 
     if (!this.socket?.connected) {
@@ -426,14 +429,20 @@ export class BridleRepository implements IChannelGateway {
     const interval = setInterval(flush, 100)
 
     let finalText = ""
+    // The loop says so when the same model response went on to call tools:
+    // the bubble is narration between steps, not the answer, and the wire
+    // carries that so clients fold it into the thinking block (CLEAN-189).
+    let interim = false
     // Set only when a bubble really went out under `messageId`. The loop
     // stores it with the turn so a transcript replay can rebuild the same
     // bubbles the person watched, under the same ids (CLEAN-102).
     let emittedBubble = false
     try {
-      finalText = await streamer((accumulated: string) => {
+      const result = await streamer((accumulated: string) => {
         pendingText = accumulated
       })
+      finalText = streamedText(result)
+      interim = streamedInterim(result)
     } finally {
       clearInterval(interval)
       // Tool-only LLM iterations stream no text and return ""; emitting
@@ -448,6 +457,7 @@ export class BridleRepository implements IChannelGateway {
           parts: [{ type: "text", text: finalText }],
           messageId,
           ts: Date.now(),
+          ...(interim ? { interim: true } : {}),
         })
         emittedBubble = true
       }

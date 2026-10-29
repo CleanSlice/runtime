@@ -1,4 +1,4 @@
-import type { IChannelGroup, IThinkingStep, Message, MessagePart } from "./channel.types"
+import type { IChannelGroup, IThinkingStep, Message, MessagePart, Streamer } from "./channel.types"
 import type { ISource } from "../../../runtime/loop/domain/loop.types"
 
 export interface IChannelGateway {
@@ -17,7 +17,7 @@ export interface IChannelGateway {
    * onStream is called with a function that accepts accumulated text.
    * Returns when streaming is complete.
    */
-  streamSend?(to: string, streamer: (onChunk: (text: string) => void) => Promise<string>): Promise<string | void>
+  streamSend?(to: string, streamer: Streamer): Promise<string | void>
   /**
    * Ephemeral "agent is working" signal for the channel's UI. Optional —
    * only channels with a live typing affordance (bridle) implement it.
