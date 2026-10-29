@@ -22,6 +22,8 @@ interface IScriptedResponse {
 
 const legal: ISource = { kind: "knowledge", id: "src-1", name: "Contract 2025.pdf", knowledgeId: "k1", knowledgeName: "Legal" }
 const site: ISource = { kind: "web", url: "https://example.com/page", title: "Example" }
+/** Enough text for a cited bubble to stream rather than be held back as narration (CLEAN-197). */
+const CITED_PAD = "Checking the contract and the site before answering this one. ".repeat(6).trim()
 
 /** A tool whose result declares its sources in the contract shape — what Ranch's `query_knowledge` does over MCP. */
 function lookupTool(name: string, sources: ISource[]): Tool {
@@ -173,7 +175,9 @@ describe("LoopService — sources an answer cites", () => {
       [
         { toolCalls: [{ name: "lookup_a", params: {} }] },
         // Bubble 1 cites the first lookup, then goes on to a second one …
-        { text: "See [^1].", toolCalls: [{ name: "lookup_b", params: {} }] },
+        // (long enough to stream as a bubble — a short text before a tool
+        // call is held back as narration, CLEAN-197)
+        { text: `${CITED_PAD} See [^1].`, toolCalls: [{ name: "lookup_b", params: {} }] },
         // … whose source is [^2] for the model; the bubble renumbers it.
         { text: "Also [^1] and [^2]." },
       ],
@@ -183,7 +187,7 @@ describe("LoopService — sources an answer cites", () => {
     await loop.run(ctx)
 
     expect(sourcesSent).toEqual([
-      { messageId: "wire-1", text: "See [^1].", sources: [legal] },
+      { messageId: "wire-1", text: `${CITED_PAD} See [^1].`, sources: [legal] },
       { messageId: "wire-2", text: "Also [^1] and [^2].", sources: [legal, site] },
     ])
     // The second lookup returned a source the turn already knew: same number.
