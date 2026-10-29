@@ -46,6 +46,19 @@ interface LoopServiceDeps {
 // no UI to update.
 const STREAMING_CHANNELS = new Set(["telegram", "bridle"])
 
+/**
+ * How much of a streamed reply is held back before it streams (CLEAN-197).
+ * Whether a text is narration before a tool call ("Let me pull the 26MY
+ * Order Form…") is only known when the model's response ends — it is the
+ * tool calls after the text that say so — and a bubble that opened while
+ * streaming then had to jump into the thinking block. Narration on the
+ * reference agent runs 90–250 characters; a reply this short waits for the
+ * response to end and then goes where it belongs, a thinking step or one
+ * whole bubble. A reply that outgrows this is an answer being written for
+ * the person and streams at once.
+ */
+export const NARRATION_HOLDBACK_CHARS = 320
+
 function canStreamOnChannel(channel: string, isInternal: boolean): boolean {
   return !isInternal && STREAMING_CHANNELS.has(channel)
 }
@@ -214,6 +227,17 @@ export class LoopService {
           bubbleId = id
           bubbleCited = cited
           bubbleInterim = interim
+        }, (narration) => {
+          // Narration that never opened a bubble (CLEAN-197): a step of the
+          // thinking timeline, ahead of the tool steps it announces, and an
+          // interim bubble on the stored turn so a replay folds it the same
+          // way the live client showed it.
+          const id = randomUUID()
+          bubbles.push({ id, text: narration, ts: Date.now(), interim: true as const })
+          if (ctx.sendThinking) {
+            thinkingStepsEmitted = true
+            ctx.sendThinking(turnId, { id, label: narration, state: "done" })
+          }
         })
         if (bubbleId && response.text) {
           bubbles.push({
@@ -436,6 +460,7 @@ export class LoopService {
     ctx: ILoopContext,
     finalize: BubbleFinalizer,
     onBubble?: (messageId: string, cited: ISource[], interim: boolean) => void,
+    onNarration?: (text: string) => void,
   ) {
     const { channel, isInternal, systemPrompt, tools } = ctx
     // Tool results pile up inside one turn too; the model always gets a
@@ -453,8 +478,17 @@ export class LoopService {
       let streamedResponse: import("../../../setup/llm/domain/llm.types").ModelResponse | undefined
       let cited: ISource[] = []
       let interim = false
+      // Held back: chunks are not handed to the channel until the text
+      // outgrows NARRATION_HOLDBACK_CHARS, so a short text opens no bubble
+      // while it is still unknown whether it is narration (CLEAN-197).
+      let forwarded = false
+      let held: string | undefined
       const messageId = await ctx.streamSend(channel, ctx.from, async (onChunk) => {
-        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, onChunk)
+        streamedResponse = await this.deps.llm.stream(systemPrompt, history, tools, (accumulated) => {
+          if (!forwarded && accumulated.length <= NARRATION_HOLDBACK_CHARS) return
+          forwarded = true
+          onChunk(accumulated)
+        })
         // The bubble is complete here and the channel has not sent its final
         // text yet — what the streamer returns is what `stream_end` (bridle)
         // or the last edit (telegram) carries. Check the citations now, so
@@ -463,13 +497,21 @@ export class LoopService {
         streamedResponse = { ...streamedResponse, text: fixed.text }
         cited = fixed.sources
         // Text that arrives together with tool calls is the model narrating
-        // what it is about to do, not an answer — the channel marks the
-        // bubble `interim` so a console folds it into the thinking timeline
-        // and a synchronous caller keeps waiting for the real reply (CLEAN-189).
+        // what it is about to do, not an answer. Held back, it never becomes
+        // a bubble: the channel gets nothing to finish and the loop sends it
+        // as a thinking step instead. Already streaming, the channel marks
+        // the bubble `interim` so a console folds it into the thinking
+        // timeline and a synchronous caller keeps waiting for the real
+        // reply (CLEAN-189).
         interim = (streamedResponse.toolCalls?.length ?? 0) > 0
+        if (interim && !forwarded && fixed.text && !isSilentReply(fixed.text)) {
+          held = fixed.text
+          return { text: "", interim: true }
+        }
         return { text: fixed.text, interim }
       })
-      if (messageId) onBubble?.(messageId, cited, interim)
+      if (held) onNarration?.(held)
+      else if (messageId) onBubble?.(messageId, cited, interim)
       if (streamedResponse) {
         this.streamed.set(ctx.task.id, true)
         return streamedResponse
