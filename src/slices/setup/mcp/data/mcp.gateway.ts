@@ -444,8 +444,8 @@ export class McpGateway extends IMcpGateway {
     return {
       name: `${serverName}__${mcpTool.name}`,
       description: mcpTool.description ?? `MCP tool from ${serverName}`,
-      // Only a server that vouches for read-only gets `read`; the rest are
-      // verified after the turn like any other mutating tool (CLEAN-150).
+      // Only a server that vouches for read-only gets `read`; the rest count
+      // as mutating, which keeps them out of delegated workers (CLEAN-150).
       effect: mcpTool.annotations?.readOnlyHint === true ? "read" : "write",
       schema: z.any(),
       inputSchema: mcpTool.inputSchema ?? { type: "object", properties: {} },

@@ -27,7 +27,7 @@ export interface ICreateInput {
  * Learned behaviours with confidence (CLEAN-150 US3). One trigger, one
  * action, a score that experience moves: reinforcement up, correction down,
  * time without either slowly down. Bands decide what a behaviour may do;
- * nothing here ever reaches the guard — rules win by construction.
+ * a learned behaviour only ever reaches the prompt.
  */
 export class InstinctService {
   private items = new Map<string, IInstinct>()

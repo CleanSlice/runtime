@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-08
 
-**Status**: Draft
+**Status**: Draft. US1 (guardrails / rules) and US5 (verified completion) were removed again in CLEAN-191: a bad rule file blocked every tool call at start-up, and the post-turn verifier kept agents from answering until it was switched off per agent.
 
 **Ticket**: [CLEAN-150](https://dreamvention.atlassian.net/browse/CLEAN-150)
 

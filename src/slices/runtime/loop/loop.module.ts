@@ -7,12 +7,9 @@ import type { UsageModule } from "../../bot/usage/usage.module"
 import type { VoiceModule } from "../../bot/voice/voice.module"
 import type { ChannelModule } from "../../setup/channel/channel.module"
 import type { Tool } from "../../agent/tool"
-import type { GuardModule } from "../../agent/guard"
 import type { SkillModule } from "../../agent/skill/skill.module"
 import type { InstinctModule } from "../../agent/instinct/instinct.module"
-import type { VerificationService } from "./domain/verification.service"
 
-export { VerificationService } from "./domain/verification.service"
 export { DelegateService } from "./domain/delegate.service"
 import type { DelegateService } from "./domain/delegate.service"
 import type { TaskManager } from "../../agent/task/domain/task.service"
@@ -28,10 +25,8 @@ interface LoopModuleDeps {
   voice: VoiceModule
   channel: ChannelModule
   tools: Tool[]
-  guard?: GuardModule
   skills?: SkillModule
   instincts?: InstinctModule
-  verification?: VerificationService
   tasks?: TaskManager
 }
 

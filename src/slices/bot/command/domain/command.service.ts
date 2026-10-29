@@ -9,7 +9,6 @@ import type { TaskManager } from "../../../agent/task/domain/task.service"
 import type { SessionModule } from "../../../agent/session/session.module"
 import type { MemoryModule } from "../../../agent/memory/memory.module"
 import type { LlmModule } from "../../../setup/llm/llm.module"
-import type { GuardModule } from "../../../agent/guard"
 import type { IPromptBreakdown } from "../../../agent/agent/agent.module"
 import type { InstinctModule } from "../../../agent/instinct"
 
@@ -21,8 +20,6 @@ interface CommandDeps {
   session: SessionModule
   memory: MemoryModule
   llm: LlmModule
-  /** Guardrails — `/rules` (CLEAN-150 US1). Optional so bare deployments without rules still command. */
-  guard?: GuardModule
   /** The latest system-prompt accounting of a session — `/context` (CLEAN-150 US2). */
   context?: (sessionId: string) => IPromptBreakdown | undefined
   /** Learned behaviours — `/learned` family (CLEAN-150 US3). */
@@ -46,11 +43,6 @@ export class CommandService {
     // /access [strategy] — view or switch access strategy
     if (text === "/access" || text.startsWith("/access ")) {
       return this.handleAccess(ctx, text, send)
-    }
-
-    // /rules [reload] — guardrails in force and what fired (admin only)
-    if (text === "/rules" || text === "/rules reload") {
-      return this.handleRules(ctx, text, send)
     }
 
     // /context — where the always-on prompt's characters went last turn (admin only)
@@ -104,8 +96,6 @@ export class CommandService {
         `/skills reload — Reload skills from disk (admin only)\n` +
         `/access — Show current access strategy\n` +
         `/access <name> — Switch strategy: open|public|allowlist|code|approval (admin only)\n` +
-        `/rules — Guardrails in force and what fired today (admin only)\n` +
-        `/rules reload — Re-read .agent/rules/ (admin only)\n` +
         `/context — System prompt size per section vs budget, and what was loaded on demand (admin only)\n` +
         `/learned — What the agent has learned, with confidence (admin only)\n` +
         `/learned show|pin|unpin|prune <id> · promote <id…> · prune · export (admin only)\n` +
@@ -168,51 +158,6 @@ export class CommandService {
         : `📚 *Loaded skills (${skills.length}):*\n\n` +
           skills.map(s => `• *${s.name}* — ${s.description.slice(0, 80)}`).join("\n") +
           (isAdmin ? "\n\nUse `/skills reload` to reload from disk." : ""),
-    )
-    return { handled: true }
-  }
-
-  private async handleRules(ctx: ICommandContext, text: string, send: SendFn): Promise<ICommandResult> {
-    if (!this.deps.access.isAdmin(ctx.from)) {
-      await send("🔒 Only admins can see the rules.")
-      return { handled: true }
-    }
-    const guard = this.deps.guard
-    if (!guard) {
-      await send("Guardrails are not enabled on this runtime.")
-      return { handled: true }
-    }
-    if (text === "/rules reload") {
-      try {
-        await guard.load()
-      } catch (err) {
-        // The previous set stays in force; say exactly which file is wrong.
-        await send(`❌ Rules not reloaded — the previous set stays active.\n\n${(err as Error).message}`)
-        return { handled: true }
-      }
-    }
-    const rules = guard.listRules()
-    const fired = new Map(guard.recentFirings(24).map(f => [f.id, f.times]))
-    const failures = guard.observerFailures()
-    const lines = rules
-      .sort((a, b) => a.source.localeCompare(b.source) || a.id.localeCompare(b.id))
-      .map(r => {
-        const flags = [r.source, r.event, r.action, r.enabled ? null : "disabled", r.protected ? "protected" : null].filter(Boolean).join(" · ")
-        const times = fired.get(r.id)
-        const failed = failures[r.id]
-        return `• *${r.id}* — ${flags}${times ? ` · fired ${times}× today` : ""}${failed ? ` · observer failed ${failed}×` : ""}`
-      })
-    const head = guard.isLoaded
-      ? `🛡 *Rules in force (${rules.length})*`
-      : `⛔ *Rules failed to load — every tool call is blocked*\n${guard.lastLoadError ?? ""}`
-    const skipped = guard.skippedFiles
-    const skippedNote = skipped.length
-      ? `\n\n⚠️ *Skipped ${skipped.length} rule file(s) — fix and \`/rules reload\`:*\n${skipped.map(f => `• ${f.file}: ${f.problem}`).join("\n")}`
-      : ""
-    await send(
-      `${head}\n\n${lines.join("\n") || "(none)"}${skippedNote}` +
-      `\n\nAgent rules live in \`.agent/rules/*.md\`; protected rules come with the platform. ` +
-      (text === "/rules reload" ? "Reloaded from disk." : "Use `/rules reload` after editing."),
     )
     return { handled: true }
   }

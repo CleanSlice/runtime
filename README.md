@@ -121,13 +121,6 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
     "retainTurns": 3
   },
 
-  // Guardrails around tool calls — rules live in .agent/rules/*.md, see "Guardrails" below
-  "guard": {
-    "observerTimeoutMs": 2000,
-    "recordFile": "data/toolcalls.jsonl",
-    "recordMaxBytes": 10485760
-  },
-
   // Learned behaviours with confidence — see "Learning" below
   "memory": {
     "instincts": {
@@ -137,9 +130,6 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
       "maxInjected": 8
     }
   },
-
-  // After a mutating tool ran, the reply is checked against tool outcomes before delivery
-  "verification": { "enabled": true, "timeoutMs": 8000 },
 
   "s3": {
     // Auto-sync interval for S3 backup (seconds)
@@ -357,38 +347,9 @@ Built-in tools available to the agent:
 | `invite` | Manage user invite codes |
 | `secret_*` | Manage encrypted user secrets (set, get, list, delete) |
 
-### Guardrails
+### Context budget
 
-Rules are checked by the runtime around every tool call — before it runs and on its result — so they hold whatever the prompt said. A rule is a markdown file with frontmatter in `.agent/rules/`:
-
-```markdown
----
-id: no-prod-deletes
-event: before                  # before | after
-match:
-  tool: 'http'                 # glob: 'exec', 'exec|file', 'ranch__*', '*'
-  arg: { path: '$.method', pattern: '^DELETE$' }   # before only
-action: block                  # block | redact | record
----
-Deleting through the API is done from the console, not by the agent.
-```
-
-Outcomes compose strictest-first (block > redact > record). The platform ships protected rules that an agent cannot override:
-
-| Rule | Event | Does |
-|------|-------|------|
-| `no-secret-store-reads` | before | Blocks `exec` / `process_exec` / `file` / `unzip` calls that reference `data/secrets` |
-| `no-env-reads` | before | Blocks shell and file reads of `.env*` |
-| `redact-credentials` | after | Masks API keys, OAuth tokens, bearer headers, JWTs in tool results and in replies |
-| `record-all` | after | Appends every call (tool, outcome, duration, sizes, rules fired) to `data/toolcalls.jsonl` |
-
-**Context budget.** The always-on prompt is accounted per section against `contextBudget`; `/context` shows the last turn's split and what was pulled in on demand, `agent_status` carries the same under `context`. The `## Rules` section of `SOUL.md` is never truncated to fit `memory.limits.soul` — reference material goes first, and an overflow is logged at start-up naming the file. Skills enter a turn when the model calls `skill_load` (their catalogue description says when), stay for `skills.retainTurns` turns, and ride in the history rather than the system prompt so the cached prefix stays stable; a skill whose `requires.env` / `requires.bins` are unmet is listed as `(unavailable: …)`. Tools outside `tools.coreCatalogue` appear as one-line stubs and `tool_describe` returns the full description and parameters.
-
-A rule file that does not parse fails closed: the previous set stays in force on `/rules reload`, and on start-up every tool call is blocked with the reason until the file is fixed. Observers (`record`) fail open and are bounded by `guard.observerTimeoutMs`. `/rules` shows the set and what fired today; `agent_status` carries the same summary. `bun run eval tests/evals/guardrails.jsonl` checks the baseline against 31 extraction attempts.
-
-### Verified completion
-
-"No tool call = no claim" is enforced structurally, not just in the identity file. When a turn ran a mutating tool (`effect: "write"` — commands, file writes, non-GET HTTP, messages, secrets, cron, MCP tools without `readOnlyHint`), the final reply is not streamed; the auxiliary model compares the draft with the tools' real outcomes (`verification.timeoutMs` bound) and rewrites a claim the outcomes do not support into a factual report that quotes the error, status or block reason. Past the timeout the draft goes out with `(unverified)`. Read-only turns skip the check entirely. `bun run eval tests/evals/completion-claims.jsonl` checks the verifier against false "done" replies.
+The always-on prompt is accounted per section against `contextBudget`; `/context` shows the last turn's split and what was pulled in on demand, `agent_status` carries the same under `context`. The `## Rules` section of `SOUL.md` is never truncated to fit `memory.limits.soul` — reference material goes first, and an overflow is logged at start-up naming the file. Skills enter a turn when the model calls `skill_load` (their catalogue description says when), stay for `skills.retainTurns` turns, and ride in the history rather than the system prompt so the cached prefix stays stable; a skill whose `requires.env` / `requires.bins` are unmet is listed as `(unavailable: …)`. Tools outside `tools.coreCatalogue` appear as one-line stubs and `tool_describe` returns the full description and parameters.
 
 ### Delegation
 
@@ -404,7 +365,7 @@ The agent learns behaviours, not just notes. Every `memory.review.everyTurns` tu
 | correction ("shorter next time") | 0.6 | apply — shapes the agent's actions |
 | resolved error, repeated workflow | 0.5 | apply |
 
-Confidence moves with experience: +0.05 when the review sees the behaviour applied without complaint, −0.2 when the person pushes back, −0.05 per `decayDays` without reinforcement (pinned ones never decay). Bands (`memory.instincts.bands`): below `suggested` a behaviour is hidden, from `suggested` it is listed for the operator only, from `apply` it is rendered into the prompt, from `core` it reads as a rule. A contradicting pair keeps the higher confidence in the prompt and surfaces the conflict. Learned behaviours can never relax a guardrail — they only ever reach the prompt, never the guard.
+Confidence moves with experience: +0.05 when the review sees the behaviour applied without complaint, −0.2 when the person pushes back, −0.05 per `decayDays` without reinforcement (pinned ones never decay). Bands (`memory.instincts.bands`): below `suggested` a behaviour is hidden, from `suggested` it is listed for the operator only, from `apply` it is rendered into the prompt, from `core` it reads as a rule. A contradicting pair keeps the higher confidence in the prompt and surfaces the conflict.
 
 `/learned` lists everything by band with evidence counts; `/learned show <id>` the evidence; `pin` / `unpin`, `prune [<id>]`, `promote <id…>` (writes `skills/learned-<slug>/SKILL.md` for review), `export`. `agent_status.learned` carries the counts. `bun run eval tests/evals/corrections.jsonl` checks that one correction holds on the next matching messages.
 
@@ -424,8 +385,6 @@ Users can interact with the bot via Telegram/Slack commands:
 | `/voice` | Toggle voice mode (TTS) |
 | `/skills` | List loaded skills |
 | `/skills reload` | Reload skills from disk (admin only) |
-| `/rules` | Guardrails in force and what fired today (admin only) |
-| `/rules reload` | Re-read `.agent/rules/` — a bad file keeps the previous set (admin only) |
 | `/context` | System prompt size per section vs budget, and what was loaded on demand last turn (admin only) |
 | `/learned` | What the agent has learned, with confidence; `show`, `pin`, `unpin`, `prune`, `promote`, `export` (admin only) |
 | `/compact` | Archive this conversation's older history now (admin only) |

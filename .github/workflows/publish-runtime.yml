@@ -29,9 +29,9 @@ jobs:
       - name: Run tests
         run: bun test
 
-  # Behavioural evals for the harness principles (CLEAN-150): guardrails run
-  # offline; skill selection, corrections and completion claims call the
-  # model and report "pending" when no LLM_API_KEY secret is configured.
+  # Behavioural evals for the harness principles (CLEAN-150): skill selection
+  # and corrections call the model and report "pending" when no LLM_API_KEY
+  # secret is configured.
   # Thresholds live in each tests/evals/*.jsonl header; a miss fails the job.
   # Separate from the image build so a flaky eval never blocks a release.
   eval:
