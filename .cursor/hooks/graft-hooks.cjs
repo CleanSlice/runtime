@@ -4,8 +4,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
 const dir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-// Default global npm prefix on Windows; elsewhere the lookups below find the package.
-const BAKED = process.env.APPDATA ? path.join(process.env.APPDATA, "npm", "node_modules", "@nanonets", "graft", "dist", "claude") : null;
+const BAKED = "C:\\Users\\maxim\\AppData\\Roaming\\npm\\node_modules\\@nanonets\\graft\\dist\\claude";
 
 // The dist/claude dir of @nanonets/graft resolved from a base whose node_modules is searched.
 function fromPkg(base) {
