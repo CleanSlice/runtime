@@ -153,6 +153,8 @@ All runtime settings live in `.agent/agent.config.json`. You only need to specif
     },
     // Tools with a full description always in the prompt; the rest are one-line stubs + `tool_describe`
     "coreCatalogue": ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    // How many times one tool may be called in a single turn (by full MCP name or bare name); empty = no cap
+    "callsPerTurn": {},
     // delegate_task worker budgets
     "delegate": { "timeoutMs": 300000, "maxParallel": 5, "summaryChars": 4000, "allowWrite": false }
   }
@@ -349,7 +351,7 @@ Built-in tools available to the agent:
 
 ### Context budget
 
-The always-on prompt is accounted per section against `contextBudget`; `/context` shows the last turn's split and what was pulled in on demand, `agent_status` carries the same under `context`. The `## Rules` section of `SOUL.md` is never truncated to fit `memory.limits.soul` — reference material goes first, and an overflow is logged at start-up naming the file. Skills enter a turn when the model calls `skill_load` (their catalogue description says when), stay for `skills.retainTurns` turns, and ride in the history rather than the system prompt so the cached prefix stays stable; a skill whose `requires.env` / `requires.bins` are unmet is listed as `(unavailable: …)`. A skill with `metadata.always: true` is the exception: its whole body rides in every system prompt, so none of the bundled skills sets it (CLEAN-199) and an agent-level skill should only when it is needed on every turn. Tools outside `tools.coreCatalogue` appear as one-line stubs and `tool_describe` returns the full description and parameters.
+The always-on prompt is accounted per section against `contextBudget`; `/context` shows the last turn's split and what was pulled in on demand, `agent_status` carries the same under `context`. The `## Rules` section of `SOUL.md` is never truncated to fit `memory.limits.soul` — reference material goes first, and an overflow is logged at start-up naming the file. Skills enter a turn when the model calls `skill_load` (their catalogue description says when), stay for `skills.retainTurns` turns, and ride in the history rather than the system prompt so the cached prefix stays stable; a skill whose `requires.env` / `requires.bins` are unmet is listed as `(unavailable: …)`. A skill with `metadata.always: true` is the exception: its whole body rides in every system prompt, so none of the bundled skills sets it (CLEAN-199) and an agent-level skill should only when it is needed on every turn. Tools outside `tools.coreCatalogue` appear as one-line stubs and `tool_describe` returns the full description and parameters. `tools.callsPerTurn` caps how often one tool may be called in a single turn (by its full MCP name or its bare name): past the cap the call is not run and the model gets a result telling it to answer from what it already has — a retrieval loop then ends in an answer instead of in `maxIterations` (CLEAN-202). Empty by default.
 
 ### Delegation
 

@@ -98,6 +98,8 @@
     },
     "maxOutputChars": 16000,
     "coreCatalogue": ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    "_comment_callsPerTurn": "How many times one tool may be called in a single turn, by tool name (MCP tools by full Server__tool name or bare name). Past the cap the call is not run and the model is told to answer from what it has. Empty = no cap. Example: { \"query_knowledge\": 8 }.",
+    "callsPerTurn": {},
     "delegate": {
       "timeoutMs": 300000,
       "maxParallel": 5,
