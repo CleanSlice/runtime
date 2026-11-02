@@ -124,6 +124,19 @@ function withCitations(data: unknown, block: string): unknown {
   return { ...d, result: cited }
 }
 
+/**
+ * The `tools.callsPerTurn` cap for a tool, by its full name first
+ * (`Documents__query_knowledge`) and then by its bare name
+ * (`query_knowledge`), so a config written for one MCP server name keeps
+ * working when the server is renamed. Undefined means uncapped.
+ */
+export function callsPerTurnLimit(limits: Record<string, number>, toolName: string): number | undefined {
+  if (limits[toolName] !== undefined) return limits[toolName]
+  const sep = toolName.lastIndexOf("__")
+  if (sep < 0) return undefined
+  return limits[toolName.slice(sep + 2)]
+}
+
 function isDebugEnabled(deps: LoopServiceDeps): boolean {
   // Order: explicit env override > NODE_ENV=development > runtime hub-pushed flag.
   // Env is checked first so a developer running locally can force debug on
@@ -182,6 +195,10 @@ export class LoopService {
     // calls. What each bubble actually cited goes on the assistant event.
     const registry = new SourceRegistry()
     const bubbleSources: IBubbleSources[] = []
+    // How often each tool has been called this turn, for `tools.callsPerTurn`
+    // (CLEAN-202): a "which trim has X" question once ran sixteen searches
+    // and answered nothing before the person gave up.
+    const callsThisTurn = new Map<string, number>()
     // A client that can draw sources gets the check — unknown markers out,
     // the rest renumbered. Everyone else gets the markers stripped: the
     // model had no numbers to cite, so a marker there points at nothing.
@@ -302,6 +319,7 @@ export class LoopService {
           iterations,
           turnId,
           registry,
+          callsThisTurn,
           streamsToClient ? undefined : (response.text || undefined),
         )
 
@@ -530,12 +548,14 @@ export class LoopService {
     iterations: number,
     turnId: string,
     registry: SourceRegistry,
+    callsThisTurn: Map<string, number>,
     iterationDetail?: string,
   ): Promise<boolean> {
     const { task, sessionId, history } = ctx
     const tid = task.id.slice(0, 6)
     const rlog = log.child(tid)
     let iterationHadError = false
+    const callLimits = ctx.agentConfig.tools?.callsPerTurn ?? {}
     // The iteration's interleaved reasoning text rides on its first step only.
     let firstStepOfIteration = true
 
@@ -577,6 +597,12 @@ export class LoopService {
       // call so `file` write / `http` POST are caught even though the tool
       // itself is allowed (CLEAN-150 US6).
       const workerBlocked = tool && ctx.worker && effectOfCall(tool, call.params) === "write" && ctx.agentConfig.tools?.delegate?.allowWrite !== true
+      // One tool, one turn, a configured cap (CLEAN-202). Counted per call
+      // name, so a retrieval loop stops at the cap whatever the query says.
+      const callCount = (callsThisTurn.get(call.name) ?? 0) + 1
+      callsThisTurn.set(call.name, callCount)
+      const callLimit = callsPerTurnLimit(callLimits, call.name)
+      const limitBlocked = callLimit !== undefined && callCount > callLimit
 
       if (adminBlocked) {
         rlog.warn(`admin-only tool blocked for non-admin: ${call.name} (from=${ctx.from})`)
@@ -585,6 +611,18 @@ export class LoopService {
       } else if (workerBlocked) {
         rlog.warn(`write call refused inside a worker: ${call.name}`)
         result = { error: `Workers are read-only: "${call.name}" would change something. Report what you found; the parent decides what to do.` }
+        blocked = true
+      } else if (limitBlocked) {
+        // Not an `error`: an error here would count towards
+        // maxConsecutiveErrors and end the turn with "too many errors"
+        // instead of an answer. The model reads this as a result and is told
+        // what to do with the results it already has.
+        rlog.warn(`call ${callCount} of ${call.name} refused: tools.callsPerTurn caps it at ${callLimit}`)
+        result = {
+          limit_reached: true,
+          calls: callCount - 1,
+          note: `You have called ${call.name} ${callCount - 1} times this turn, which is the limit for this agent. Do not call it again in this turn. Answer from the results you already have; if something you need is not in them, say which document you looked in and what it did not contain.`,
+        }
         blocked = true
       } else if (tool) {
         try {

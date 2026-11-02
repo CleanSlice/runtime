@@ -140,6 +140,15 @@ export interface IAgentConfig {
       /** Let workers call write-effect tools. Default false: workers observe and report, the parent acts. */
       allowWrite: boolean
     }
+    /**
+     * How many times one tool may be called in a single turn, by tool name
+     * (an MCP tool by its full `Server__tool` name or its bare name). Past
+     * the cap the call is not executed; the model gets a result telling it
+     * to answer from what it already has. Empty by default — nothing is
+     * capped. A Mazda agent set `query_knowledge: 8` after one "which trim
+     * has X" turn ran sixteen searches and answered nothing (CLEAN-202).
+     */
+    callsPerTurn?: Record<string, number>
   }
 
   /** Caps on user message text reaching the model. See messageTruncation.ts. */
@@ -297,6 +306,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     },
     maxOutputChars: 16_000,
     coreCatalogue: ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
+    callsPerTurn: {},
     delegate: {
       timeoutMs: 300_000,
       maxParallel: 5,
