@@ -12,7 +12,7 @@ export class AgentModule {
 
   /** `limits` (memory.limits) bounds the prompt copy of each curated file; the files on disk stay whole (CLEAN-207). */
   constructor(private agentDir: string, limits?: MemoryLimits) {
-    this.service = new AgentService(new AgentGateway(limits))
+    this.service = new AgentService(new AgentGateway(), limits)
   }
 
   async buildPrompt(opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {

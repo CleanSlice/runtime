@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { AgentService, soulLimitNote } from "./agent.service"
 import type { IAgentGateway } from "./agent.gateway"
 import type { AgentConfig } from "./agent.types"
+import { DEFAULT_MEMORY_LIMITS } from "../../memory/domain/memory.types"
 
 // The SOUL.md budget line the agent reads (CLEAN-207): it must know the limit
 // to say it, and know when part of the file is not in front of it.
@@ -45,23 +46,41 @@ describe("buildSystemPrompt soul section", () => {
     load: async () => ({ skills: [] }),
     loadUserContext: async () => undefined,
   } as unknown as IAgentGateway
+  const limits = { ...DEFAULT_MEMORY_LIMITS, soul: 32000 }
 
   test("opens the Soul section with the note before the file text", () => {
-    const config: AgentConfig = {
-      soul: "## Rules\n\n1. Be exact.",
-      skills: [],
-      curated: { "SOUL.md": bound({ chars: 24, dropped: 0 }) },
-    }
-    const built = new AgentService(gateway).buildSystemPrompt(config)
+    const config: AgentConfig = { soul: "## Rules\n\n1. Be exact.", skills: [] }
+    const built = new AgentService(gateway, limits).buildSystemPrompt(config)
     const soulStart = built.prompt.indexOf("# Soul")
     expect(soulStart).toBeGreaterThanOrEqual(0)
     const section = built.prompt.slice(soulStart)
     expect(section.indexOf("SOUL.md is 24 of 32000 characters")).toBeLessThan(section.indexOf("## Rules"))
   })
 
-  test("adds nothing when the config carries no curated numbers", () => {
+  test("adds nothing when the service has no limits", () => {
     const built = new AgentService(gateway).buildSystemPrompt({ soul: "## Rules\n\n1. Be exact.", skills: [] })
     expect(built.prompt).toContain("# Soul\n\n## Rules")
     expect(built.prompt).not.toContain("memory.limits.soul")
+  })
+
+  test("bounds the copy and reports the size on disk, with the rules kept", () => {
+    const reference = Array.from({ length: 60 }, (_, i) => `- fact ${i} about thing ${i}`).join("\n")
+    const soul = `# Soul\n\n## Reference\n\n${reference}\n\n## Rules\n\n1. Be exact.\n`
+    const built = new AgentService(gateway, { ...DEFAULT_MEMORY_LIMITS, soul: 400 }).buildSystemPrompt({ soul, skills: [] })
+    const section = built.prompt.slice(built.prompt.indexOf("# Soul"), built.prompt.indexOf("# Soul") + 600)
+    expect(section).toContain(`SOUL.md is ${soul.length} of 400 characters`)
+    expect(section).toContain("left out of this prompt")
+    expect(section).toContain("1. Be exact.")
+  })
+
+  test("strips admin-only blocks before bounding, so a cut never leaves one half open", () => {
+    const secret = "<!-- admin-only -->\nADMIN SECRET LINE\n<!-- /admin-only -->"
+    const filler = Array.from({ length: 80 }, (_, i) => `- public fact ${i}`).join("\n")
+    const soul = `# Soul\n\n${secret}\n\n${filler}\n\n## Rules\n\n1. Be exact.\n`
+    const service = new AgentService(gateway, { ...DEFAULT_MEMORY_LIMITS, soul: 300 })
+    const visitor = service.buildSystemPrompt({ soul, skills: [] }, { isAdmin: false }).prompt
+    expect(visitor).not.toContain("ADMIN SECRET LINE")
+    const admin = service.buildSystemPrompt({ soul, skills: [] }, { isAdmin: true }).prompt
+    expect(admin).toContain("1. Be exact.")
   })
 })
