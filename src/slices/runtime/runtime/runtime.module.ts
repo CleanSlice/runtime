@@ -118,7 +118,7 @@ export class AgentRuntime {
     // ── Agent slices (core capabilities) ───────────────────────────
 
     // System prompt builder (SOUL.md, USER.md, MEMORY.md, etc.)
-    const agent = new AgentModule(agentDir)
+    const agent = new AgentModule(agentDir, this.config.memory.limits)
 
     // Learned behaviours with confidence — fed by the memory review, rendered
     // into the prompt, steered by the operator with /learned (CLEAN-150 US3).

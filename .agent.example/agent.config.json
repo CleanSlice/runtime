@@ -35,7 +35,7 @@
     "retainTurns": 3
   },
 
-  "_comment_memory": "limits: per-file character caps — oldest content is truncated from the top when exceeded (the ## Rules heading of SOUL.md is exempt). review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
+  "_comment_memory": "limits: per-file character caps for SOUL.md, USER.md, MEMORY.md and HEARTBEAT.md. The file on disk is never changed; the copy in the prompt is bounded — the ## Rules section of SOUL.md leads it whole, then the rest oldest-first — and the prompt says how much was left out (CLEAN-207). The console refuses a save over the limit. review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
   "memory": {
     "limits": {
       "soul": 12000,

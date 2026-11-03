@@ -1,4 +1,5 @@
 import type { SkillSummary } from "../../skill/domain/skill.types"
+import type { ICuratedBound } from "../../memory/domain/curatedBound"
 
 export interface AgentFile {
   path: string
@@ -47,4 +48,6 @@ export interface AgentConfig {
   heartbeat?: string
   agents?: string   // AGENTS.md — runtime instructions
   skills: SkillSummary[]
+  /** How each curated file was fitted to memory.limits, by file name (CLEAN-207); absent when loaded without limits. */
+  curated?: Record<string, ICuratedBound>
 }
