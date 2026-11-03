@@ -1,4 +1,7 @@
-FROM oven/bun:1.3-alpine AS base
+# Pinned to 1.4.4, off the 1.3 line for good: 1.3 carries the vulnerable Brotli
+# decoder (CVE-2026-111497) and will never be fixed — Bun patched only 1.4.4.
+# This is the image the agent pods run, and fetch() asks for Brotli by default.
+FROM oven/bun:1.4.4-alpine AS base
 WORKDIR /app
 
 # System packages: browser, CLI tools, networking, scripting
