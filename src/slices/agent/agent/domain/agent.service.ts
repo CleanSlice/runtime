@@ -16,6 +16,9 @@ export const SKILL_CATALOGUE_INSTRUCTIONS =
   `conversation and stay for a few turns. Load at most the one or two skills that fit; when none fits, answer directly without loading. ` +
   `Skills marked unavailable cannot be loaded until the missing requirement is met.`
 import type { SkillSummary } from "../../skill/domain/skill.types"
+import type { ICuratedBound } from "../../memory/domain/curatedBound"
+import { boundCurated } from "../../memory/domain/curatedBound"
+import type { MemoryLimits } from "../../memory/domain/memory.types"
 import { SILENT_REPLY_TOKEN } from "./silentReply"
 
 export interface BuildPromptOpts {
@@ -73,8 +76,28 @@ export function isEmptyMessage(message: string): boolean {
  */
 export const EMPTY_MESSAGE_RESPONSE = "What can I help you with?"
 
+/**
+ * The line the agent reads about its own SOUL.md budget (CLEAN-207), so it
+ * can say the limit when someone asks it to store a longer file, and knows
+ * when part of the file is not in front of it. Empty when the file was loaded
+ * without limits.
+ */
+export function soulLimitNote(bound?: ICuratedBound): string {
+  if (!bound) return ""
+  const size = `SOUL.md is ${bound.chars} of ${bound.limit} characters (memory.limits.soul in agent.config.json).`
+  if (bound.over) {
+    return `<!-- ${size} The ## Rules section alone is over the limit: nothing else from the file is in this prompt. The file on disk is whole. -->\n\n`
+  }
+  if (bound.dropped > 0) {
+    return `<!-- ${size} ${bound.dropped} characters of non-rule material are left out of this prompt; the file on disk is whole. ` +
+      `Anything over the limit never reaches you: tell anyone asking you to store a longer SOUL.md that the limit is ${bound.limit} characters. -->\n\n`
+  }
+  return `<!-- ${size} A longer file would be cut to the limit in this prompt. -->\n\n`
+}
+
 export class AgentService {
-  constructor(private gateway: IAgentGateway) {}
+  /** `limits` (memory.limits) bounds the prompt copy of each curated file; without them the files go in whole (CLEAN-207). */
+  constructor(private gateway: IAgentGateway, private limits?: MemoryLimits) {}
 
   async load(agentDir: string): Promise<AgentConfig> {
     return this.gateway.load(agentDir)
@@ -92,12 +115,23 @@ export class AgentService {
     const isAdmin = opts?.isAdmin ?? false
     const gate = (text: string | undefined) => isAdmin ? text : stripAdminBlocks(text)
 
-    const soul = gate(config.soul)
+    // Order matters (CLEAN-207): the audience gate runs on the whole file
+    // first, so admin-only blocks are gone before anything is cut and a cut
+    // can never leave one half open; the bound then fits what remains.
+    // `chars` stays the size on disk, which is what a person asks about.
+    const fit = (file: string, raw: string | undefined): { text: string | undefined; bound?: ICuratedBound } => {
+      const gated = gate(raw)
+      if (gated === undefined || !this.limits) return { text: gated }
+      const bound = boundCurated(file, gated, this.limits)
+      return { text: bound.text, bound: { ...bound, chars: raw!.length } }
+    }
+    const soulFit = fit("SOUL.md", config.soul)
+    const soul = soulFit.text
     const agents = gate(config.agents)
-    const user = gate(config.user)
-    const memory = gate(config.memory)
+    const user = fit("USER.md", config.user).text
+    const memory = fit("MEMORY.md", config.memory).text
 
-    if (soul)              push("soul", `# Soul\n\n${soul}`)
+    if (soul)              push("soul", `# Soul\n\n${soulLimitNote(soulFit.bound)}${soul}`)
     if (opts?.channelContext) push("channel", `# Channel\n\n${opts.channelContext}`)
     if (opts?.extraHint)   push("hint", opts.extraHint)
     if (opts?.toolingPrompt) push("tooling", opts.toolingPrompt)

@@ -18,6 +18,9 @@ export class AgentGateway implements IAgentGateway {
   }
 
   async load(agentDir: string): Promise<AgentConfig> {
+    // The files come back whole, admin-only blocks and all; the prompt builder
+    // strips what the audience may not see and only then bounds the copy to
+    // memory.limits (CLEAN-207), so a cut can never leave a block half open.
     const [soul, user, memory, heartbeat, agents] = await Promise.all([
       this.readIfExists(`${agentDir}/SOUL.md`),
       this.readIfExists(`${agentDir}/USER.md`),
