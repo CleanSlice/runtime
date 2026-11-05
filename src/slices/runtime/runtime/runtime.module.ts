@@ -118,14 +118,17 @@ export class AgentRuntime {
     // ── Agent slices (core capabilities) ───────────────────────────
 
     // System prompt builder (SOUL.md, USER.md, MEMORY.md, etc.)
-    const agent = new AgentModule(agentDir, this.config.memory.limits)
+    const agent = new AgentModule(agentDir, this.config.memory.limits, config.init.exampleDir)
 
     // Learned behaviours with confidence — fed by the memory review, rendered
     // into the prompt, steered by the operator with /learned (CLEAN-150 US3).
     this.instincts = new InstinctModule(agentDir, this.config.memory.instincts)
 
     // Long-term memory with search, daily flush, and background review
-    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review, this.instincts)
+    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review, this.instincts, {
+      dailyNotes: this.config.memory.dailyNotes,
+      ownerBlock: this.config.memory.ownerBlock,
+    })
 
     // Scheduled jobs (user-defined via cron tool)
     this.cron = new CronModule(agentDir)

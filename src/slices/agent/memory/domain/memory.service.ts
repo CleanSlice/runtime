@@ -46,6 +46,14 @@ const initLog = createLogger("init")
 const log = createLogger("memory-flush")
 const reviewLog = createLogger("memory-review")
 
+/** Switches of agent.config.json `memory` that are not limits (CLEAN-213). */
+export interface MemoryServiceOptions {
+  /** false: daily notes are neither written by the flush nor read into the prompt. */
+  dailyNotes?: boolean
+  /** false: the "## Bot Owner" block is not written into MEMORY.md at start-up. */
+  ownerBlock?: boolean
+}
+
 export class MemoryService {
   /** Per-session counter for the background review cadence. */
   private reviewCounters = new Map<string, number>()
@@ -57,6 +65,7 @@ export class MemoryService {
     private review: MemoryReviewConfig = DEFAULT_MEMORY_REVIEW,
     /** When present, the review pass also teaches behaviours (CLEAN-150 US3). */
     private instincts?: Pick<InstinctModule, "list" | "applyReview" | "enabled">,
+    private opts: MemoryServiceOptions = {},
   ) {}
 
   // ─── Search / Insert ───────────────────────────────────────────────
@@ -101,12 +110,18 @@ export class MemoryService {
   }
 
   readRecentDaily(): string | undefined {
+    // Off: nothing of one session reaches another through the prompt (CLEAN-213).
+    if (this.opts.dailyNotes === false) return undefined
     return this.gateway.readRecentDaily()
   }
 
   // ─── Admin memory (MEMORY.md) ─────────────────────────────────────
 
   ensureAdminInMemory(adminIds: string[]): void {
+    if (this.opts.ownerBlock === false) {
+      initLog.info("MEMORY.md left alone: memory.ownerBlock is off")
+      return
+    }
     if (adminIds.length === 0) return
 
     const marker = "## Bot Owner"
@@ -143,6 +158,12 @@ export class MemoryService {
     // over budget — a few huge tool_results can overflow context long before
     // the count threshold is hit.
     if (events.length <= compactionThreshold && estimateEventsBytes(events) <= compactionBytesThreshold) return
+    if (this.opts.dailyNotes === false) {
+      // No extraction, no daily file: the session only compacts (CLEAN-213).
+      log.info(`compacting session ${sessionId} without a memory flush: memory.dailyNotes is off`)
+      session.compactAsync(sessionId, llm.getAuxGateway(), { reason: "boundary", inFlight })
+      return
+    }
 
     log.info(`flushing session ${sessionId} before compaction`)
     try {

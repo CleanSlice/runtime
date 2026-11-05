@@ -67,6 +67,23 @@ export interface IAgentConfig {
     limits: MemoryLimits
     review: MemoryReviewConfig
     instincts: IInstinctConfig
+    /**
+     * Daily notes (memory/YYYY-MM-DD.md): written by the memory flush before
+     * a session compacts and read (yesterday + today) into every prompt of
+     * every user. One file per agent, so a public product agent carries one
+     * visitor's conversation into everyone else's prompt, and a wrong answer
+     * with it. false turns the writing and the reading off; compaction still
+     * runs (CLEAN-213). Default true.
+     */
+    dailyNotes: boolean
+    /**
+     * The "## Bot Owner" block written into MEMORY.md at start-up: admin ids
+     * plus the Telegram approval-code and access-strategy instructions. It is
+     * for a personal messenger bot; a web product agent has no use for it,
+     * and at ~2.4k characters it alone overflows memory.limits.memory.
+     * false leaves MEMORY.md alone (CLEAN-213). Default true.
+     */
+    ownerBlock: boolean
   }
 
   /**
@@ -268,6 +285,8 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
     limits: { ...DEFAULT_MEMORY_LIMITS },
     review: { ...DEFAULT_MEMORY_REVIEW },
     instincts: structuredClone(DEFAULT_INSTINCT_CONFIG),
+    dailyNotes: true,
+    ownerBlock: true,
   },
 
   contextBudget: {
