@@ -34,6 +34,13 @@ export interface SkillServiceOptions {
   env: Record<string, string | undefined>
   /** Binary lookup for `requires.bins` checks. */
   hasBin: (bin: string) => boolean
+  /**
+   * Skill names never loaded, whatever directory they sit in. The bundled
+   * and example skills (ranch-sessions, runtime-tools, skill-creator) are
+   * re-synced into every agent on every start, so deleting one is undone
+   * by the next restart; a product agent lists them here instead (CLEAN-214).
+   */
+  exclude: string[]
 }
 
 export interface LoadedSkillInfo {

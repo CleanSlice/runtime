@@ -27,9 +27,11 @@ import { BotService } from "../../bot/bot/domain/bot.service"
 import { RuntimeService } from "./domain/runtime.service"
 import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
+import { pruneDisabledTools } from "../../agent/tool/domain/toolEnabled"
 
 const s3Log = createLogger("s3")
 const msgLog = createLogger("msg")
+const toolLog = createLogger("tools")
 
 /** External config passed by the entrypoint (index.ts / multi.ts) */
 export interface RuntimeConfig {
@@ -84,6 +86,10 @@ export class AgentRuntime {
     this.channelConfigs = config.channels
     const agentDir = config.init.agentDir
     const tools = config.tools ?? []
+    // agent.config.json tools.enabled: a product agent keeps a handful of the
+    // built-ins; the rest are not registered at all (CLEAN-214).
+    const disabled = pruneDisabledTools(tools, this.config.tools.enabled)
+    if (disabled.length > 0) toolLog.info(`tools.enabled keeps ${tools.length} tool(s); not registered: ${disabled.join(", ")}`)
 
     // ── Setup slices (independent infrastructure) ──────────────────
 

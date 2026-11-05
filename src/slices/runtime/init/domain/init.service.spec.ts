@@ -16,7 +16,8 @@ describe("agent.config.json harness sections", () => {
     const d = AGENT_CONFIG_DEFAULTS
     expect(d.contextBudget.total).toBe(48_000)
     expect(d.contextBudget.sections.soul).toBe(12_000)
-    expect(d.skills).toEqual({ selection: "model", retainTurns: 3 })
+    expect(d.skills).toEqual({ selection: "model", retainTurns: 3, exclude: [] })
+    expect(d.tools.enabled).toEqual([])
     expect(d.tools.coreCatalogue).toContain("exec")
     expect(d.tools.delegate).toEqual({ timeoutMs: 300_000, maxParallel: 5, summaryChars: 4000, allowWrite: false })
     expect(d.memory.instincts.bands).toEqual({ suggested: 0.3, apply: 0.5, core: 0.8 })
