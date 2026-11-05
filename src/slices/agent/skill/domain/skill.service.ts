@@ -23,12 +23,13 @@ export class SkillService {
   /** sessionId → number of turns started. */
   private turns = new Map<string, number>()
 
-  constructor(private gateway: ISkillGateway, opts: Partial<SkillServiceOptions> = {}) {
-    this.opts = { ...DEFAULT_OPTIONS, ...opts }
+  /** `source` is the agent config's own `skills` object: reload() after the S3 pull replaces `exclude` on it, so it is read at load time (CLEAN-214). */
+  constructor(private gateway: ISkillGateway, private source: Partial<SkillServiceOptions> = {}) {
+    this.opts = { ...DEFAULT_OPTIONS, ...source }
   }
 
   async load(): Promise<void> {
-    const excluded = new Set(this.opts.exclude)
+    const excluded = new Set(this.source.exclude ?? this.opts.exclude)
     // An excluded skill is neither catalogued nor loadable (CLEAN-214).
     this.skills = (await this.gateway.loadAll()).filter(s => !excluded.has(s.name))
   }
