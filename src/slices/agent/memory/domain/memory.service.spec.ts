@@ -112,3 +112,48 @@ describe("memory review feeds the instinct store (CLEAN-150 US3)", () => {
     expect(read()).toBe("# Memory\n")
   })
 })
+
+describe("memory switches of a product agent (CLEAN-213)", () => {
+  test("dailyNotes: false — the prompt reads no daily notes and the flush only compacts", async () => {
+    const { gw } = memoryGateway()
+    gw.readRecentDaily = () => "### 2026-11-03\n- a visitor asked about the CX-70"
+    let appended = 0
+    gw.appendDaily = () => { appended++ }
+    const service = new MemoryService(gw, undefined, undefined, { dailyNotes: false })
+
+    expect(service.readRecentDaily()).toBeUndefined()
+
+    let auxCalls = 0
+    let compacted = 0
+    const llm = {
+      auxComplete: async () => { auxCalls++; return { text: "[event] something" } },
+      getAuxGateway: () => ({}),
+    }
+    const session = {
+      read: async () => events,
+      compactAsync: () => { compacted++ },
+    }
+    service.flushAndCompact("s1", events, llm as never, session as never, 0, 0)
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(auxCalls).toBe(0)
+    expect(appended).toBe(0)
+    expect(compacted).toBe(1)
+  })
+
+  test("dailyNotes left on — the notes are read and the flush still extracts", async () => {
+    const { gw } = memoryGateway()
+    gw.readRecentDaily = () => "### 2026-11-03\n- note"
+    const service = new MemoryService(gw)
+    expect(service.readRecentDaily()).toBe("### 2026-11-03\n- note")
+  })
+
+  test("ownerBlock: false — MEMORY.md is left alone at start-up", () => {
+    const { gw, read } = memoryGateway()
+    new MemoryService(gw, undefined, undefined, { ownerBlock: false }).ensureAdminInMemory(["admin"])
+    expect(read()).toBe("# Memory\n")
+
+    new MemoryService(gw).ensureAdminInMemory(["admin"])
+    expect(read()).toContain("## Bot Owner")
+  })
+})

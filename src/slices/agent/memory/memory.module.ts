@@ -4,7 +4,7 @@ import type { LlmModule } from "../../setup/llm/llm.module"
 import type { SessionModule } from "../session/session.module"
 import type { InstinctModule } from "../instinct/instinct.module"
 import { DEFAULT_MEMORY_LIMITS, DEFAULT_MEMORY_REVIEW } from "./domain/memory.types"
-import { MemoryService } from "./domain/memory.service"
+import { MemoryService, type MemoryServiceOptions } from "./domain/memory.service"
 import { MemoryGateway } from "./data/memory.gateway"
 
 export class MemoryModule {
@@ -15,8 +15,9 @@ export class MemoryModule {
     limits: MemoryLimits = DEFAULT_MEMORY_LIMITS,
     review: MemoryReviewConfig = DEFAULT_MEMORY_REVIEW,
     instincts?: InstinctModule,
+    opts?: MemoryServiceOptions,
   ) {
-    this.service = new MemoryService(new MemoryGateway(agentDir, limits), review, instincts)
+    this.service = new MemoryService(new MemoryGateway(agentDir, limits), review, instincts, opts)
   }
 
   async load(): Promise<void> {

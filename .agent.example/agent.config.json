@@ -35,8 +35,10 @@
     "retainTurns": 3
   },
 
-  "_comment_memory": "limits: per-file character caps for SOUL.md, USER.md, MEMORY.md and HEARTBEAT.md. The file on disk is never changed; the copy in the prompt is bounded — the ## Rules section of SOUL.md leads it whole, then the rest oldest-first — and the prompt says how much was left out (CLEAN-207). The console refuses a save over the limit. review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
+  "_comment_memory": "limits: per-file character caps for SOUL.md, USER.md, MEMORY.md and HEARTBEAT.md. The file on disk is never changed; the copy in the prompt is bounded — the ## Rules section of SOUL.md leads it whole, then the rest oldest-first — and the prompt says how much was left out (CLEAN-207). The console refuses a save over the limit. dailyNotes: false stops the memory flush from writing memory/YYYY-MM-DD.md and the prompt from reading it, so one visitor's session never reaches another's prompt. ownerBlock: false keeps the Telegram "## Bot Owner" approval instructions out of MEMORY.md. A curated file that still reads exactly as .agent.example shipped it (USER.md "Name: Unknown", an empty HEARTBEAT.md task list) stays out of the prompt until edited (CLEAN-213). review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
   "memory": {
+    "dailyNotes": true,
+    "ownerBlock": true,
     "limits": {
       "soul": 12000,
       "user": 1375,
