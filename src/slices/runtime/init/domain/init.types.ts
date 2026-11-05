@@ -96,6 +96,13 @@ export interface IAgentConfig {
     selection: "model" | "keyword"
     /** A loaded skill stays in the conversation for this many turns after its last use. */
     retainTurns: number
+    /**
+     * Skill names this agent never loads: not in the catalogue, not
+     * loadable with `skill_load`. The bundled and example skills come back
+     * on every start (syncSkills), so deleting one does not stick; a
+     * product agent lists them here (CLEAN-214). Default: none.
+     */
+    exclude: string[]
   }
 
   s3: {
@@ -127,6 +134,16 @@ export interface IAgentConfig {
      * result size hands back the same guesswork the preview already forced.
      */
     maxOutputChars: number
+    /**
+     * The built-in tools this agent keeps, by name. Empty or absent keeps
+     * every tool. Governs the runtime's own tools only: MCP tools
+     * (`Server__tool`) are chosen by their server, and `skill_load` and
+     * `tool_describe` stay whatever the list says, since the catalogue
+     * needs them. A product agent that answers from documents lists a
+     * handful (render_form, memory_search) and loses the exec/file/cron/
+     * telegram/secret surface from its prompt (CLEAN-214).
+     */
+    enabled: string[]
     /**
      * Tools whose full description is always in the prompt. Every other tool
      * gets a one-line stub and `tool_describe` on demand (CLEAN-150 US2).
@@ -286,6 +303,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
   skills: {
     selection: "model",
     retainTurns: 3,
+    exclude: [],
   },
 
   s3: {
@@ -305,6 +323,7 @@ export const AGENT_CONFIG_DEFAULTS: IAgentConfig = {
       maxChars: 8000,
     },
     maxOutputChars: 16_000,
+    enabled: [],
     coreCatalogue: ["exec", "file", "http", "web_fetch", "memory_search", "secret_get", "skill_load", "tool_describe"],
     callsPerTurn: {},
     delegate: {

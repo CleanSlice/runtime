@@ -109,3 +109,30 @@ describe("selection mode", () => {
     expect(s.select("please list the ranch agents")).toBeNull()
   })
 })
+
+describe("skills.exclude (CLEAN-214)", () => {
+  const skill = (name: string): Skill => ({
+    name,
+    description: `${name} description`,
+    path: `/skills/${name}/SKILL.md`,
+    content: `# ${name}`,
+    source: "agent",
+  })
+
+  test("an excluded skill is neither catalogued nor loadable, the others are untouched", async () => {
+    const s = new SkillService(gateway([skill("ranch-sessions"), skill("skill-creator"), skill("mazda-comparisons")]), {
+      exclude: ["ranch-sessions", "skill-creator"],
+    })
+    await s.load()
+
+    expect(s.getAll().map(x => x.name)).toEqual(["mazda-comparisons"])
+    expect(s.summaries().map(x => x.name)).toEqual(["mazda-comparisons"])
+    expect(s.get("skill-creator")).toBeUndefined()
+  })
+
+  test("without an exclude list every skill loads as before", async () => {
+    const s = new SkillService(gateway([skill("ranch-sessions"), skill("mazda-comparisons")]))
+    await s.load()
+    expect(s.getAll().map(x => x.name)).toEqual(["ranch-sessions", "mazda-comparisons"])
+  })
+})

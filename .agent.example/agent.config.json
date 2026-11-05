@@ -29,10 +29,11 @@
     "sections": { "soul": 12000, "tooling": 6000, "skillsCatalog": 3000, "memory": 2200, "dailyNotes": 8000, "alwaysSkills": 12000, "instincts": 2500 }
   },
 
-  "_comment_skills": "selection: model (agent calls skill_load when a description fits) | keyword (legacy word overlap, fallback for one release). retainTurns: turns a loaded skill stays after its last use.",
+  "_comment_skills": "selection: model (agent calls skill_load when a description fits) | keyword (legacy word overlap, fallback for one release). retainTurns: turns a loaded skill stays after its last use. exclude: skill names this agent never loads (the bundled ranch-sessions, runtime-tools and skill-creator come back on every start, so deleting them does not stick) (CLEAN-214).",
   "skills": {
     "selection": "model",
-    "retainTurns": 3
+    "retainTurns": 3,
+    "exclude": []
   },
 
   "_comment_memory": "limits: per-file character caps for SOUL.md, USER.md, MEMORY.md and HEARTBEAT.md. The file on disk is never changed; the copy in the prompt is bounded — the ## Rules section of SOUL.md leads it whole, then the rest oldest-first — and the prompt says how much was left out (CLEAN-207). The console refuses a save over the limit. review: background self-improvement pass every everyTurns turns via the auxiliary LLM. instincts: learned behaviours with confidence — bands decide what a behaviour may do, reinforce/correct/decay move it, pinned ones never decay.",
@@ -84,8 +85,9 @@
     "maxCharsWithAttachments": 48000
   },
 
-  "_comment_tools": "maxOutputChars caps tool_call/tool_result payloads handed to the model; the full payload stays on disk. Keep it above a typical query_attachment read, or the model goes back to estimating from the preview.",
+  "_comment_tools": "enabled: the built-in tools this agent keeps, by name (empty = all); MCP tools are chosen by their server, skill_load and tool_describe always stay (CLEAN-214). maxOutputChars caps tool_call/tool_result payloads handed to the model; the full payload stays on disk. Keep it above a typical query_attachment read, or the model goes back to estimating from the preview.",
   "tools": {
+    "enabled": [],
     "spawnAgent": {
       "timeoutMin": 5,
       "outputLimit": 4000

@@ -6,6 +6,7 @@ const DEFAULT_OPTIONS: SkillServiceOptions = {
   retainTurns: 3,
   env: process.env,
   hasBin: (bin) => Bun.which(bin) !== null,
+  exclude: [],
 }
 
 /** Per-session record of a skill the model pulled in. */
@@ -27,7 +28,9 @@ export class SkillService {
   }
 
   async load(): Promise<void> {
-    this.skills = await this.gateway.loadAll()
+    const excluded = new Set(this.opts.exclude)
+    // An excluded skill is neither catalogued nor loadable (CLEAN-214).
+    this.skills = (await this.gateway.loadAll()).filter(s => !excluded.has(s.name))
   }
 
   getAll(): Skill[] {
