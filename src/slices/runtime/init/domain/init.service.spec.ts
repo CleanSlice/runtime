@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, writeFileSync } from "fs"
+import { mkdtempSync, writeFileSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { InitGateway } from "../data/init.gateway"
@@ -10,6 +10,13 @@ function agentDirWith(config: Record<string, unknown>): string {
   writeFileSync(join(dir, "agent.config.json"), JSON.stringify(config))
   return dir
 }
+
+describe(".agent.example/agent.config.json", () => {
+  test("is valid JSON — the first load on a fresh container reads it before S3 restores the real one", () => {
+    const text = readFileSync(join(import.meta.dir, "../../../../../.agent.example/agent.config.json"), "utf8")
+    expect(() => JSON.parse(text)).not.toThrow()
+  })
+})
 
 describe("agent.config.json harness sections", () => {
   test("defaults carry every new section with the documented values", () => {

@@ -148,6 +148,19 @@ describe("memory switches of a product agent (CLEAN-213)", () => {
     expect(service.readRecentDaily()).toBe("### 2026-11-03\n- note")
   })
 
+  test("the switches are read from the options object when used, so a reload after the S3 pull counts", () => {
+    const { gw, read } = memoryGateway()
+    gw.readRecentDaily = () => "### 2026-11-03 note"
+    const live: { dailyNotes?: boolean; ownerBlock?: boolean } = { dailyNotes: true, ownerBlock: true }
+    const service = new MemoryService(gw, undefined, undefined, live)
+    live.dailyNotes = false
+    live.ownerBlock = false
+
+    expect(service.readRecentDaily()).toBeUndefined()
+    service.ensureAdminInMemory(["admin"])
+    expect(read()).toBe("# Memory" + String.fromCharCode(10))
+  })
+
   test("ownerBlock: false — MEMORY.md is left alone at start-up", () => {
     const { gw, read } = memoryGateway()
     new MemoryService(gw, undefined, undefined, { ownerBlock: false }).ensureAdminInMemory(["admin"])

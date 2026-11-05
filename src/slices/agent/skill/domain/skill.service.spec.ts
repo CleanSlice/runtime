@@ -130,6 +130,14 @@ describe("skills.exclude (CLEAN-214)", () => {
     expect(s.get("skill-creator")).toBeUndefined()
   })
 
+  test("exclude is read from the config object at load time, so a reload after the S3 pull counts", async () => {
+    const live: { exclude?: string[] } = { exclude: [] }
+    const s = new SkillService(gateway([skill("ranch-sessions"), skill("mazda-comparisons")]), live)
+    live.exclude = ["ranch-sessions"]
+    await s.load()
+    expect(s.getAll().map(x => x.name)).toEqual(["mazda-comparisons"])
+  })
+
   test("without an exclude list every skill loads as before", async () => {
     const s = new SkillService(gateway([skill("ranch-sessions"), skill("mazda-comparisons")]))
     await s.load()

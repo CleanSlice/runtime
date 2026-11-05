@@ -55,6 +55,8 @@ export interface RuntimeConfig {
  */
 export class AgentRuntime {
   private config: IAgentConfig
+  /** The live tool registry: built-ins now, MCP tools as their servers connect. Pruned by tools.enabled (CLEAN-214). */
+  private toolRegistry: Tool[]
   private llm: LlmModule
   private channel: ChannelModule
   private session: SessionModule
@@ -86,10 +88,12 @@ export class AgentRuntime {
     this.channelConfigs = config.channels
     const agentDir = config.init.agentDir
     const tools = config.tools ?? []
+    this.toolRegistry = tools
     // agent.config.json tools.enabled: a product agent keeps a handful of the
-    // built-ins; the rest are not registered at all (CLEAN-214).
-    const disabled = pruneDisabledTools(tools, this.config.tools.enabled)
-    if (disabled.length > 0) toolLog.info(`tools.enabled keeps ${tools.length} tool(s); not registered: ${disabled.join(", ")}`)
+    // built-ins; the rest are not registered at all (CLEAN-214). On a fresh
+    // container this config is the .agent.example placeholder, so the pruning
+    // runs again once restoreState() has pulled the real one.
+    this.applyEnabledTools()
 
     // ── Setup slices (independent infrastructure) ──────────────────
 
@@ -131,10 +135,9 @@ export class AgentRuntime {
     this.instincts = new InstinctModule(agentDir, this.config.memory.instincts)
 
     // Long-term memory with search, daily flush, and background review
-    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review, this.instincts, {
-      dailyNotes: this.config.memory.dailyNotes,
-      ownerBlock: this.config.memory.ownerBlock,
-    })
+    // The memory config object itself, not a copy of its flags: reload()
+    // after the S3 pull reassigns the flags on this very object (CLEAN-213).
+    this.memory = new MemoryModule(agentDir, this.config.memory.limits, this.config.memory.review, this.instincts, this.config.memory)
 
     // Scheduled jobs (user-defined via cron tool)
     this.cron = new CronModule(agentDir)
@@ -348,6 +351,12 @@ export class AgentRuntime {
     return this.restoreState()
   }
 
+  /** tools.enabled against the live registry; safe to run again after the config is reloaded (CLEAN-214). */
+  private applyEnabledTools(): void {
+    const disabled = pruneDisabledTools(this.toolRegistry, this.config.tools.enabled)
+    if (disabled.length > 0) toolLog.info(`tools.enabled keeps ${this.toolRegistry.length} tool(s); not registered: ${disabled.join(", ")}`)
+  }
+
   private async restoreState(): Promise<void> {
     if (!this.s3sync || this.restored) return
     this.restored = true
@@ -371,6 +380,7 @@ export class AgentRuntime {
     // explicit refresh — heartbeat's intervalMs, session's compaction
     // thresholds, the loop's maxIterations, and the router's stop-phrase set.
     this.init.reload()
+    this.applyEnabledTools()
     this.heartbeat.setIntervalMs(this.config.heartbeat.intervalMin * 60_000)
     this.session.updateCompactionConfig(this.config.session)
     this.loop.updateMaxIterations(this.config.maxIterations)
