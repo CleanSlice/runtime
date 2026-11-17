@@ -28,6 +28,7 @@ import { RuntimeService } from "./domain/runtime.service"
 import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
 import { pruneDisabledTools } from "../../agent/tool/domain/toolEnabled"
+import type { IActor } from "../../setup/mcp/domain/actor"
 
 const s3Log = createLogger("s3")
 const msgLog = createLogger("msg")
@@ -45,6 +46,11 @@ export interface RuntimeConfig {
   llmAuxiliary?: LlmConfig
   channels: ChannelConfig[]
   tools?: Tool[]
+  /**
+   * Narrows one turn's tools to what a per-caller MCP server lists for the
+   * turn's actor (CLEAN-232). The entrypoint passes `McpModule.scopeTools`.
+   */
+  scopeTools?: (tools: Tool[], actor: IActor) => Promise<Tool[]>
   s3?: S3SyncConfig
 }
 
@@ -210,6 +216,7 @@ export class AgentRuntime {
       memory: this.memory, channel: this.channel, activity: activityService,
       llm: this.llm, loop: this.loop, tasks, tools, access,
       agentDir, config: this.config, instincts: this.instincts,
+      ...(config.scopeTools ? { scopeTools: config.scopeTools } : {}),
     })
 
     // ── Optional: S3 backup ────────────────────────────────────────

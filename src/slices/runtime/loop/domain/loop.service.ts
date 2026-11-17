@@ -565,7 +565,9 @@ export class LoopService {
       rlog.info(`${iterTag} llm → ${call.name}`)
       this.deps.activity.updateStep(`tool_call: ${call.name}`)
 
-      const tool = this.deps.tools.find(t => t.name === call.name)
+      // The turn's own list first: a tool Ranch lists for this person alone
+      // (CLEAN-232) is in it without being in the shared registry.
+      const tool = ctx.tools.find(t => t.name === call.name) ?? this.deps.tools.find(t => t.name === call.name)
       if (!tool) rlog.warn(`unknown tool: ${call.name}`)
 
       // Visitor-facing step: the tool's safe label extract (or its humanized
@@ -633,6 +635,8 @@ export class LoopService {
               from: ctx.from,
               ...(ctx.user ? { user: ctx.user } : {}),
               ...(ctx.origin ? { origin: ctx.origin } : {}),
+              ...(ctx.acting ? { acting: ctx.acting } : {}),
+              ...(ctx.actor ? { actor: ctx.actor } : {}),
               channel: ctx.channel,
               send: async (text, parts) => { await ctx.send(text, parts) },
               agentConfig: ctx.agentConfig,

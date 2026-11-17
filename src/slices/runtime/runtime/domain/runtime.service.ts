@@ -22,6 +22,9 @@ import { capPayload, fitEventsToBudget } from "../../../agent/session/domain/con
 import { isSkillEvent, skillEvent } from "../../../agent/skill/domain/skillEvent"
 import type { InstinctModule } from "../../../agent/instinct"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
+import { actorOfMessage, type IActor } from "../../../setup/mcp/domain/actor"
+import { audienceOf, type IAudience } from "../../../agent/agent/domain/prompts/audience.prompt"
+import { isMcpTool } from "../../../agent/tool/domain/toolEnabled"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
 
@@ -44,6 +47,11 @@ interface RuntimeDeps {
   config: IAgentConfig
   /** Learned behaviours rendered into the prompt (CLEAN-150 US3). */
   instincts?: InstinctModule
+  /**
+   * Narrows a turn's tools to what a per-caller server lists for this actor
+   * (CLEAN-232; `McpModule.scopeTools`). Absent, every turn sees the registry.
+   */
+  scopeTools?: (tools: Tool[], actor: IActor) => Promise<Tool[]>
 }
 
 export class RuntimeService {
@@ -57,7 +65,13 @@ export class RuntimeService {
     const labelLen = this.deps.config.taskLabelLength
     const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
     const isAdmin = isInternal ? true : this.deps.access.isAdmin(msg.from)
-    const visibleTools = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
+    // Who Ranch is told this turn is for (CLEAN-232): read off the message
+    // and nothing else. The admin test is the sender's own, not the
+    // `isAdmin` every internal turn gets.
+    const actor = actorOfMessage(msg, isInternal, this.deps.access.isAdmin(msg.from))
+    // Only a person a token proves is described to the model; a trusted
+    // party and a guest keep the prompt they had.
+    const audience = audienceOf(actor, msg.acting, msg.user?.email)
 
     // Hands back the wire message id when the channel mints one (bridle), so
     // the loop can attach a bubble's sources to it (CLEAN-138).
@@ -102,8 +116,9 @@ export class RuntimeService {
         // Skill retention is counted in turns of the session (CLEAN-150 US2).
         const turn = this.deps.skills.nextTurn(sessionId)
         const history = await this.buildHistory(msg, sessionId, task.id, turn)
+        const visibleTools = await this.visibleToolsFor(isAdmin, actor)
         const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools, { core: this.deps.config.tools.coreCatalogue })
-        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId, citeSources)
+        const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId, citeSources, audience)
         const breakdown = this.lastBreakdown.get(sessionId)
         // Skills carried over from earlier turns count as on-demand context too.
         for (const evt of history) {
@@ -123,6 +138,8 @@ export class RuntimeService {
           from: msg.from,
           ...(msg.user ? { user: msg.user } : {}),
           ...(msg.origin ? { origin: msg.origin } : {}),
+          ...(msg.acting ? { acting: msg.acting } : {}),
+          actor,
           channel: msg.channel,
           isInternal,
           systemPrompt,
@@ -168,6 +185,24 @@ export class RuntimeService {
         } catch { /* ignore */ }
       }
     }, { internal: isInternal })
+  }
+
+  /**
+   * The tools of one turn: the registry without admin-only tools for a
+   * non-admin, as before, and then, for a server that lists per caller
+   * (Ranch's own, CLEAN-232), exactly what it lists for this actor.
+   */
+  private async visibleToolsFor(isAdmin: boolean, actor: IActor): Promise<Tool[]> {
+    const base = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
+    if (!this.deps.scopeTools) return base
+    try {
+      return await this.deps.scopeTools(base, actor)
+    } catch (err) {
+      // The scoper answers for its own failures (no Ranch tools, a warning);
+      // if it throws anyway, the unscoped list would be everyone's tools.
+      log.warn(`tool scoping failed, MCP tools left out of this turn: ${(err as Error).message}`)
+      return base.filter(t => !isMcpTool(t.name))
+    }
   }
 
   private buildChannelContext(msg: Message): string | undefined {
@@ -309,7 +344,7 @@ export class RuntimeService {
     return events
   }
 
-  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string, citeSources: boolean): Promise<string> {
+  private async buildPrompt(msg: Message, tid: string, toolingPrompt: string, isAdmin: boolean, sessionId: string, citeSources: boolean, audience?: IAudience): Promise<string> {
     const secretKeys = await this.deps.secrets.list().catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
@@ -342,6 +377,8 @@ export class RuntimeService {
       extraHint,
       integratorPrompt: msg.prompt,
       channelContext: this.buildChannelContext(msg),
+      // Who the turn is for, and how to say no (CLEAN-232).
+      ...(audience ? { audience } : {}),
       // Only a client that can draw sources is asked to cite (CLEAN-138).
       ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
       instincts: this.deps.instincts?.render(),

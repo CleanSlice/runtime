@@ -1,5 +1,6 @@
 import type { Tool } from "../../../agent/tool"
 import type { IMcpServerConfig } from "./mcp.types"
+import type { IActor } from "./actor"
 
 /** What `reconnect` hands back after a login landed (CLEAN-79). */
 export interface IMcpReconnectResult {
@@ -32,6 +33,14 @@ export abstract class IMcpGateway {
    * runtime does not run that server.
    */
   abstract reconnect(serverId: string, subject: string): Promise<IMcpReconnectResult | null>
+  /**
+   * One turn's tools (CLEAN-232): for a server that lists per caller, its
+   * tools in `tools` become exactly what it lists for `actor`; everything
+   * else passes through. A gateway with no such server returns `tools`.
+   */
+  async scopeTools(tools: Tool[], _actor: IActor): Promise<Tool[]> {
+    return tools
+  }
   /** Close every open client. Called from graceful shutdown. */
   abstract closeAll(): Promise<void>
 }

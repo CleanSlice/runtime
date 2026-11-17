@@ -5,6 +5,7 @@ import {
   streamedInterim,
   streamedText,
   type Streamer,
+  type IActing,
   type IMessageAttachment,
   type IThinkingStep,
   type Message,
@@ -542,6 +543,10 @@ export class BridleRepository implements IChannelGateway {
       // clientId "admin"; this is what tells them apart.
       const user = readUser(msg.user)
       const origin = readOrigin(msg.origin)
+      // Who the person is to Ranch (CLEAN-232): a token the API signed, plus
+      // the role and console to mention in the prompt. A console socket of
+      // an API older than that sends none, and is then nobody in particular.
+      const acting = readActing(msg.acting)
 
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
@@ -555,6 +560,7 @@ export class BridleRepository implements IChannelGateway {
         ...(attachments.length ? { attachments } : {}),
         ...(user ? { user } : {}),
         ...(origin ? { origin } : {}),
+        ...(acting ? { acting } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })
@@ -644,6 +650,26 @@ export function readOrigin(raw: unknown): string | undefined {
   } catch {
     return undefined
   }
+}
+
+const ACTING_ROLES = ["Owner", "Admin", "User"] as const
+const ACTING_SURFACES = ["app", "admin"] as const
+
+/**
+ * The `acting` the hub attaches to a message (CLEAN-232):
+ * `{ token, role?, surface? }`. Only the token is required: it is the
+ * authority, and without one the sender is a guest. `role` and `surface`
+ * are display-only, so each is kept when it is a value this runtime knows
+ * and dropped by itself when it is not — an older console build declares
+ * no surface, and its signed-in Owner must not become a guest for that.
+ */
+export function readActing(raw: unknown): IActing | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as { token?: unknown; role?: unknown; surface?: unknown }
+  if (typeof o.token !== "string" || !o.token.trim()) return undefined
+  const role = ACTING_ROLES.find(r => r === o.role)
+  const surface = ACTING_SURFACES.find(s => s === o.surface)
+  return { token: o.token, ...(role ? { role } : {}), ...(surface ? { surface } : {}) }
 }
 
 function readUser(raw: unknown): { id: string; email?: string } | undefined {

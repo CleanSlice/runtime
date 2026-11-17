@@ -2,7 +2,8 @@ import type { ZodSchema } from "zod"
 import type { IAgentConfig } from "../../../runtime/init"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule } from "../../../setup/channel/channel.module"
-import type { MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { IActing, MessagePart } from "../../../setup/channel/domain/channel.types"
+import type { IActor } from "../../../setup/mcp/domain/actor"
 import type { LlmModule } from "../../../setup/llm/llm.module"
 import type { UsageModule } from "../../../bot/usage/usage.module"
 import type { LastTurnStatsTracker } from "../../../runtime/loop/domain/last-turn-stats.tracker"
@@ -47,6 +48,19 @@ export interface ToolContext {
    * Absent on other channels.
    */
   origin?: string
+  /**
+   * The hub's acting token for this message, with the person's role and
+   * console (CLEAN-232); see Message.acting. Only the MCP gateway reads the
+   * token, and only to send it to Ranch's own server. A tool must not log
+   * it, return it or pass it anywhere else.
+   */
+  acting?: IActing
+  /**
+   * Who this turn acts for, resolved once by the runtime from the channel
+   * message (`actorOf`): the person a token proves, the agent itself, or a
+   * guest. A context without one is a guest's.
+   */
+  actor?: IActor
   // `parts` is the rich-content escape hatch: pass [{type:"image", base64,
   // mediaType}, ...] to attach images/files to the same message. Channels
   // that don't support rich parts (telegram via this hook — telegram has

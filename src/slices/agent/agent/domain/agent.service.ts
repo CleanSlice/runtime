@@ -20,6 +20,7 @@ import type { ICuratedBound } from "../../memory/domain/curatedBound"
 import { boundCurated } from "../../memory/domain/curatedBound"
 import type { MemoryLimits } from "../../memory/domain/memory.types"
 import { SILENT_REPLY_TOKEN } from "./silentReply"
+import { buildAudiencePrompt, type IAudience } from "./prompts/audience.prompt"
 
 export interface BuildPromptOpts {
   agentDir?: string
@@ -45,6 +46,13 @@ export interface BuildPromptOpts {
    * the conversation is happening (Telegram DM, Telegram group, Slack, etc.).
    */
   channelContext?: string
+  /**
+   * The signed-in person the turn is for (CLEAN-232), with their role and
+   * console when the hub said them. Rendered as the `# Audience` block.
+   * Absent for a trusted party and for a guest, where the prompt stays as
+   * it was. Guidance only; the tool list is what limits the person.
+   */
+  audience?: IAudience
   /**
    * The `# Citing sources` section (CLEAN-138). Passed only when the client
    * advertised the `sources` capability; absent, the model is never asked
@@ -133,6 +141,7 @@ export class AgentService {
 
     if (soul)              push("soul", `# Soul\n\n${soulLimitNote(soulFit.bound)}${soul}`)
     if (opts?.channelContext) push("channel", `# Channel\n\n${opts.channelContext}`)
+    if (opts?.audience)    push("audience", buildAudiencePrompt(opts.audience))
     if (opts?.extraHint)   push("hint", opts.extraHint)
     if (opts?.toolingPrompt) push("tooling", opts.toolingPrompt)
     if (opts?.citationsPrompt) push("citations", opts.citationsPrompt)
@@ -209,7 +218,7 @@ export class AgentService {
     return { prompt, sections }
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; audience?: IAudience; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -228,6 +237,7 @@ export class AgentService {
       extraHint: opts?.extraHint,
       integratorPrompt: opts?.integratorPrompt,
       channelContext: opts?.channelContext,
+      audience: opts?.audience,
       citationsPrompt: opts?.citationsPrompt,
       instincts: opts?.instincts,
     })

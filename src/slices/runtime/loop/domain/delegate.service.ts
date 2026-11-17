@@ -3,6 +3,7 @@ import type { Event } from "../../../setup/event"
 import type { TaskManager, Task } from "../../../agent/task/domain/task.service"
 import { isDelegateAllowed, type IDelegateRequest, type IDelegateResult } from "../../../agent/task/domain/delegate.types"
 import type { ILoopContext, ILoopResult } from "./loop.types"
+import { actorOf } from "../../../setup/mcp/domain/actor"
 import { createLogger } from "../../../setup/logger"
 
 const log = createLogger("delegate")
@@ -107,6 +108,11 @@ export class DelegateService {
       agentDir: parent.agentDir,
       from: parent.from,
       ...(parent.user ? { user: parent.user } : {}),
+      ...(parent.acting ? { acting: parent.acting } : {}),
+      // The parent's actor, resolved here so it is always set (CLEAN-232): a
+      // worker is an internal task, and read by itself that would make a
+      // guest's worker `trusted`.
+      actor: actorOf(parent),
       channel: "internal",
       isInternal: true,
       worker: true,

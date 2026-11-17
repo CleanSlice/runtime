@@ -3,7 +3,8 @@ import type { Tool } from "../../../agent/tool"
 import type { Task } from "../../../agent/task/domain/task.service"
 import type { AccessModule } from "../../../bot/access/access.module"
 import type { ChannelModule, IBridleDebugPayload } from "../../../setup/channel"
-import type { IThinkingStep, MessagePart, Streamer } from "../../../setup/channel/domain/channel.types"
+import type { IActing, IThinkingStep, MessagePart, Streamer } from "../../../setup/channel/domain/channel.types"
+import type { IActor } from "../../../setup/mcp/domain/actor"
 import type { IOnDemandLoad, IPromptBreakdown } from "../../../agent/agent/domain/agent.types"
 
 export interface ILoopConfig {
@@ -63,6 +64,14 @@ export interface ILoopContext {
   user?: { id: string; email?: string }
   /** Browser origin of the sending socket (CLEAN-120); see Message.origin. */
   origin?: string
+  /** The hub's acting token, role and console for this message (CLEAN-232); see Message.acting. */
+  acting?: IActing
+  /**
+   * Who the turn acts for (CLEAN-232), resolved once from the channel message
+   * and handed to every tool call. A worker gets its parent's. Nothing the
+   * model writes reaches it.
+   */
+  actor?: IActor
   channel: string
   isInternal: boolean
   systemPrompt: string
