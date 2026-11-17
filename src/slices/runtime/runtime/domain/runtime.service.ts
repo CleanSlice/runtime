@@ -60,15 +60,24 @@ export class RuntimeService {
 
   constructor(private deps: RuntimeDeps) {}
 
-  /** Start a fire-and-forget task for this message */
-  execute(msg: Message, sessionId: string, isInternal: boolean): void {
+  /**
+   * Start a fire-and-forget task for this message.
+   *
+   * `isInternal`: nobody is waiting on a channel. `selfStarted`: the cron or
+   * heartbeat module emitted the turn; the caller states it (`turnFlags`),
+   * it is never read off `msg.from`, and it defaults to "no" (CLEAN-232).
+   * Only such a turn is the agent's own: a recovered turn is internal and
+   * still its sender's, with the tools and the standing its sender has.
+   */
+  execute(msg: Message, sessionId: string, isInternal: boolean, selfStarted = false): void {
     const labelLen = this.deps.config.taskLabelLength
     const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
-    const isAdmin = isInternal ? true : this.deps.access.isAdmin(msg.from)
-    // Who Ranch is told this turn is for (CLEAN-232): read off the message
-    // and nothing else. The admin test is the sender's own, not the
-    // `isAdmin` every internal turn gets.
-    const actor = actorOfMessage(msg, isInternal, this.deps.access.isAdmin(msg.from))
+    const senderIsAdmin = this.deps.access.isAdmin(msg.from)
+    const isAdmin = selfStarted === true ? true : senderIsAdmin
+    // Who Ranch is told this turn is for (CLEAN-232): the token on the
+    // message, the runtime's own word that it started the turn, or the
+    // access list's answer for the sender.
+    const actor = actorOfMessage(msg, selfStarted === true, senderIsAdmin)
     // Only a person a token proves is described to the model; a trusted
     // party and a guest keep the prompt they had.
     const audience = audienceOf(actor, msg.acting, msg.user?.email)

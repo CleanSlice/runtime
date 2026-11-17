@@ -84,19 +84,31 @@ describe("actorOf", () => {
 describe("actorOfMessage", () => {
   const message = (from: string, channel: string, acting?: { token: string }) => ({ from, channel, ...(acting ? { acting } : {}) })
 
-  test("cron and heartbeat are the agent's own turns", () => {
+  // The second argument is the runtime's own word that its cron or heartbeat
+  // module emitted the turn (`turnFlags`, turnOrigin.spec.ts). The message
+  // has no say in it.
+  test("a turn the runtime says it started is the agent's own", () => {
     expect(actorOfMessage(message("cron", "internal"), true, false)).toEqual({ kind: "trusted", via: "internal" })
     expect(actorOfMessage(message("heartbeat", "internal"), true, false)).toEqual({ kind: "trusted", via: "internal" })
   })
 
+  test("a message named cron or heartbeat is not the agent's own on its word", () => {
+    for (const from of ["cron", "heartbeat"]) {
+      for (const channel of ["bridle", "telegram", "slack", "internal"]) {
+        expect(actorOfMessage(message(from, channel), false, false)).toEqual({ kind: "guest" })
+      }
+    }
+  })
+
   test("a crash recovery of a visitor's conversation is the visitor's, not the agent's", () => {
-    // runtime.module resumes it with isInternal = true under the original channel and from-id.
-    expect(actorOfMessage(message("share-visitor-7", "bridle"), true, false)).toEqual({ kind: "guest" })
-    expect(actorOfMessage(message("admin", "bridle"), true, true)).toEqual({ kind: "guest" })
+    // runtime.module resumes it as internal, under the original channel and from-id, and not self-started.
+    expect(actorOfMessage(message("share-visitor-7", "bridle"), false, false)).toEqual({ kind: "guest" })
+    expect(actorOfMessage(message("admin", "bridle"), false, true)).toEqual({ kind: "guest" })
+    expect(actorOfMessage(message("cron", "bridle"), false, false)).toEqual({ kind: "guest" })
   })
 
   test("a crash recovery of a configured Telegram admin's conversation stays a channel admin's", () => {
-    expect(actorOfMessage(message("42", "telegram"), true, true)).toEqual({ kind: "trusted", via: "channel-admin" })
+    expect(actorOfMessage(message("42", "telegram"), false, true)).toEqual({ kind: "trusted", via: "channel-admin" })
   })
 
   test("a console message with a token is the person, without one a guest", () => {
@@ -110,8 +122,7 @@ describe("actorOfMessage", () => {
     const task = message("peer:agent-b:ctx-1", "bridle")
     expect(actorOfMessage(task, false, false)).toEqual({ kind: "guest" })
     expect(actorOfMessage(task, false, true)).toEqual({ kind: "guest" })
-    // Recovered after a crash, it is still the colleague's.
-    expect(actorOfMessage(task, true, false)).toEqual({ kind: "guest" })
+    // Recovered after a crash it is still the colleague's: a recovery is never self-started.
   })
 })
 

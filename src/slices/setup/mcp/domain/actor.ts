@@ -69,28 +69,31 @@ export function actorOf(src: IActorSource): IActor {
 /**
  * The actor of an inbound message, as the runtime starts its turn.
  *
- * `isInternal` is the runtime's flag for a turn with nobody waiting on a
- * channel. It also covers a crash recovery, which resumes somebody's
- * conversation under their own channel and from-id and carries no token:
- * only a turn the agent itself started (cron, heartbeat) is the agent's
- * own. A recovered turn is its sender's again, without the token the hub
- * gave the original message — a configured channel admin, else a guest.
- * Why stricter than the contract's row: `trusted` / `internal` is the
- * agent's full power at Ranch, and treating recovery as internal would hand
- * it to whoever's turn a crash interrupted, a share visitor included.
+ * `selfStarted` is the runtime's own statement that its cron or heartbeat
+ * module emitted this turn (`turnFlags`, origin `self`). It is never read
+ * off the message: `from` is an id a channel delivered, and a hub client
+ * named "cron" or "heartbeat" was the agent itself for as long as the name
+ * decided. Only such a turn is `trusted` / `internal`.
+ *
+ * A crash recovery is not one. It resumes somebody's conversation under
+ * their own channel and from-id, carries no token, and the record it is
+ * rebuilt from does not say who started it, so it is its sender's again:
+ * a configured channel admin, else a guest. Why stricter than the
+ * contract's row: `trusted` / `internal` is the agent's full power at
+ * Ranch, and treating recovery as internal would hand it to whoever's turn
+ * a crash interrupted, a share visitor included.
  *
  * `isConfiguredAdmin` is the access list's answer for the sender, not the
- * `isAdmin` every internal turn is given.
+ * `isAdmin` a turn of the agent's own is given.
  */
 export function actorOfMessage(
   msg: { acting?: { token: string }; from: string; channel: string },
-  isInternal: boolean,
+  selfStarted: boolean,
   isConfiguredAdmin: boolean,
 ): IActor {
-  const selfStarted = isInternal && (msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat")
   return actorOf({
     acting: msg.acting,
-    isInternal: selfStarted,
+    isInternal: selfStarted === true,
     isAdmin: isConfiguredAdmin,
     from: msg.from,
     channel: msg.channel,
