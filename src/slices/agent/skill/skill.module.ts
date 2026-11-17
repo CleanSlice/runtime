@@ -25,16 +25,21 @@ export class SkillModule {
     return this.service.getAll()
   }
 
-  get(name: string): Skill | undefined {
-    return this.service.get(name)
+  /** The skills a turn may read: all of them for an admin, the ones not marked `audience: admin` for anybody else (CLEAN-232). */
+  visibleTo(isAdmin = false): Skill[] {
+    return this.service.visibleTo(isAdmin)
   }
 
-  summaries(): SkillSummary[] {
-    return this.service.summaries()
+  get(name: string, isAdmin = false): Skill | undefined {
+    return this.service.get(name, isAdmin)
   }
 
-  select(message: string): Skill | null {
-    return this.service.select(message)
+  summaries(isAdmin = false): SkillSummary[] {
+    return this.service.summaries(isAdmin)
+  }
+
+  select(message: string, isAdmin = false): Skill | null {
+    return this.service.select(message, isAdmin)
   }
 
   // ─── Per-session on-demand loading ────────────────────────────────────────
@@ -43,12 +48,12 @@ export class SkillModule {
     return this.service.nextTurn(sessionId)
   }
 
-  markLoaded(sessionId: string, name: string, turn: number): LoadedSkillInfo {
-    return this.service.markLoaded(sessionId, name, turn)
+  markLoaded(sessionId: string, name: string, turn: number, isAdmin = false): LoadedSkillInfo {
+    return this.service.markLoaded(sessionId, name, turn, isAdmin)
   }
 
-  activeFor(sessionId: string, turn: number): Skill[] {
-    return this.service.activeFor(sessionId, turn)
+  activeFor(sessionId: string, turn: number, isAdmin = false): Skill[] {
+    return this.service.activeFor(sessionId, turn, isAdmin)
   }
 
   // ─── Install / Remove ──────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export const SKILL_CATALOGUE_INSTRUCTIONS =
   `conversation and stay for a few turns. Load at most the one or two skills that fit; when none fits, answer directly without loading. ` +
   `Skills marked unavailable cannot be loaded until the missing requirement is met.`
 import type { SkillSummary } from "../../skill/domain/skill.types"
+import { stripAdminBlocks } from "./adminBlocks"
 import type { ICuratedBound } from "../../memory/domain/curatedBound"
 import { boundCurated } from "../../memory/domain/curatedBound"
 import type { MemoryLimits } from "../../memory/domain/memory.types"
@@ -61,13 +62,6 @@ export interface BuildPromptOpts {
   citationsPrompt?: string
   /** Rendered learned behaviours (`InstinctModule.render()`), CLEAN-150 US3. */
   instincts?: string
-}
-
-const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
-
-function stripAdminBlocks(text: string | undefined): string | undefined {
-  if (!text) return text
-  return text.replace(ADMIN_BLOCK_RE, "").replace(/\n{3,}/g, "\n\n").trim()
 }
 
 /**
@@ -169,7 +163,11 @@ export class AgentService {
       push("dailyNotes", `## Recent Notes\n\n${opts.dailyMemory}`)
     }
 
-    if (config.heartbeat) push("heartbeat", `# Heartbeat\n\n${config.heartbeat}`)
+    // HEARTBEAT.md is the agent's own checklist and names the tools its checks
+    // use; whoever is not an admin reads it without its admin-only blocks
+    // (CLEAN-232). The heartbeat turn itself is the agent's own and reads it whole.
+    const heartbeat = gate(config.heartbeat)
+    if (heartbeat) push("heartbeat", `# Heartbeat\n\n${heartbeat}`)
 
     // Skill catalog: only names + descriptions (full content loaded on demand)
     const allSkills = [...config.skills, ...(opts?.skills ?? [])]

@@ -718,7 +718,7 @@ export class LoopService {
   private noteOnDemandLoad(ctx: ILoopContext, toolName: string, result: unknown): void {
     if (toolName === "skill_load") {
       const name = (result as { name?: string })?.name
-      const skill = name ? this.deps.skills?.get(name) : undefined
+      const skill = name ? this.deps.skills?.get(name, ctx.isAdmin) : undefined
       if (!skill) return
       const event = skillEvent(skill)
       const insertAt = ctx.history[0]?.type === "summary" && !(ctx.history[0].data as { skill?: string }).skill ? 1 : 0

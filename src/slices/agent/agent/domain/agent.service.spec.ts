@@ -42,6 +42,23 @@ describe("buildSystemPrompt breakdown (CLEAN-150 US2)", () => {
     expect(visitor.prompt).not.toContain("Secret admin paragraph")
   })
 
+  test("HEARTBEAT.md is read without its admin-only blocks by anybody who is not an admin (CLEAN-232)", () => {
+    const service = new AgentService(gateway)
+    const withHeartbeat: AgentConfig = {
+      skills: [],
+      heartbeat: "Runs every 30 minutes.\n\n<!-- admin-only -->Sweep with `list_agents`.<!-- /admin-only -->",
+    }
+    const admin = service.buildSystemPrompt(withHeartbeat, { isAdmin: true })
+    const visitor = service.buildSystemPrompt(withHeartbeat, { isAdmin: false })
+    expect(admin.prompt).toContain("list_agents")
+    expect(visitor.prompt).toContain("Runs every 30 minutes.")
+    expect(visitor.prompt).not.toContain("list_agents")
+    expect(visitor.prompt).not.toContain("admin-only")
+    // A heartbeat that is nothing but an admin-only block leaves no empty section.
+    const onlyAdmin = service.buildSystemPrompt({ skills: [], heartbeat: "<!-- admin-only -->x<!-- /admin-only -->" }, { isAdmin: false })
+    expect(onlyAdmin.sections.map(s => s.name)).not.toContain("heartbeat")
+  })
+
   test("optional sections are absent, not zero-width entries", () => {
     const built = new AgentService(gateway).buildSystemPrompt({ skills: [] }, {})
     expect(built.sections.map(s => s.name)).toEqual(["silent"])

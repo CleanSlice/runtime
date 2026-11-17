@@ -103,6 +103,16 @@ describe("actorOfMessage", () => {
     expect(actorOfMessage(message("admin", "bridle", { token: "tok-1" }), false, true)).toEqual({ kind: "person", token: "tok-1" })
     expect(actorOfMessage(message("admin", "bridle"), false, true)).toEqual({ kind: "guest" })
   })
+
+  test("a task another agent hands over (A2A, ask_agent) is a guest's turn", () => {
+    // Ranch delivers it over the hub as `peer:<calling agent>:<context>` with no acting token:
+    // a colleague is not the Owner, on the Ranch admin agent least of all.
+    const task = message("peer:agent-b:ctx-1", "bridle")
+    expect(actorOfMessage(task, false, false)).toEqual({ kind: "guest" })
+    expect(actorOfMessage(task, false, true)).toEqual({ kind: "guest" })
+    // Recovered after a crash, it is still the colleague's.
+    expect(actorOfMessage(task, true, false)).toEqual({ kind: "guest" })
+  })
 })
 
 describe("a delegated worker", () => {

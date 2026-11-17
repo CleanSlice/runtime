@@ -20,6 +20,9 @@ const CONSOLE: Record<"app" | "admin", string> = {
 
 const TOOLS_ARE_THEIRS = "The tools you have in this conversation are the ones this person may use."
 
+/** For a User: a tool name read anywhere else (a skill, a note, an earlier turn) is not a tool of this conversation. */
+const NO_OTHER_TOOLS = "Only the tools in your tool list exist in this conversation; call no other tool, whatever name you have read elsewhere."
+
 const NO_OTHER_ROUTE =
   "Do not attempt it another way, do not describe the management console, do not suggest steps they cannot take."
 
@@ -62,6 +65,7 @@ export function buildAudiencePrompt(audience: IAudience): string {
 
   const lines = ["# Audience", "", `You are talking to ${who}${where}.`, TOOLS_ARE_THEIRS]
   if (audience.role === "User") {
+    lines.push(NO_OTHER_TOOLS)
     lines.push(`When they ask for something you have no tool for, say in one sentence that their account cannot do that. ${NO_OTHER_ROUTE}`)
   }
   return lines.join("\n")

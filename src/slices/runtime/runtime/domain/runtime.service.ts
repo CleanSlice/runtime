@@ -115,7 +115,7 @@ export class RuntimeService {
 
         // Skill retention is counted in turns of the session (CLEAN-150 US2).
         const turn = this.deps.skills.nextTurn(sessionId)
-        const history = await this.buildHistory(msg, sessionId, task.id, turn)
+        const history = await this.buildHistory(msg, sessionId, task.id, turn, isAdmin)
         const visibleTools = await this.visibleToolsFor(isAdmin, actor)
         const toolingPrompt = ToolService.buildToolingPromptFrom(visibleTools, { core: this.deps.config.tools.coreCatalogue })
         const systemPrompt = await this.buildPrompt(msg, tid, toolingPrompt, isAdmin, sessionId, citeSources, audience)
@@ -252,7 +252,7 @@ export class RuntimeService {
     return `You are responding via ${channel}.`
   }
 
-  private async buildHistory(msg: Message, sessionId: string, taskId: string, turn: number): Promise<Event[]> {
+  private async buildHistory(msg: Message, sessionId: string, taskId: string, turn: number, isAdmin: boolean): Promise<Event[]> {
     // Append user message as shared context
     const userEvent: Event = {
       // On bridle the message id is minted by the person's browser and rides
@@ -336,7 +336,7 @@ export class RuntimeService {
     // persisted — only the fact of loading is — so a fresh copy of the body
     // goes in each turn, after the archive summary if there is one.
     const events = fitted.events.filter(e => !isSkillEvent(e))
-    const active = this.deps.skills.activeFor(sessionId, turn)
+    const active = this.deps.skills.activeFor(sessionId, turn, isAdmin)
     if (active.length > 0) {
       const insertAt = events[0]?.type === "summary" ? 1 : 0
       events.splice(insertAt, 0, ...active.map(skillEvent))
@@ -348,10 +348,12 @@ export class RuntimeService {
     const secretKeys = await this.deps.secrets.list().catch(() => [] as string[])
     const dailyMemory = this.deps.memory.readRecentDaily()
 
-    // Get all loaded skills — pass summaries to system prompt catalog
-    const allSkills = this.deps.skills.getAll()
+    // The skills this sender may read — pass summaries to system prompt catalog.
+    // A skill marked `audience: admin` is not among them for anybody else, so it
+    // is neither listed nor injected below (CLEAN-232).
+    const allSkills = this.deps.skills.visibleTo(isAdmin)
     // Summaries carry the reason when a skill cannot be loaded (missing env or binary).
-    const skillSummaries = this.deps.skills.summaries()
+    const skillSummaries = this.deps.skills.summaries(isAdmin)
 
     // One-shot resource-status hint: if the previous LLM turn for this
     // session was delayed (retries, rate limit, overload, >30s), nudge the
@@ -401,7 +403,7 @@ export class RuntimeService {
     if (alwaysChars > 0) sections.push({ name: "alwaysSkills", chars: alwaysChars })
 
     // Inject full content for message-matched skill (skip if already injected)
-    const matched = this.deps.skills.select(msg.text)
+    const matched = this.deps.skills.select(msg.text, isAdmin)
     if (matched && !injected.has(matched.name)) {
       const block = `## Active Skill: ${matched.name}\n\n${matched.content}`
       systemPrompt += SECTION_SEPARATOR + block
