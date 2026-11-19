@@ -2,6 +2,7 @@ import type { Tool } from "../../../agent/tool"
 import { IMcpGateway } from "./mcp.gateway"
 import type { IMcpConnectedEvent, IMcpLoadOptions, IMcpServerConfig } from "./mcp.types"
 import { McpFetcher } from "./mcp.fetcher"
+import type { IActor } from "./actor"
 import { createLogger } from "../../logger"
 
 const log = createLogger("mcp")
@@ -62,6 +63,11 @@ export class McpService {
     if (!result.tools) return countFor(registry, result.serverName)
     swapServerTools(registry, result.serverName, result.tools)
     return countFor(registry, result.serverName)
+  }
+
+  /** The tools of one turn, narrowed to what per-caller servers list for its actor (CLEAN-232). */
+  scopeTools(tools: Tool[], actor: IActor): Promise<Tool[]> {
+    return this.gateway.scopeTools(tools, actor)
   }
 
   async shutdown(): Promise<void> {

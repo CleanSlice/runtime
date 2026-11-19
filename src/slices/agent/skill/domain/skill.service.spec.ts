@@ -98,6 +98,73 @@ describe("skill availability", () => {
   })
 })
 
+/**
+ * A skill for the agent's administrators only (frontmatter `audience: admin`,
+ * CLEAN-232). The Ranch admin agent's `ranch` skill names every management
+ * tool; a User read it whole, and a model that reads a tool name tries it.
+ */
+describe("a skill for administrators only", () => {
+  const ranch = skill("ranch", "Operate the ranch platform agents", {
+    content: "Call `list_agents` first.",
+    metadata: { always: true, audience: "admin" },
+  })
+  const faq = skill("faq", "Answer product questions from the manual", {
+    content: "Answer from the manual.\n\n<!-- admin-only -->The source lives in `write_agent_file`.<!-- /admin-only -->",
+  })
+
+  test("is not in the catalogue of anybody who is not an admin", async () => {
+    const s = await service([ranch, faq])
+    expect(s.summaries(false).map(x => x.name)).toEqual(["faq"])
+    expect(s.summaries(true).map(x => x.name)).toEqual(["ranch", "faq"])
+    // Not saying who is asking is the visitor's view.
+    expect(s.summaries().map(x => x.name)).toEqual(["faq"])
+  })
+
+  test("is not among the skills a turn may read, always-on or not", async () => {
+    const s = await service([ranch, faq])
+    expect(s.visibleTo(false).map(x => x.name)).toEqual(["faq"])
+    expect(s.visibleTo(false).filter(x => x.metadata?.always)).toEqual([])
+    expect(s.visibleTo(true).filter(x => x.metadata?.always).map(x => x.name)).toEqual(["ranch"])
+    expect(s.get("ranch", false)).toBeUndefined()
+    expect(s.get("ranch", true)?.content).toContain("list_agents")
+  })
+
+  test("skill_load answers a visitor exactly as for a skill that does not exist", async () => {
+    const s = await service([ranch, faq])
+    const refusal = (name: string) => {
+      try { s.markLoaded("s1", name, 1, false); return "loaded" } catch (e) { return (e as Error).message.replace(name, "<name>") }
+    }
+    expect(refusal("ranch")).toBe("unknown skill: <name>")
+    expect(refusal("ranch")).toBe(refusal("no-such-skill"))
+    expect(s.activeFor("s1", 1, false)).toEqual([])
+    expect(s.markLoaded("s1", "ranch", 1, true)).toMatchObject({ name: "ranch" })
+  })
+
+  test("one an admin loaded does not ride into a visitor's turn of the same session", async () => {
+    const s = await service([ranch, faq])
+    s.markLoaded("s1", "ranch", 1, true)
+    expect(s.activeFor("s1", 2, true).map(x => x.name)).toEqual(["ranch"])
+    expect(s.activeFor("s1", 2, false)).toEqual([])
+  })
+
+  test("keyword selection does not pick it for a visitor", async () => {
+    const s = await service([ranch], { selection: "keyword" })
+    expect(s.select("please list the ranch agents", true)?.name).toBe("ranch")
+    expect(s.select("please list the ranch agents", false)).toBeNull()
+  })
+
+  test("any other skill reaches a visitor without its admin-only blocks, and an admin whole", async () => {
+    const s = await service([faq])
+    s.markLoaded("s1", "faq", 1, false)
+    const forVisitor = s.activeFor("s1", 1, false)[0]!.content
+    expect(forVisitor).toBe("Answer from the manual.")
+    expect(s.get("faq", false)!.content).not.toContain("write_agent_file")
+    expect(s.activeFor("s1", 1, true)[0]!.content).toContain("write_agent_file")
+    // The skill on disk is not rewritten.
+    expect(s.getAll()[0]!.content).toContain("admin-only")
+  })
+})
+
 describe("selection mode", () => {
   test("keyword selection still matches two overlapping words", async () => {
     const s = await service([skill("ranch", "Operate the ranch platform agents")], { selection: "keyword" })

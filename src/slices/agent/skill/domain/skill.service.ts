@@ -1,5 +1,6 @@
 import type { Skill, RegistryEntry, SkillSummary, SkillServiceOptions, LoadedSkillInfo } from "./skill.types"
 import type { ISkillGateway } from "./skill.gateway"
+import { stripAdminBlocks } from "../../agent/domain/adminBlocks"
 
 const DEFAULT_OPTIONS: SkillServiceOptions = {
   selection: "model",
@@ -34,17 +35,33 @@ export class SkillService {
     this.skills = (await this.gateway.loadAll()).filter(s => !excluded.has(s.name))
   }
 
+  /** Every skill on disk, whole: for the agent's own bookkeeping (reload, counts), not for a turn. */
   getAll(): Skill[] {
     return this.skills
   }
 
-  get(name: string): Skill | undefined {
-    return this.skills.find(s => s.name === name)
+  /**
+   * The skills a turn may read (CLEAN-232). An admin gets every skill whole.
+   * Anybody else gets none of the skills marked `audience: admin`, and the
+   * rest without their admin-only blocks. Everything below that puts a skill
+   * in front of the model goes through here, so a skill hidden from the
+   * catalogue cannot be reached by name either. `isAdmin` defaults to false:
+   * a caller that does not say who is asking gets the visitor's view.
+   */
+  visibleTo(isAdmin = false): Skill[] {
+    if (isAdmin) return this.skills
+    return this.skills
+      .filter(s => s.metadata?.audience !== "admin")
+      .map(s => ({ ...s, content: stripAdminBlocks(s.content) }))
+  }
+
+  get(name: string, isAdmin = false): Skill | undefined {
+    return this.visibleTo(isAdmin).find(s => s.name === name)
   }
 
   /** Catalogue entries for the system prompt, with the reason when a skill cannot be loaded. */
-  summaries(): SkillSummary[] {
-    return this.skills.map(s => {
+  summaries(isAdmin = false): SkillSummary[] {
+    return this.visibleTo(isAdmin).map(s => {
       const a = this.availability(s)
       return { name: s.name, description: s.description, metadata: s.metadata, ...(a.ok ? {} : { unavailable: a.reason }) }
     })
@@ -71,9 +88,12 @@ export class SkillService {
     return n
   }
 
-  /** The model pulled a skill in: remember it for `retainTurns` turns. Throws on unknown or unavailable skills. */
-  markLoaded(sessionId: string, name: string, turn: number): LoadedSkillInfo {
-    const skill = this.get(name)
+  /**
+   * The model pulled a skill in: remember it for `retainTurns` turns. Throws on unknown or unavailable skills.
+   * A skill this sender may not read is unknown, in the same words.
+   */
+  markLoaded(sessionId: string, name: string, turn: number, isAdmin = false): LoadedSkillInfo {
+    const skill = this.get(name, isAdmin)
     if (!skill) throw new Error(`unknown skill: ${name}`)
     const a = this.availability(skill)
     if (!a.ok) throw new Error(`skill unavailable: ${a.reason}`)
@@ -85,13 +105,13 @@ export class SkillService {
     return { name, chars: skill.content.length, retainedForTurns: this.opts.retainTurns }
   }
 
-  /** Skills still active for a session at `turn`; expired ones are released here. */
-  activeFor(sessionId: string, turn: number): Skill[] {
+  /** Skills still active for a session at `turn`, as this sender may read them; expired ones are released here. */
+  activeFor(sessionId: string, turn: number, isAdmin = false): Skill[] {
     const list = this.loaded.get(sessionId) ?? []
     // Loaded at turn N → still active through turn N + retainTurns.
     const kept = list.filter(l => turn - l.lastUsedTurn <= this.opts.retainTurns)
     if (kept.length !== list.length) this.loaded.set(sessionId, kept)
-    return kept.map(l => this.get(l.name)).filter((s): s is Skill => !!s)
+    return kept.map(l => this.get(l.name, isAdmin)).filter((s): s is Skill => !!s)
   }
 
   /**
@@ -99,9 +119,10 @@ export class SkillService {
    * Under `model` the agent pulls skills itself with `skill_load`, so this
    * returns null and the catalogue is the only thing in the prompt.
    */
-  select(message: string): Skill | null {
+  select(message: string, isAdmin = false): Skill | null {
     if (this.opts.selection !== "keyword") return null
-    if (this.skills.length === 0) return null
+    const skills = this.visibleTo(isAdmin)
+    if (skills.length === 0) return null
 
     const words = message.toLowerCase().split(/\W+/).filter(w => w.length > 3)
     if (words.length === 0) return null
@@ -109,7 +130,7 @@ export class SkillService {
     let best: Skill | null = null
     let bestScore = 0
 
-    for (const skill of this.skills) {
+    for (const skill of skills) {
       const descWords = skill.description.toLowerCase().split(/\W+/).filter(w => w.length > 3)
       const score = words.filter(w => descWords.includes(w)).length
       if (score > bestScore) {

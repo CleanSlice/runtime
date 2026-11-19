@@ -218,6 +218,9 @@ const runtime = new AgentRuntime({
   // env-only — it's the bootstrap channel the runtime can't reconfigure.
   channels: await ChannelModule.resolveBootConfigs(".agent"),
   tools,
+  // Ranch lists its tools per caller: each turn sees what it lists for the
+  // person the turn is for (CLEAN-232).
+  scopeTools: (turnTools, actor) => mcp.scopeTools(turnTools, actor),
 })
 
 // A finished OAuth login (Ranch pushes `mcp_connected`) brings that person's

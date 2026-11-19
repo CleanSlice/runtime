@@ -1,2 +1,3 @@
 export { McpModule } from "./mcp.module"
-export type { IMcpServerConfig, IMcpLoadOptions, IMcpConnectedEvent } from "./domain"
+export { actorOf } from "./domain"
+export type { IActor, IMcpServerConfig, IMcpLoadOptions, IMcpConnectedEvent } from "./domain"

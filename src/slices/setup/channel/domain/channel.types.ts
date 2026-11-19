@@ -166,6 +166,22 @@ export interface IMessageAttachment {
   kind: "image" | "text" | "binary"
 }
 
+/**
+ * What the bridle hub says about the signed-in person behind a console
+ * message (CLEAN-232). `token` is the acting token the API minted for this
+ * message: the runtime carries it verbatim to Ranch's MCP server and nowhere
+ * else, never logs it and never stores it. The token is the authority and
+ * the only required part. `role` and `surface` are for the prompt only;
+ * they grant nothing (the API reads the role itself) and either may be
+ * absent: the console declares its surface at the handshake, and an older
+ * console build declares none.
+ */
+export interface IActing {
+  token: string
+  role?: "Owner" | "Admin" | "User"
+  surface?: "app" | "admin"
+}
+
 export interface Message {
   id: string
   role: MessageRoleTypes
@@ -216,6 +232,13 @@ export interface Message {
    * which console it was. Absent on other channels.
    */
   origin?: string
+  /**
+   * The acting token and what to say about the person (CLEAN-232), attached
+   * by the bridle hub to every message a signed-in console socket sends.
+   * Absent for share and anonymous visitors, on every other channel, and
+   * from a hub older than the change.
+   */
+  acting?: IActing
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -261,6 +284,8 @@ export function buildMessage(fields: {
   user?: { id: string; email?: string }
   /** Browser origin of the sending socket (see Message.origin). */
   origin?: string
+  /** The acting token and the person's role and console (see Message.acting). */
+  acting?: IActing
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -295,6 +320,7 @@ export function buildMessage(fields: {
     ...(fields.attachments?.length ? { attachments: fields.attachments } : {}),
     ...(fields.user?.id ? { user: fields.user } : {}),
     ...(fields.origin ? { origin: fields.origin } : {}),
+    ...(fields.acting?.token ? { acting: fields.acting } : {}),
     metadata: fields.metadata,
   }
 }

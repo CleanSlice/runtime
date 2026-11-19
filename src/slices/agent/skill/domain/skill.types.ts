@@ -8,6 +8,13 @@ export interface SkillRequires {
 export interface SkillMetadata {
   emoji?: string           // visual identifier (e.g. "🔧")
   always?: boolean         // always include in prompt (default false)
+  /**
+   * `admin`: the skill is for the agent's administrators only. For a turn
+   * whose sender is not an admin it is not in the catalogue, is not injected
+   * when `always`, and `skill_load` answers as for an unknown skill
+   * (CLEAN-232). Frontmatter: `audience: admin`, top level or under `metadata`.
+   */
+  audience?: "admin"
   requires?: SkillRequires
 }
 

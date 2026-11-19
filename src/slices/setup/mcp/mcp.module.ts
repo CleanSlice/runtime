@@ -1,7 +1,7 @@
 import { McpGateway } from "./data/mcp.gateway"
 import type { ISecretStore } from "./data/mcpOauth.provider"
 import { McpService, McpFetcher } from "./domain"
-import type { IMcpConnectedEvent, IMcpLoadOptions } from "./domain"
+import type { IActor, IMcpConnectedEvent, IMcpLoadOptions } from "./domain"
 import type { Tool } from "../../agent/tool"
 
 /**
@@ -29,6 +29,15 @@ export class McpModule {
    */
   handleConnected(event: IMcpConnectedEvent, registry: Tool[]): Promise<number | null> {
     return this.service.handleConnected(event, registry)
+  }
+
+  /**
+   * The tools of one turn (CLEAN-232): Ranch lists its tools per caller, so
+   * its part of `tools` becomes what it lists for the turn's actor. Built-in
+   * tools and other MCP servers pass through.
+   */
+  scopeTools(tools: Tool[], actor: IActor): Promise<Tool[]> {
+    return this.service.scopeTools(tools, actor)
   }
 
   /** Tear down all MCP clients on shutdown. */

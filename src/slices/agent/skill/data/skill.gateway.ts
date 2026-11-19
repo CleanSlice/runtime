@@ -141,6 +141,11 @@ export class SkillGateway implements ISkillGateway {
         }
       }
 
+      // Top level or under `metadata`; anything but "admin" is everyone.
+      if (data.audience === "admin" || (data.metadata as Record<string, unknown> | undefined)?.audience === "admin") {
+        metadata.audience = "admin"
+      }
+
       return {
         name: (data.name as string) ?? name,
         description: (data.description as string) ?? "",

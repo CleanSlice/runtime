@@ -17,6 +17,7 @@ import { UsageModule } from "../../bot/usage/usage.module"
 import { TaskModule, type TaskManager } from "../../agent/task/task.module"
 import { RouterModule } from "../../agent/router/router.module"
 import { randomUUID } from "crypto"
+import { turnFlags, type TurnOriginTypes } from "./domain/turnOrigin"
 import { InitModule, type IAgentConfig } from "../init"
 import { SecretModule } from "../../setup/secret/secret.module"
 import { ActivityModule } from "../../bot/activity/activity.module"
@@ -28,6 +29,7 @@ import { RuntimeService } from "./domain/runtime.service"
 import { clearBridleSession } from "./domain/sessionClear"
 import { createLogger } from "../../setup/logger"
 import { pruneDisabledTools } from "../../agent/tool/domain/toolEnabled"
+import type { IActor } from "../../setup/mcp/domain/actor"
 
 const s3Log = createLogger("s3")
 const msgLog = createLogger("msg")
@@ -45,6 +47,11 @@ export interface RuntimeConfig {
   llmAuxiliary?: LlmConfig
   channels: ChannelConfig[]
   tools?: Tool[]
+  /**
+   * Narrows one turn's tools to what a per-caller MCP server lists for the
+   * turn's actor (CLEAN-232). The entrypoint passes `McpModule.scopeTools`.
+   */
+  scopeTools?: (tools: Tool[], actor: IActor) => Promise<Tool[]>
   s3?: S3SyncConfig
 }
 
@@ -210,6 +217,7 @@ export class AgentRuntime {
       memory: this.memory, channel: this.channel, activity: activityService,
       llm: this.llm, loop: this.loop, tasks, tools, access,
       agentDir, config: this.config, instincts: this.instincts,
+      ...(config.scopeTools ? { scopeTools: config.scopeTools } : {}),
     })
 
     // ── Optional: S3 backup ────────────────────────────────────────
@@ -302,14 +310,19 @@ export class AgentRuntime {
    * user messages, cron jobs, heartbeats, and passthroughs.
    *
    * Flow: validate → route (bot) → execute (runtime service)
+   *
+   * `origin` is who called: a channel (the default, and the only thing a
+   * channel can be), or the cron / heartbeat wiring below. A message is
+   * never internal, or the agent's own, because of the `from` it carries
+   * (CLEAN-232, `turnFlags`).
    */
-  async handleMessage(msg: Message): Promise<void> {
+  async handleMessage(msg: Message, origin: Exclude<TurnOriginTypes, "recovery"> = "channel"): Promise<void> {
     if (isEmptyMessage(msg.text ?? "")) {
       if (msg.channel !== "internal") await this.channel.send(msg.channel, msg.from, EMPTY_MESSAGE_RESPONSE)
       return
     }
 
-    const isInternal = msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
+    const { isInternal, selfStarted } = turnFlags(origin, msg)
     if (!isInternal) msgLog.info(`from=${msg.from} ch=${msg.channel} "${msg.text.slice(0, 60)}"`)
 
     const sessionId = this.session.getOrCreate(msg.channel, msg.from).id
@@ -327,7 +340,7 @@ export class AgentRuntime {
       msg = currentMsg
     }
 
-    this.runtimeService.execute(msg, sessionId, isInternal)
+    this.runtimeService.execute(msg, sessionId, isInternal, selfStarted)
   }
 
   // ── Private lifecycle steps ────────────────────────────────────
@@ -458,7 +471,10 @@ export class AgentRuntime {
       ts: Date.now(),
       role: MessageRoleTypes.System,
     })
-    this.runtimeService.execute(msg, sessionId, true)
+    // Internal (nobody is waiting), never the agent's own: the activity record
+    // names a channel and a from-id and nothing about who started the turn.
+    const { isInternal, selfStarted } = turnFlags("recovery", msg)
+    this.runtimeService.execute(msg, sessionId, isInternal, selfStarted)
   }
 
   /** Wire cron and heartbeat — both emit synthetic internal messages. */
@@ -472,7 +488,7 @@ export class AgentRuntime {
         id: randomUUID(), text: job.message,
         from: job.to ?? "cron", channel: job.channel ?? "internal",
         ts: Date.now(), role: MessageRoleTypes.System,
-      }))
+      }), "self")
     })
     this.cron.start()
 
@@ -487,7 +503,7 @@ export class AgentRuntime {
         id: randomUUID(), text: message,
         from: "heartbeat", channel: "internal",
         ts: Date.now(), role: MessageRoleTypes.System,
-      }))
+      }), "self")
     })
     this.heartbeat.start()
   }

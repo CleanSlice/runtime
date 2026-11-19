@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { Tool, ToolContext } from "../../../agent/tool"
 import { IMcpGateway, type IMcpReconnectResult } from "../domain/mcp.gateway"
 import type { IMcpServerConfig } from "../domain/mcp.types"
+import { ACTOR_META_KEY, actorLabel, type IActor } from "../domain/actor"
 import {
   RuntimeMcpOauthProvider,
   mcpOauthSecretKey,
@@ -30,6 +31,89 @@ interface IListedTool {
   inputSchema?: Record<string, unknown>
   /** MCP tool annotations; `readOnlyHint` is the only one the runtime reads. */
   annotations?: { readOnlyHint?: boolean }
+}
+
+/** How long one actor's catalogue is trusted before Ranch is asked again (CLEAN-232). */
+export const CATALOGUE_TTL_MS = 60 * 1000
+/** Most actors a server's catalogue cache holds; the oldest goes first. */
+const CATALOGUE_MAX_ACTORS = 200
+
+/** The slice of the SDK client the gateway uses; `open` returns one. */
+export type IMcpClient = Pick<Client, "listTools" | "callTool" | "close">
+
+/** One actor's catalogue: the wrapped tools Ranch listed for them, and when. */
+interface ICatalogue {
+  at: number
+  tools: Promise<Tool[]>
+}
+
+/**
+ * A bearer/header/none server: one client for the whole agent. The client
+ * is replaceable, because the server may forget the session (CLEAN-232, R17).
+ */
+interface IStaticServer {
+  cfg: IMcpServerConfig
+  client: IMcpClient
+  /** A reconnect in flight, shared by every call that found the session gone. */
+  reopening: Promise<IMcpClient> | null
+  /**
+   * This is Ranch's own server: the agent authenticates to it with its own
+   * Ranch token. Only such a server is told who a call is for, and only its
+   * tools are listed per actor.
+   */
+  ranch: boolean
+  /** One wrapper per tool name, so the registry and every catalogue hold the same object. */
+  wrappers: Map<string, Tool>
+  /** Catalogues by actor (`actorKey`). Ranch servers only. */
+  catalogues: Map<string, ICatalogue>
+}
+
+/** The server forgot the session and a fresh one could not be opened, or failed the same way. */
+class McpUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(`unavailable: ${(cause as Error)?.message ?? String(cause)}`)
+    this.name = "McpUnavailableError"
+  }
+}
+
+const GUEST: IActor = { kind: "guest" }
+
+/**
+ * Cache key of an actor. It holds the token, because two people are two
+ * catalogues; it is never logged (`actorLabel` is what logs print).
+ */
+function actorKey(actor: IActor): string {
+  if (actor.kind === "person") return `person:${actor.token}`
+  if (actor.kind === "trusted") return `trusted:${actor.via}`
+  return "guest"
+}
+
+/**
+ * Whether a server is Ranch's own (CLEAN-232): it is the one the agent
+ * signs in to with `RANCH_API_TOKEN`, which Ranch writes into the bearer of
+ * its built-in servers when it deploys the pod. The acting token of a
+ * person goes where the agent's own token already goes, and nowhere else:
+ * not to a server with another credential, and never to an OAuth server.
+ */
+export function isRanchServer(cfg: IMcpServerConfig, ranchToken = process.env.RANCH_API_TOKEN): boolean {
+  if (cfg.authType !== "bearer") return false
+  const token = ranchToken?.trim()
+  return !!token && cfg.authValue?.trim() === token
+}
+
+/**
+ * The server no longer knows the session this client holds (CLEAN-232, R17).
+ * Ranch keeps MCP sessions in memory, so every API restart answers the next
+ * request with HTTP 404 and a JSON-RPC body `-32000 "Session not found"`.
+ * The SDK's `StreamableHTTPClientTransport.send` turns a non-OK POST into
+ * `StreamableHTTPError(response.status, "Error POSTing to endpoint: <body>")`,
+ * so the status is on `code` and the body's words are in `message`; the SSE
+ * transport puts `(HTTP 404)` in the message instead.
+ */
+export function isLostSession(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  if ((err as { code?: unknown }).code === 404) return true
+  return /session not found|\(HTTP 404\)/i.test(err.message)
 }
 
 /** One person's live connection to an OAuth server. */
@@ -89,7 +173,7 @@ export function subjectOf(ctx: Pick<ToolContext, "from" | "user">): string | und
  * `Tool` shape so it lives alongside built-in tools in ToolGateway.
  */
 export class McpGateway extends IMcpGateway {
-  private clients = new Map<string, Client>()
+  private statics = new Map<string, IStaticServer>()
   private oauth = new Map<string, IOauthServer>()
   private idleSweeper: ReturnType<typeof setInterval> | null = null
 
@@ -109,34 +193,214 @@ export class McpGateway extends IMcpGateway {
     }
     if (cfg.authType === "oauth") return this.connectOauth(cfg)
 
-    let transport: Transport
+    let client: IMcpClient
     try {
-      transport = this.buildTransport(cfg)
-    } catch (err) {
-      log.warn(`${cfg.name}: bad transport config — ${(err as Error).message}`)
-      return []
-    }
-
-    const client = new Client(CLIENT_INFO)
-    try {
-      await client.connect(transport)
+      client = await this.open(cfg)
     } catch (err) {
       log.warn(`${cfg.name}: connect failed — ${(err as Error).message}`)
       return []
     }
-    this.clients.set(cfg.name, client)
+    const server: IStaticServer = {
+      cfg,
+      client,
+      reopening: null,
+      ranch: isRanchServer(cfg),
+      wrappers: new Map(),
+      catalogues: new Map(),
+    }
+    this.statics.set(cfg.name, server)
 
-    let listed: IListedTool[]
+    // The registry is filled as the agent itself: at boot nobody is asking.
+    // What a turn is offered is listed again for its own actor (`scopeTools`).
+    const self: IActor = { kind: "trusted", via: "internal" }
+    let wrapped: Tool[]
     try {
-      listed = await this.listTools(client)
+      wrapped = server.ranch ? await this.catalogueFor(server, self) : await this.listStatic(server)
     } catch (err) {
       log.warn(`${cfg.name}: tools/list failed — ${(err as Error).message}`)
       return []
     }
-
-    const wrapped = listed.map((t) => this.wrapTool(cfg.name, () => Promise.resolve(client), t))
-    log.info(`${cfg.name}: registered ${wrapped.length} tools`)
+    log.info(`${cfg.name}: registered ${wrapped.length} tools${server.ranch ? " (listed per caller)" : ""}`)
     return wrapped
+  }
+
+  /**
+   * One turn's tools (CLEAN-232). For every server that lists per caller —
+   * Ranch's own — the tools of that server in `tools` are replaced by what
+   * it lists for `actor`, asked once and kept for a minute. The order of
+   * `tools` is kept and anything new goes to the end, so against a Ranch
+   * that lists the same for everyone the result is `tools` itself. If the
+   * server cannot be asked, the turn gets none of its tools: offering all of
+   * them would be the old behaviour this exists to end.
+   *
+   * Built-in tools and every other MCP server pass through untouched.
+   */
+  async scopeTools(tools: Tool[], actor: IActor): Promise<Tool[]> {
+    let out = tools
+    for (const server of this.statics.values()) {
+      if (!server.ranch) continue
+      const prefix = `${server.cfg.name}__`
+      let own: Tool[]
+      try {
+        own = await this.catalogueFor(server, actor)
+      } catch (err) {
+        log.warn(`${server.cfg.name}: tools/list for ${actorLabel(actor)} failed, offering none of its tools this turn — ${(err as Error).message}`)
+        own = []
+      }
+      const allowed = new Set(own)
+      const seen = new Set<Tool>()
+      const next: Tool[] = []
+      for (const tool of out) {
+        if (!tool.name.startsWith(prefix)) {
+          next.push(tool)
+        } else if (allowed.has(tool)) {
+          next.push(tool)
+          seen.add(tool)
+        }
+      }
+      for (const tool of own) {
+        if (!seen.has(tool)) next.push(tool)
+      }
+      out = next
+    }
+    return out
+  }
+
+  // ── Static (bearer/header/none) internals ───────────────────────
+
+  /**
+   * Opens a client for a static server: transport, client, `initialize`.
+   * Its own method so a reconnect and the first connect are the same act,
+   * and so a spec can hand the gateway a client without a network.
+   */
+  protected async open(cfg: IMcpServerConfig): Promise<IMcpClient> {
+    const transport = this.buildTransport(cfg)
+    const client = new Client(CLIENT_INFO)
+    await client.connect(transport)
+    return client
+  }
+
+  /**
+   * Runs one request on the server's client. When the server answers that
+   * it does not know the session (CLEAN-232, R17), the client is dropped, a
+   * new one is opened and the request is sent once more. A second failure
+   * of either step is `McpUnavailableError`; any other error passes through
+   * as it came.
+   */
+  private async withSession<T>(server: IStaticServer, run: (client: IMcpClient) => Promise<T>): Promise<T> {
+    const client = server.client
+    try {
+      return await run(client)
+    } catch (err) {
+      if (!isLostSession(err)) throw err
+      log.warn(`${server.cfg.name}: the server no longer knows this session — reconnecting`)
+    }
+    try {
+      return await run(await this.reopen(server, client))
+    } catch (err) {
+      log.warn(`${server.cfg.name}: still failing after a reconnect — ${(err as Error).message}`)
+      throw new McpUnavailableError(err)
+    }
+  }
+
+  /** Replace `stale` with a fresh client; concurrent callers share one reconnect. */
+  private reopen(server: IStaticServer, stale: IMcpClient): Promise<IMcpClient> {
+    // Somebody else already replaced it while this call was failing.
+    if (server.client !== stale) return Promise.resolve(server.client)
+    if (server.reopening) return server.reopening
+    const reopening = (async () => {
+      await stale.close().catch(() => undefined)
+      const fresh = await this.open(server.cfg)
+      server.client = fresh
+      log.info(`${server.cfg.name}: reconnected`)
+      return fresh
+    })().finally(() => {
+      server.reopening = null
+    })
+    server.reopening = reopening
+    return reopening
+  }
+
+  /** The tools of a server that lists the same for everyone. */
+  private async listStatic(server: IStaticServer): Promise<Tool[]> {
+    const listed = await this.withSession(server, (client) => this.listTools(client))
+    return listed.map((t) => this.staticTool(server, t))
+  }
+
+  /**
+   * What a Ranch server lists for `actor`, wrapped. One `tools/list` per
+   * actor per minute: concurrent askers share the request, a failure is not
+   * kept, and the cache is swept and capped so tokens do not pile up in it.
+   */
+  private catalogueFor(server: IStaticServer, actor: IActor): Promise<Tool[]> {
+    const key = actorKey(actor)
+    const now = Date.now()
+    const hit = server.catalogues.get(key)
+    if (hit && now - hit.at < CATALOGUE_TTL_MS) return hit.tools
+
+    for (const [k, entry] of server.catalogues) {
+      if (now - entry.at >= CATALOGUE_TTL_MS) server.catalogues.delete(k)
+    }
+    while (server.catalogues.size >= CATALOGUE_MAX_ACTORS) {
+      const oldest = server.catalogues.keys().next().value
+      if (oldest === undefined) break
+      server.catalogues.delete(oldest)
+    }
+
+    const entry: ICatalogue = {
+      at: now,
+      tools: this.withSession(server, (client) => this.listTools(client, actor)).then((listed) =>
+        listed.map((t) => this.staticTool(server, t)),
+      ),
+    }
+    server.catalogues.set(key, entry)
+    entry.tools.catch(() => {
+      if (server.catalogues.get(key) === entry) server.catalogues.delete(key)
+    })
+    return entry.tools
+  }
+
+  /** The wrapper for one listed tool; the same object every time it is listed. */
+  private staticTool(server: IStaticServer, mcpTool: IListedTool): Tool {
+    const known = server.wrappers.get(mcpTool.name)
+    if (known) return known
+    const serverName = server.cfg.name
+    const tool: Tool = {
+      ...this.describeTool(serverName, mcpTool),
+      execute: async (params, ctx) => {
+        // The actor comes from the runtime's context, never from `params`.
+        const actor = ctx.actor ?? GUEST
+        try {
+          if (server.ranch) {
+            // The model can name a tool it was not offered. Ranch would
+            // refuse it; the runtime does not send it at all.
+            const catalogue = await this.catalogueFor(server, actor)
+            if (!catalogue.includes(tool)) {
+              log.warn(`${tool.name}: not in the catalogue of ${actorLabel(actor)}, not called`)
+              return { error: `"${tool.name}" is not available to this person.` }
+            }
+          }
+          const result = await this.withSession(server, (client) =>
+            client.callTool({
+              name: mcpTool.name,
+              arguments: (params ?? {}) as Record<string, unknown>,
+              ...(server.ranch ? { _meta: { [ACTOR_META_KEY]: actor } } : {}),
+            }),
+          )
+          // MCP returns a `content` array. Hand it back as-is — the LLM cycle
+          // serializes whatever we return to JSON before the next turn.
+          return result.content ?? result
+        } catch (err) {
+          // Nothing to suggest: there is no other route to this server, and
+          // the model must not go looking for one.
+          if (err instanceof McpUnavailableError) return { error: `${serverName} is not reachable right now.` }
+          const message = (err as Error).message ?? String(err)
+          return { error: `MCP ${serverName}.${mcpTool.name} failed: ${message}` }
+        }
+      },
+    }
+    server.wrappers.set(mcpTool.name, tool)
+    return tool
   }
 
   /**
@@ -221,8 +485,8 @@ export class McpGateway extends IMcpGateway {
     if (this.idleSweeper) clearInterval(this.idleSweeper)
     this.idleSweeper = null
     const closes: Promise<void>[] = []
-    for (const c of this.clients.values()) {
-      closes.push(c.close().catch((err) => log.warn("close error", err)))
+    for (const server of this.statics.values()) {
+      closes.push(server.client.close().catch((err) => log.warn("close error", err)))
     }
     for (const server of this.oauth.values()) {
       for (const entry of server.clients.values()) {
@@ -231,7 +495,7 @@ export class McpGateway extends IMcpGateway {
       server.clients.clear()
     }
     await Promise.all(closes)
-    this.clients.clear()
+    this.statics.clear()
   }
 
   // ── OAuth internals ─────────────────────────────────────────────
@@ -420,9 +684,25 @@ export class McpGateway extends IMcpGateway {
 
   // ── Shared ──────────────────────────────────────────────────────
 
-  private async listTools(client: Client): Promise<IListedTool[]> {
-    const listed = (await client.listTools()) as { tools: IListedTool[] }
+  /** `tools/list`; with `actor`, on behalf of that actor (Ranch's own server only). */
+  private async listTools(client: IMcpClient, actor?: IActor): Promise<IListedTool[]> {
+    const listed = (await client.listTools(
+      actor ? { _meta: { [ACTOR_META_KEY]: actor } } : undefined,
+    )) as { tools: IListedTool[] }
     return listed.tools
+  }
+
+  /** What every wrapped MCP tool has in common, whichever client calls it. */
+  private describeTool(serverName: string, mcpTool: IListedTool): Omit<Tool, "execute"> {
+    return {
+      name: `${serverName}__${mcpTool.name}`,
+      description: mcpTool.description ?? `MCP tool from ${serverName}`,
+      // Only a server that vouches for read-only gets `read`; the rest count
+      // as mutating, which keeps them out of delegated workers (CLEAN-150).
+      effect: mcpTool.annotations?.readOnlyHint === true ? "read" : "write",
+      schema: z.any(),
+      inputSchema: mcpTool.inputSchema ?? { type: "object", properties: {} },
+    }
   }
 
   /**
@@ -432,8 +712,9 @@ export class McpGateway extends IMcpGateway {
    * real param contract — `tool.module.toAnthropicTools()` and the LLM
    * repositories prefer `inputSchema` over `zodToJsonSchema(schema)`.
    *
-   * `resolve` picks the client per call — the one shared client for a
-   * bearer/none server, the caller's own for an OAuth server.
+   * This is the OAuth half: `resolve` picks the caller's own client per
+   * call. A bearer/none server's tools are wrapped by `staticTool`. An OAuth
+   * server is never Ranch's own, so nothing here says who the call is for.
    */
   private wrapTool(
     serverName: string,
@@ -442,13 +723,7 @@ export class McpGateway extends IMcpGateway {
     oauthServer?: IOauthServer,
   ): Tool {
     return {
-      name: `${serverName}__${mcpTool.name}`,
-      description: mcpTool.description ?? `MCP tool from ${serverName}`,
-      // Only a server that vouches for read-only gets `read`; the rest count
-      // as mutating, which keeps them out of delegated workers (CLEAN-150).
-      effect: mcpTool.annotations?.readOnlyHint === true ? "read" : "write",
-      schema: z.any(),
-      inputSchema: mcpTool.inputSchema ?? { type: "object", properties: {} },
+      ...this.describeTool(serverName, mcpTool),
       execute: async (params, ctx) => {
         const client = await resolve(ctx)
         if (!client) {

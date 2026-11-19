@@ -24,7 +24,7 @@ export const SkillLoadTool: Tool = {
     const { name } = schema.parse(params)
     if (!ctx.skills) return { error: "skills are not available in this runtime" }
     try {
-      const info = ctx.skills.markLoaded(ctx.sessionId, name, ctx.turn ?? 0)
+      const info = ctx.skills.markLoaded(ctx.sessionId, name, ctx.turn ?? 0, ctx.isAdmin === true)
       return { ...info, note: "The skill's instructions are now in the conversation above; follow them." }
     } catch (err) {
       return { error: (err as Error).message }

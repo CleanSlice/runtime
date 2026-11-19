@@ -7,7 +7,7 @@ export interface AgentFile {
 
 /** Named parts of the always-on system prompt, in the order they are emitted. */
 export type PromptSectionName =
-  | "soul" | "channel" | "hint" | "tooling" | "citations" | "agents" | "user" | "integrator"
+  | "soul" | "channel" | "audience" | "hint" | "tooling" | "citations" | "agents" | "user" | "integrator"
   | "memory" | "dailyNotes" | "heartbeat" | "skillsCatalog" | "credentials" | "runtime" | "silent"
   | "alwaysSkills" | "activeSkill" | "instincts"
 

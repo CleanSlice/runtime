@@ -16,10 +16,12 @@ export const SKILL_CATALOGUE_INSTRUCTIONS =
   `conversation and stay for a few turns. Load at most the one or two skills that fit; when none fits, answer directly without loading. ` +
   `Skills marked unavailable cannot be loaded until the missing requirement is met.`
 import type { SkillSummary } from "../../skill/domain/skill.types"
+import { stripAdminBlocks } from "./adminBlocks"
 import type { ICuratedBound } from "../../memory/domain/curatedBound"
 import { boundCurated } from "../../memory/domain/curatedBound"
 import type { MemoryLimits } from "../../memory/domain/memory.types"
 import { SILENT_REPLY_TOKEN } from "./silentReply"
+import { buildAudiencePrompt, type IAudience } from "./prompts/audience.prompt"
 
 export interface BuildPromptOpts {
   agentDir?: string
@@ -46,6 +48,13 @@ export interface BuildPromptOpts {
    */
   channelContext?: string
   /**
+   * The signed-in person the turn is for (CLEAN-232), with their role and
+   * console when the hub said them. Rendered as the `# Audience` block.
+   * Absent for a trusted party and for a guest, where the prompt stays as
+   * it was. Guidance only; the tool list is what limits the person.
+   */
+  audience?: IAudience
+  /**
    * The `# Citing sources` section (CLEAN-138). Passed only when the client
    * advertised the `sources` capability; absent, the model is never asked
    * to cite and any marker it writes is stripped on the way out.
@@ -53,13 +62,6 @@ export interface BuildPromptOpts {
   citationsPrompt?: string
   /** Rendered learned behaviours (`InstinctModule.render()`), CLEAN-150 US3. */
   instincts?: string
-}
-
-const ADMIN_BLOCK_RE = /<!--\s*admin-only\s*-->[\s\S]*?<!--\s*\/admin-only\s*-->/g
-
-function stripAdminBlocks(text: string | undefined): string | undefined {
-  if (!text) return text
-  return text.replace(ADMIN_BLOCK_RE, "").replace(/\n{3,}/g, "\n\n").trim()
 }
 
 /**
@@ -133,6 +135,7 @@ export class AgentService {
 
     if (soul)              push("soul", `# Soul\n\n${soulLimitNote(soulFit.bound)}${soul}`)
     if (opts?.channelContext) push("channel", `# Channel\n\n${opts.channelContext}`)
+    if (opts?.audience)    push("audience", buildAudiencePrompt(opts.audience))
     if (opts?.extraHint)   push("hint", opts.extraHint)
     if (opts?.toolingPrompt) push("tooling", opts.toolingPrompt)
     if (opts?.citationsPrompt) push("citations", opts.citationsPrompt)
@@ -160,7 +163,11 @@ export class AgentService {
       push("dailyNotes", `## Recent Notes\n\n${opts.dailyMemory}`)
     }
 
-    if (config.heartbeat) push("heartbeat", `# Heartbeat\n\n${config.heartbeat}`)
+    // HEARTBEAT.md is the agent's own checklist and names the tools its checks
+    // use; whoever is not an admin reads it without its admin-only blocks
+    // (CLEAN-232). The heartbeat turn itself is the agent's own and reads it whole.
+    const heartbeat = gate(config.heartbeat)
+    if (heartbeat) push("heartbeat", `# Heartbeat\n\n${heartbeat}`)
 
     // Skill catalog: only names + descriptions (full content loaded on demand)
     const allSkills = [...config.skills, ...(opts?.skills ?? [])]
@@ -209,7 +216,7 @@ export class AgentService {
     return { prompt, sections }
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; audience?: IAudience; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -228,6 +235,7 @@ export class AgentService {
       extraHint: opts?.extraHint,
       integratorPrompt: opts?.integratorPrompt,
       channelContext: opts?.channelContext,
+      audience: opts?.audience,
       citationsPrompt: opts?.citationsPrompt,
       instincts: opts?.instincts,
     })

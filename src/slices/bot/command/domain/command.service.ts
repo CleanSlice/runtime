@@ -151,7 +151,8 @@ export class CommandService {
       await send(response)
       return { handled: true }
     }
-    const skills = this.deps.skills.getAll()
+    // A skill for administrators only is not named to anybody else (CLEAN-232).
+    const skills = this.deps.skills.visibleTo(isAdmin)
     await send(
       skills.length === 0
         ? "No skills loaded.\n\nTo add a skill: create `.agent/skills/<name>/SKILL.md` then run `/skills reload`"

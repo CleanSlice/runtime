@@ -3,6 +3,7 @@ import { AgentService } from "./domain/agent.service"
 import type { SkillSummary } from "../skill/domain/skill.types"
 import type { IBuiltPrompt } from "./domain/agent.types"
 import type { MemoryLimits } from "../memory/domain/memory.types"
+import type { IAudience } from "./domain/prompts/audience.prompt"
 
 export type { IBuiltPrompt, IPromptBreakdown, IPromptSection, IOnDemandLoad, PromptSectionName } from "./domain/agent.types"
 export { SECTION_SEPARATOR, SKILL_CATALOGUE_INSTRUCTIONS } from "./domain/agent.service"
@@ -18,7 +19,7 @@ export class AgentModule {
     this.service = new AgentService(new AgentGateway(exampleDir), limits)
   }
 
-  async buildPrompt(opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
+  async buildPrompt(opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; audience?: IAudience; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
     return this.service.buildPrompt(this.agentDir, opts)
   }
 }
