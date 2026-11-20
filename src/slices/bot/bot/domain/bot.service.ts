@@ -9,6 +9,8 @@ import type { ChannelModule } from "../../../setup/channel/channel.module"
 import type { Event } from "../../../setup/event"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
+import { turnIsAdmin } from "../../../runtime/runtime/domain/turnOrigin"
+import { GateTypes, gateFor } from "./gate"
 
 const accessLog = createLogger("access")
 const log = createLogger("bot")
@@ -35,8 +37,14 @@ export class BotService {
     const send = (text: string, parts?: import("../../../setup/channel/domain/channel.types").MessagePart[]) =>
       this.deps.channel.send(msg.channel, msg.from, text, parts)
 
+    // Who is at the door, decided once (CLEAN-236, `gateFor`). A message a
+    // channel delivered is never the agent's own turn, so `selfStarted` is
+    // false here.
+    const isAdmin = turnIsAdmin(msg, this.deps.access.isAdmin(msg.from), false)
+    const gate = gateFor(msg, isAdmin)
+
     // Auto-approve: if admin sends a message containing a 6-char access code
-    if (this.deps.access.isAdmin(msg.from)) {
+    if (gate === GateTypes.Admin) {
       const codeMatch = msg.text.trim().match(/\b([A-Z0-9]{6})\b/)
       if (codeMatch) {
         const user = this.deps.access.approve(codeMatch[1])
@@ -49,20 +57,25 @@ export class BotService {
       }
     }
 
-    // Command routing
-    const cmdResult = await this.deps.commands.handle(
-      { from: msg.from, channel: msg.channel, sessionId, text: msg.text },
-      send,
-    )
-    if (cmdResult.handled) {
-      if (cmdResult.passthrough) {
-        return { action: "passthrough", text: cmdResult.passthrough }
+    // Command routing. Another agent's question is a question: a text that
+    // starts with a slash is not a command of somebody sitting in this chat.
+    if (gate !== GateTypes.Colleague) {
+      const cmdResult = await this.deps.commands.handle(
+        { from: msg.from, channel: msg.channel, sessionId, text: msg.text, isAdmin },
+        send,
+      )
+      if (cmdResult.handled) {
+        if (cmdResult.passthrough) {
+          return { action: "passthrough", text: cmdResult.passthrough }
+        }
+        return { action: "handled" }
       }
-      return { action: "handled" }
     }
 
-    // Access check
-    if (!this.deps.access.isAllowed(msg.from)) {
+    // Access check: only a visitor is put to the strategy. An administrator
+    // the hub vouches for is in no list of it, and a colleague's question
+    // was let through by Ranch.
+    if (gate === GateTypes.Visitor && !this.deps.access.isAllowed(msg.from)) {
       const user = this.deps.access.getUser(msg.from) ?? this.deps.access.registerPending(msg.from)
       await send(`🔒 Access denied.\n\nSend this code to the bot owner to get access:\n\n🔑 *${user.accessCode}*`)
       return { action: "handled" }

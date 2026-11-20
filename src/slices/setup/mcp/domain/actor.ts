@@ -4,16 +4,27 @@
  * acting-party.md` §1). A person is proven by a token the API signed; the
  * `trusted` kinds are the agent speaking for itself and are bounded by its
  * own token; a guest has no management power.
+ *
+ * A `peer` is another agent's question (CLEAN-236, ranch
+ * `specs/033-identity-boundaries/contracts/handover.md`): the token is the
+ * hand-over the API signed for it. It has a guest's power at Ranch; what
+ * the token adds is which chain the question belongs to and the person it
+ * was started for, so that the next agent it is passed to can be checked
+ * against that person.
  */
 export type IActor =
   | { kind: "person"; token: string }
   | { kind: "trusted"; via: "internal" | "channel-admin" }
+  | { kind: "peer"; token: string }
   | { kind: "guest" }
 
 /** `_meta` key the actor travels under. */
 export const ACTOR_META_KEY = "ranch/actor"
 
-/** The chat identity every console Owner and Admin shares on the bridle hub. */
+/**
+ * The Owner's chat identity on the bridle hub. Every Owner and Admin shared
+ * it until CLEAN-236; an Admin is their own user id since.
+ */
 const CONSOLE_ADMIN_FROM = "admin"
 
 /**
@@ -23,6 +34,8 @@ const CONSOLE_ADMIN_FROM = "admin"
 export interface IActorSource {
   /** The hub's acting token for this message (`Message.acting`). */
   acting?: { token: string }
+  /** The hub's hand-over token: the message is another agent's question. */
+  handover?: { token: string }
   /** The turn is the agent's own: a cron job or a heartbeat. */
   isInternal?: boolean
   /** The sender is one of the agent's configured admin ids. */
@@ -40,14 +53,18 @@ export interface IActorSource {
 /**
  * The actor of a turn, in the order of the contract's table:
  *
+ * 0. a message that carried a hand-over is another agent's question, ahead
+ *    of everything below: whatever else such a message says of itself, it
+ *    is nobody's own turn (CLEAN-236);
  * 1. a message that carried an acting token is that person;
  * 2. a turn the agent started for itself is `trusted` / `internal`;
  * 3. an admin the agent's own configuration names (`TELEGRAM_BOT_ADMIN_IDS`)
  *    is `trusted` / `channel-admin`;
  * 4. everyone else is a guest.
  *
- * The console is the exception to 3: its Owners and Admins share the from-id
- * "admin", which the runtime also counts as an admin id, but a console
+ * The console is the exception to 3: its Owner is the from-id "admin"
+ * (as every Admin was, before CLEAN-236), which the runtime also counts as
+ * an admin id, but a console
  * message is only ever vouched for by a token. Without one it is a guest's,
  * and so is anything else that arrives over the bridle hub: the hub names a
  * person with a token or not at all. Why stricter than the contract's row:
@@ -57,6 +74,8 @@ export interface IActorSource {
  */
 export function actorOf(src: IActorSource): IActor {
   if (src.actor) return src.actor
+  const handover = src.handover?.token
+  if (typeof handover === "string" && handover) return { kind: "peer", token: handover }
   const token = src.acting?.token
   if (typeof token === "string" && token) return { kind: "person", token }
   if (src.isInternal === true) return { kind: "trusted", via: "internal" }
@@ -87,12 +106,13 @@ export function actorOf(src: IActorSource): IActor {
  * `isAdmin` a turn of the agent's own is given.
  */
 export function actorOfMessage(
-  msg: { acting?: { token: string }; from: string; channel: string },
+  msg: { acting?: { token: string }; handover?: { token: string }; from: string; channel: string },
   selfStarted: boolean,
   isConfiguredAdmin: boolean,
 ): IActor {
   return actorOf({
     acting: msg.acting,
+    handover: msg.handover,
     isInternal: selfStarted === true,
     isAdmin: isConfiguredAdmin,
     from: msg.from,

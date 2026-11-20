@@ -6,6 +6,7 @@ import {
   streamedText,
   type Streamer,
   type IActing,
+  type IHandover,
   type IMessageAttachment,
   type IThinkingStep,
   type Message,
@@ -539,14 +540,20 @@ export class BridleRepository implements IChannelGateway {
       const attachments = sanitizeWireAttachments(msg.attachments)
 
       // The person apart from the channel (CLEAN-80): the hub attaches the
-      // console login of the socket that sent this. Owners and admins share
-      // clientId "admin"; this is what tells them apart.
+      // console login of the socket that sent this. Owners and Admins
+      // shared clientId "admin" until CLEAN-236, and a hub older than that
+      // still sends them so; this is what tells them apart.
       const user = readUser(msg.user)
       const origin = readOrigin(msg.origin)
       // Who the person is to Ranch (CLEAN-232): a token the API signed, plus
       // the role and console to mention in the prompt. A console socket of
       // an API older than that sends none, and is then nobody in particular.
       const acting = readActing(msg.acting)
+      // Another agent's question (CLEAN-236), and whether the sender is an
+      // administrator: an Admin has their own client id now, so the id no
+      // longer says. A hub older than the change sends neither.
+      const handover = readHandover(msg.handover)
+      const admin = msg.admin === true && !handover
 
       this.handler(buildMessage({
         id: (msg.messageId as string) ?? randomUUID(),
@@ -561,6 +568,8 @@ export class BridleRepository implements IChannelGateway {
         ...(user ? { user } : {}),
         ...(origin ? { origin } : {}),
         ...(acting ? { acting } : {}),
+        ...(admin ? { admin } : {}),
+        ...(handover ? { handover } : {}),
         metadata: { clientId: msg.clientId, source: "bridle" },
       })).catch(err => log.error("handler error", err))
     })
@@ -670,6 +679,18 @@ export function readActing(raw: unknown): IActing | undefined {
   const role = ACTING_ROLES.find(r => r === o.role)
   const surface = ACTING_SURFACES.find(s => s === o.surface)
   return { token: o.token, ...(role ? { role } : {}), ...(surface ? { surface } : {}) }
+}
+
+/**
+ * The `handover` the hub attaches to a colleague's question (CLEAN-236):
+ * `{ token }`. Anything else is no hand-over, and the message is then an
+ * ordinary visitor's, gated and answered as one.
+ */
+export function readHandover(raw: unknown): IHandover | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const token = (raw as { token?: unknown }).token
+  if (typeof token !== "string" || !token.trim()) return undefined
+  return { token }
 }
 
 function readUser(raw: unknown): { id: string; email?: string } | undefined {

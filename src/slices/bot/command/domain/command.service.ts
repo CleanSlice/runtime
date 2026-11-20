@@ -136,8 +136,13 @@ export class CommandService {
     return { handled: false }
   }
 
+  /** The route's answer when it gave one (CLEAN-236), else the access list's. */
+  private isAdmin(ctx: ICommandContext): boolean {
+    return ctx.isAdmin ?? this.deps.access.isAdmin(ctx.from)
+  }
+
   private async handleSkills(ctx: ICommandContext, text: string, send: SendFn): Promise<ICommandResult> {
-    const isAdmin = this.deps.access.isAdmin(ctx.from)
+    const isAdmin = this.isAdmin(ctx)
     if (text === "/skills reload") {
       if (!isAdmin) {
         await send("🔒 Only admins can reload skills.")
@@ -164,7 +169,7 @@ export class CommandService {
   }
 
   private async handleContext(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
-    if (!this.deps.access.isAdmin(ctx.from)) {
+    if (!this.isAdmin(ctx)) {
       await send("🔒 Only admins can see the context breakdown.")
       return { handled: true }
     }
@@ -189,7 +194,7 @@ export class CommandService {
   }
 
   private async handleLearned(ctx: ICommandContext, text: string, send: SendFn): Promise<ICommandResult> {
-    if (!this.deps.access.isAdmin(ctx.from)) {
+    if (!this.isAdmin(ctx)) {
       await send("🔒 Only admins can see what the agent has learned.")
       return { handled: true }
     }
@@ -270,7 +275,7 @@ export class CommandService {
   }
 
   private async handleCompact(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
-    if (!this.deps.access.isAdmin(ctx.from)) {
+    if (!this.isAdmin(ctx)) {
       await send("🔒 Only admins can compact a conversation.")
       return { handled: true }
     }
@@ -332,7 +337,7 @@ export class CommandService {
       return { handled: true }
     }
 
-    if (!this.deps.access.isAdmin(ctx.from)) {
+    if (!this.isAdmin(ctx)) {
       await send("🔒 Only admins can change the access strategy.")
       return { handled: true }
     }
@@ -354,7 +359,7 @@ export class CommandService {
   }
 
   private async handleStart(ctx: ICommandContext, send: SendFn): Promise<ICommandResult> {
-    if (this.deps.access.isAllowed(ctx.from)) {
+    if (this.isAdmin(ctx) || this.deps.access.isAllowed(ctx.from)) {
       await send(`👋 Привіт! Я твій AI-агент.\n\nНадішли будь-яке повідомлення, щоб почати.\nВикористовуй /help, щоб побачити доступні команди.`)
       return { handled: true }
     }

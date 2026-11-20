@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { actorLabel, actorOf, actorOfMessage, type IActor } from "./actor"
-import { readActing } from "../../channel/data/repositories/bridle/bridle.repository"
+import { readActing, readHandover } from "../../channel/data/repositories/bridle/bridle.repository"
 import { buildMessage } from "../../channel/domain/channel.types"
 import { DelegateService } from "../../../runtime/loop/domain/delegate.service"
 import type { ILoopContext } from "../../../runtime/loop/domain/loop.types"
@@ -116,8 +116,8 @@ describe("actorOfMessage", () => {
     expect(actorOfMessage(message("admin", "bridle"), false, true)).toEqual({ kind: "guest" })
   })
 
-  test("a task another agent hands over (A2A, ask_agent) is a guest's turn", () => {
-    // Ranch delivers it over the hub as `peer:<calling agent>:<context>` with no acting token:
+  test("a task another agent hands over, from a Ranch older than the hand-over token, is a guest's turn", () => {
+    // Ranch delivered it over the hub as `peer:<calling agent>:<context>` with no token at all:
     // a colleague is not the Owner, on the Ranch admin agent least of all.
     const task = message("peer:agent-b:ctx-1", "bridle")
     expect(actorOfMessage(task, false, false)).toEqual({ kind: "guest" })
@@ -171,6 +171,16 @@ describe("a delegated worker", () => {
     expect(worker.acting).toEqual(acting)
   })
 
+  test("inherits a colleague's question: the worker's calls belong to the same chain", async () => {
+    // CLEAN-236. A worker that became a guest would lose the chain: its
+    // ask_agent would start a new one, past the loop and depth checks, and
+    // for nobody, where the question was started for a person.
+    const worker = await workerOf({ from: "peer:connection-1:ctx-1", actor: { kind: "peer", token: "handover-1" } })
+    expect(worker.actor).toEqual({ kind: "peer", token: "handover-1" })
+    expect(actorOf(worker)).toEqual({ kind: "peer", token: "handover-1" })
+    expect(worker.isAdmin).toBe(false)
+  })
+
   test("a parent with no resolved actor is read from the parent's own facts, not the worker's", async () => {
     const worker = await workerOf({ from: "share-visitor-7", channel: "bridle", isInternal: false, isAdmin: false })
     expect(worker.actor).toEqual({ kind: "guest" })
@@ -212,5 +222,70 @@ describe("readActing (what the bridle hub sends)", () => {
     const acting = { token: "tok-1", role: "Admin" as const, surface: "admin" as const }
     expect(buildMessage({ ...base, acting }).acting).toEqual(acting)
     expect("acting" in buildMessage(base)).toBe(false)
+  })
+})
+
+// CLEAN-236: ranch `specs/033-identity-boundaries/contracts/handover.md` §3.
+describe("another agent's question (a hand-over)", () => {
+  const question = (extra: Record<string, unknown> = {}) => ({
+    from: "peer:connection-1:ctx-1",
+    channel: "bridle",
+    handover: { token: "handover-1" },
+    ...extra,
+  })
+
+  test("is a peer, with the token the hub attached and nothing else", () => {
+    expect(actorOf(question())).toEqual({ kind: "peer", token: "handover-1" })
+    expect(Object.keys(actorOf(question())).sort()).toEqual(["kind", "token"])
+  })
+
+  test("wins over every other rule: an acting token, an internal turn, an admin id", () => {
+    expect(actorOf(question({ acting: { token: "tok-1" } }))).toEqual({ kind: "peer", token: "handover-1" })
+    expect(actorOf(question({ isInternal: true }))).toEqual({ kind: "peer", token: "handover-1" })
+    expect(actorOf(question({ isAdmin: true, from: "42", channel: "telegram" }))).toEqual({ kind: "peer", token: "handover-1" })
+  })
+
+  test("but not over an actor resolved earlier in the turn", () => {
+    expect(actorOf(question({ actor: { kind: "guest" } }))).toEqual({ kind: "guest" })
+  })
+
+  test("an empty or malformed hand-over is none, and the rules below apply", () => {
+    expect(actorOf(question({ handover: { token: "" } }))).toEqual({ kind: "guest" })
+    expect(actorOf(question({ handover: {} as { token: string } }))).toEqual({ kind: "guest" })
+    expect(actorOf(question({ handover: { token: "" }, acting: { token: "tok-1" } }))).toEqual({ kind: "person", token: "tok-1" })
+  })
+
+  test("the runtime's own word about the turn does not make it trusted", () => {
+    const msg = buildMessage({ id: "m", text: "hi", from: "peer:connection-1:ctx-1", channel: "bridle", ts: 1, handover: { token: "handover-1" } })
+    expect(actorOfMessage(msg, false, true)).toEqual({ kind: "peer", token: "handover-1" })
+    expect(actorOfMessage(msg, true, true)).toEqual({ kind: "peer", token: "handover-1" })
+  })
+
+  test("a label never holds the token", () => {
+    expect(actorLabel({ kind: "peer", token: "handover-1" })).toBe("peer")
+  })
+})
+
+describe("readHandover (what the bridle hub sends)", () => {
+  test("keeps the token and nothing else", () => {
+    expect(readHandover({ token: "handover-1", chain: ["a"], for: "user-1" })).toEqual({ token: "handover-1" })
+  })
+
+  test("anything without a token is no hand-over", () => {
+    for (const raw of [undefined, null, "handover-1", 7, {}, { token: "" }, { token: "  " }, { token: 7 }, []]) {
+      expect(readHandover(raw)).toBeUndefined()
+    }
+  })
+
+  test("the message factory carries it and the administrator flag, and leaves both off other messages", () => {
+    const base = { id: "m", text: "hi", from: "user-7", channel: "bridle", ts: 1 }
+    expect(buildMessage({ ...base, handover: { token: "handover-1" } }).handover).toEqual({ token: "handover-1" })
+    expect(buildMessage({ ...base, admin: true }).admin).toBe(true)
+    const plain = buildMessage(base)
+    expect("handover" in plain).toBe(false)
+    expect("admin" in plain).toBe(false)
+    // Only `true` is the hub's word; anything else is no flag.
+    expect("admin" in buildMessage({ ...base, admin: false })).toBe(false)
+    expect("admin" in buildMessage({ ...base, admin: "true" as unknown as boolean })).toBe(false)
   })
 })

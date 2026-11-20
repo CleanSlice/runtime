@@ -182,6 +182,18 @@ export interface IActing {
   surface?: "app" | "admin"
 }
 
+/**
+ * What the bridle hub attaches to a question another agent handed over
+ * (CLEAN-236). `token` is signed by the API and says which connection the
+ * question came through, the agents it passed and the person the chain was
+ * started for. Like the acting token it is carried verbatim to Ranch's MCP
+ * server and nowhere else, never logged and never stored. The runtime reads
+ * nothing out of it: that it is present is all it needs to know.
+ */
+export interface IHandover {
+  token: string
+}
+
 export interface Message {
   id: string
   role: MessageRoleTypes
@@ -239,6 +251,22 @@ export interface Message {
    * from a hub older than the change.
    */
   acting?: IActing
+  /**
+   * The sender is an administrator of this agent's installation
+   * (CLEAN-236): an Owner or Admin console session, as the bridle hub says.
+   * Every Owner and Admin used to arrive as `from: "admin"`, which is how
+   * the runtime knew; an Admin has a conversation of their own now, under
+   * their own id. Set by the hub, and by the runtime itself on a scheduled
+   * job an administrator addressed to their own conversation. No other
+   * channel sets it, and a hub older than the change sends none.
+   */
+  admin?: boolean
+  /**
+   * Set when the message is another agent's question, not a person's
+   * (CLEAN-236). Such a turn is neither an administrator's nor a visitor to
+   * be let in: see `gateFor` and `actorOf`.
+   */
+  handover?: IHandover
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -286,6 +314,10 @@ export function buildMessage(fields: {
   origin?: string
   /** The acting token and the person's role and console (see Message.acting). */
   acting?: IActing
+  /** The sender is an administrator (see Message.admin). */
+  admin?: boolean
+  /** Another agent's question (see Message.handover). */
+  handover?: IHandover
   metadata?: Record<string, unknown>
 }): Message {
   let parts: MessagePart[]
@@ -321,6 +353,8 @@ export function buildMessage(fields: {
     ...(fields.user?.id ? { user: fields.user } : {}),
     ...(fields.origin ? { origin: fields.origin } : {}),
     ...(fields.acting?.token ? { acting: fields.acting } : {}),
+    ...(fields.admin === true ? { admin: true } : {}),
+    ...(fields.handover?.token ? { handover: fields.handover } : {}),
     metadata: fields.metadata,
   }
 }

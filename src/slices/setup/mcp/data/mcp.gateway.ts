@@ -85,7 +85,28 @@ const GUEST: IActor = { kind: "guest" }
 function actorKey(actor: IActor): string {
   if (actor.kind === "person") return `person:${actor.token}`
   if (actor.kind === "trusted") return `trusted:${actor.via}`
+  // Two questions are two catalogues: what a colleague's question may be
+  // passed on to depends on the person its chain was started for (CLEAN-236).
+  if (actor.kind === "peer") return `peer:${actor.token}`
   return "guest"
+}
+
+/**
+ * `_meta` key under which a tool call says which conversation it was made
+ * in (CLEAN-236): `{ client }`, the hub's id of the chat. It grants nothing
+ * and names nobody. Ranch reads it to show a step ("asking a colleague") in
+ * the turn that is running there, and ignores it unless that client has a
+ * turn running with this agent. Only a turn that came over the hub has one.
+ */
+export const TURN_META_KEY = "ranch/turn"
+
+/** The `_meta` of a call to Ranch's own server. */
+function ranchMeta(actor: IActor, ctx: { from?: string; channel?: string }): Record<string, unknown> {
+  const meta: Record<string, unknown> = { [ACTOR_META_KEY]: actor }
+  if (ctx.channel === "bridle" && typeof ctx.from === "string" && ctx.from) {
+    meta[TURN_META_KEY] = { client: ctx.from }
+  }
+  return meta
 }
 
 /**
@@ -384,7 +405,7 @@ export class McpGateway extends IMcpGateway {
             client.callTool({
               name: mcpTool.name,
               arguments: (params ?? {}) as Record<string, unknown>,
-              ...(server.ranch ? { _meta: { [ACTOR_META_KEY]: actor } } : {}),
+              ...(server.ranch ? { _meta: ranchMeta(actor, ctx) } : {}),
             }),
           )
           // MCP returns a `content` array. Hand it back as-is — the LLM cycle

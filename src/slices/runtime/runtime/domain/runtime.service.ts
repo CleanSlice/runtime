@@ -24,6 +24,7 @@ import type { InstinctModule } from "../../../agent/instinct"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { actorOfMessage, type IActor } from "../../../setup/mcp/domain/actor"
 import { audienceOf, type IAudience } from "../../../agent/agent/domain/prompts/audience.prompt"
+import { turnIsAdmin } from "./turnOrigin"
 import { isMcpTool } from "../../../agent/tool/domain/toolEnabled"
 import { randomUUID } from "crypto"
 import { createLogger } from "../../../setup/logger"
@@ -73,7 +74,9 @@ export class RuntimeService {
     const labelLen = this.deps.config.taskLabelLength
     const taskLabel = msg.text.slice(0, labelLen) + (msg.text.length > labelLen ? "…" : "")
     const senderIsAdmin = this.deps.access.isAdmin(msg.from)
-    const isAdmin = selfStarted === true ? true : senderIsAdmin
+    // An administrator by the hub's word as well as by the configured ids
+    // (CLEAN-236); another agent's question is never one.
+    const isAdmin = turnIsAdmin(msg, senderIsAdmin, selfStarted === true)
     // Who Ranch is told this turn is for (CLEAN-232): the token on the
     // message, the runtime's own word that it started the turn, or the
     // access list's answer for the sender.

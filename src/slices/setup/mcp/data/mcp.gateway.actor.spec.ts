@@ -380,3 +380,98 @@ describe("the catalogue of a turn", () => {
     expect(server.catalogues.size).toBeLessThanOrEqual(200)
   })
 })
+
+// CLEAN-236. Another agent's question is a fourth kind of actor, and a call
+// made in a hub conversation says which one (ranch
+// `specs/033-identity-boundaries/contracts/handover.md` §3).
+describe("a colleague's question", () => {
+  const HANDOVER_A = "handover-token-of-question-a"
+  const HANDOVER_B = "handover-token-of-question-b"
+  const PEER_A: IActor = { kind: "peer", token: HANDOVER_A }
+  const PEER_B: IActor = { kind: "peer", token: HANDOVER_B }
+
+  test("is sent to Ranch as a peer with its token, on the list and on the call", async () => {
+    const gateway = new TestGateway({ Ranch: oldRanchCatalogue })
+    const registry = await gateway.connect(ranchCfg)
+    const [tool] = await gateway.scopeTools(registry, PEER_A)
+    await tool!.execute({}, ctxOf(PEER_A))
+
+    const ranch = gateway.clients.get("Ranch")!
+    expect(actorIn(ranch.lists.at(-1))).toEqual({ kind: "peer", token: HANDOVER_A })
+    expect(actorIn(ranch.calls[0])).toEqual({ kind: "peer", token: HANDOVER_A })
+  })
+
+  test("two questions are two catalogues: neither is offered what Ranch listed for the other", async () => {
+    // What a question may be passed on to depends on the person its chain
+    // was started for, so one question's list says nothing about another's.
+    const perQuestion = (params: Params): Descriptor[] => {
+      const actor = actorIn(params)
+      const base = [{ name: "query_knowledge" }]
+      return actor?.kind === "peer" && actor.token === HANDOVER_A ? [...base, { name: "ask_agent" }] : base
+    }
+    const gateway = new TestGateway({ Ranch: (p) => (actorIn(p)?.kind === "trusted" ? [{ name: "query_knowledge" }, { name: "ask_agent" }] : perQuestion(p)) })
+    const registry = await gateway.connect(ranchCfg)
+
+    expect(names(await gateway.scopeTools(registry, PEER_A))).toEqual(["Ranch__query_knowledge", "Ranch__ask_agent"])
+    expect(names(await gateway.scopeTools(registry, PEER_B))).toEqual(["Ranch__query_knowledge"])
+    // And asked once each, not once for "a peer".
+    expect(gateway.clients.get("Ranch")!.lists.map(actorIn)).toEqual([SELF, PEER_A, PEER_B])
+  })
+
+  test("never reaches a server that is not Ranch's own", async () => {
+    const gateway = new TestGateway({ jira: () => [{ name: "search" }] })
+    const [tool] = await gateway.connect(jiraCfg)
+    await tool!.execute({ q: "x" }, { ...ctxOf(PEER_A), from: "peer:connection-1:ctx-1", channel: "bridle" })
+
+    const jira = gateway.clients.get("jira")!
+    expect(jira.calls).toEqual([{ name: "search", arguments: { q: "x" } }])
+    expect(JSON.stringify([jira.lists, jira.calls])).not.toContain(HANDOVER_A)
+  })
+})
+
+describe("_meta[\"ranch/turn\"]", () => {
+  const turnIn = (params: Params) => params?._meta?.["ranch/turn"]
+
+  test("a call made in a hub conversation says which one", async () => {
+    const gateway = new TestGateway({ Ranch: oldRanchCatalogue })
+    const [tool] = await gateway.connect(ranchCfg)
+    await tool!.execute({}, { ...ctxOf(USER), from: "user-7", channel: "bridle" })
+
+    expect(gateway.clients.get("Ranch")!.calls[0]!._meta).toEqual({
+      "ranch/actor": { kind: "person", token: USER_TOKEN },
+      "ranch/turn": { client: "user-7" },
+    })
+  })
+
+  test("a turn that did not come over the hub names none: a messenger, a job of the agent's own, a worker", async () => {
+    const gateway = new TestGateway({ Ranch: oldRanchCatalogue })
+    const [tool] = await gateway.connect(ranchCfg)
+    await tool!.execute({}, { ...ctxOf(GUEST), from: "42", channel: "telegram" })
+    await tool!.execute({}, { ...ctxOf(SELF), from: "cron", channel: "internal" })
+    // A delegated worker runs on the internal channel under its parent's from-id.
+    await tool!.execute({}, { ...ctxOf(USER), from: "user-7", channel: "internal" })
+    await tool!.execute({}, { ...ctxOf(GUEST), channel: "bridle" })
+
+    expect(gateway.clients.get("Ranch")!.calls.map(turnIn)).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  test("is not sent on tools/list, and never to another server", async () => {
+    const gateway = new TestGateway({ Ranch: oldRanchCatalogue, jira: () => [{ name: "search" }] })
+    const registry = [...(await gateway.connect(ranchCfg)), ...(await gateway.connect(jiraCfg))]
+    await gateway.scopeTools(registry, USER)
+    const search = registry.find((t) => t.name === "jira__search")!
+    await search.execute({}, { ...ctxOf(USER), from: "user-7", channel: "bridle" })
+
+    expect(gateway.clients.get("Ranch")!.lists.map(turnIn)).toEqual([undefined, undefined])
+    expect(gateway.clients.get("jira")!.calls[0]!._meta).toBeUndefined()
+  })
+
+  test("cannot be set through the tool's arguments", async () => {
+    const gateway = new TestGateway({ Ranch: oldRanchCatalogue })
+    const [tool] = await gateway.connect(ranchCfg)
+    const forged = { _meta: { "ranch/turn": { client: "admin" } }, "ranch/turn": { client: "admin" } }
+    await tool!.execute(forged, { ...ctxOf(GUEST), from: "share-visitor-7", channel: "bridle" })
+
+    expect(turnIn(gateway.clients.get("Ranch")!.calls[0])).toEqual({ client: "share-visitor-7" })
+  })
+})

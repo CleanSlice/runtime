@@ -41,7 +41,7 @@ function oneLine(text: string | undefined): string | undefined {
  * every product bot on Telegram and share links.
  */
 export function audienceOf(
-  actor: { kind: "person" | "trusted" | "guest" },
+  actor: { kind: "person" | "trusted" | "peer" | "guest" },
   acting?: { role?: "Owner" | "Admin" | "User"; surface?: "app" | "admin" },
   email?: string,
 ): IAudience | undefined {

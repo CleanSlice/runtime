@@ -26,6 +26,29 @@ export interface ITurnFlags {
   selfStarted: boolean
 }
 
+/**
+ * Whether a turn is an administrator's, here in the runtime: the prompt's
+ * admin-only blocks, the admin skills, the admin-only tools and commands
+ * (CLEAN-236). It says nothing to Ranch, which is told the actor.
+ *
+ * - A turn the agent started for itself is.
+ * - A sender the agent's own configuration names is: a Telegram admin id,
+ *   and `admin` on the bridle hub, which is the Owner.
+ * - A sender the hub says is an administrator is (`msg.admin`). Every Owner
+ *   and Admin used to be `from: "admin"`; an Admin now has their own id,
+ *   which no list here knows.
+ * - Another agent's question never is, whatever else it carries.
+ */
+export function turnIsAdmin(
+  msg: { admin?: boolean; handover?: { token: string } },
+  senderIsConfiguredAdmin: boolean,
+  selfStarted: boolean,
+): boolean {
+  if (msg.handover?.token) return false
+  if (selfStarted === true) return true
+  return msg.admin === true || senderIsConfiguredAdmin === true
+}
+
 /** A cron job addressed to nobody, or a heartbeat. */
 function isBackgroundJob(msg: { from: string; channel: string }): boolean {
   return msg.channel === "internal" || msg.from === "cron" || msg.from === "heartbeat"
