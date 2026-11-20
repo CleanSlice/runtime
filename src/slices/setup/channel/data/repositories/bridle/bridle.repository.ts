@@ -5,6 +5,7 @@ import {
   streamedInterim,
   streamedText,
   type Streamer,
+  ASSISTANT_LEVELS,
   type IActing,
   type IHandover,
   type IMessageAttachment,
@@ -666,7 +667,7 @@ const ACTING_SURFACES = ["app", "admin"] as const
 
 /**
  * The `acting` the hub attaches to a message (CLEAN-232):
- * `{ token, role?, surface? }`. Only the token is required: it is the
+ * `{ token, role?, surface?, assistant? }`. Only the token is required: it is the
  * authority, and without one the sender is a guest. `role` and `surface`
  * are display-only, so each is kept when it is a value this runtime knows
  * and dropped by itself when it is not — an older console build declares
@@ -674,11 +675,19 @@ const ACTING_SURFACES = ["app", "admin"] as const
  */
 export function readActing(raw: unknown): IActing | undefined {
   if (!raw || typeof raw !== "object") return undefined
-  const o = raw as { token?: unknown; role?: unknown; surface?: unknown }
+  const o = raw as { token?: unknown; role?: unknown; surface?: unknown; assistant?: unknown }
   if (typeof o.token !== "string" || !o.token.trim()) return undefined
   const role = ACTING_ROLES.find(r => r === o.role)
   const surface = ACTING_SURFACES.find(s => s === o.surface)
-  return { token: o.token, ...(role ? { role } : {}), ...(surface ? { surface } : {}) }
+  // The assistant's level (CLEAN-240), display-only like the two above: kept
+  // when it is one this runtime knows, dropped by itself when it is not.
+  const level = ASSISTANT_LEVELS.find(l => l === (o.assistant as { level?: unknown } | null | undefined)?.level)
+  return {
+    token: o.token,
+    ...(role ? { role } : {}),
+    ...(surface ? { surface } : {}),
+    ...(level ? { assistant: { level } } : {}),
+  }
 }
 
 /**
