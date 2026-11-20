@@ -180,7 +180,17 @@ export interface IActing {
   token: string
   role?: "Owner" | "Admin" | "User"
   surface?: "app" | "admin"
+  /**
+   * Only on a message to the installation's assistant (CLEAN-240): the level
+   * this person uses it at. Wording for the turn's prompt, like `role`; what
+   * the assistant may do for them is decided by Ranch from `token`.
+   */
+  assistant?: { level: AssistantLevel }
 }
+
+/** The levels the hub may name. `owner` is the Owner, who always has everything. */
+export const ASSISTANT_LEVELS = ["owner", "basic", "standard", "full", "custom"] as const
+export type AssistantLevel = (typeof ASSISTANT_LEVELS)[number]
 
 /**
  * What the bridle hub attaches to a question another agent handed over

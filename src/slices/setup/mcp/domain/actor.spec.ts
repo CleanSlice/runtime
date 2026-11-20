@@ -188,6 +188,22 @@ describe("a delegated worker", () => {
 })
 
 describe("readActing (what the bridle hub sends)", () => {
+  // The assistant's level (CLEAN-240): display-only, kept when known.
+  test("keeps the assistant's level when it is one this runtime knows", () => {
+    expect(readActing({ token: "tok-1", role: "Admin", assistant: { level: "standard" } })).toEqual({
+      token: "tok-1",
+      role: "Admin",
+      assistant: { level: "standard" },
+    })
+    expect(readActing({ token: "tok-1", role: "Owner", assistant: { level: "owner" } })?.assistant).toEqual({ level: "owner" })
+  })
+
+  test("drops a level it does not know, and keeps the person", () => {
+    for (const assistant of [{ level: "platinum" }, {}, null, "full", { level: 3 }]) {
+      expect(readActing({ token: "tok-1", role: "Admin", assistant })).toEqual({ token: "tok-1", role: "Admin" })
+    }
+  })
+
   test("keeps a well-formed acting field", () => {
     expect(readActing({ token: "tok-1", role: "User", surface: "app" })).toEqual({ token: "tok-1", role: "User", surface: "app" })
     expect(readActing({ token: "tok-1", role: "Owner", surface: "admin", extra: 1 })).toEqual({ token: "tok-1", role: "Owner", surface: "admin" })
