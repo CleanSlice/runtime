@@ -35,8 +35,9 @@ export interface ToolContext {
   /**
    * The person behind the message, apart from the channel (CLEAN-80): the
    * console login the bridle hub attached (id = JWT sub, email for display).
-   * Owners and admins share one `from` ("admin") but each carries their own
-   * id here, so per-person state — an MCP OAuth token — keys on it. Absent
+   * Owners and Admins shared one `from` ("admin") until CLEAN-236, and
+   * still do behind an older hub, but each carries their own id here, so
+   * per-person state — an MCP OAuth token — keys on it. Absent
    * on channels without the concept and for share/anonymous visitors, whose
    * `from` is already theirs alone.
    */

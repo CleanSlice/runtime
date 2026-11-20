@@ -83,14 +83,19 @@ export const CronAddRepository = {
 
     const jobs = await loadJobs(ctx)
 
+    const to = p.to ?? ctx.from
+    const channel = p.channel ?? ctx.channel ?? "telegram"
     const job: CronJob = {
       id: randomUUID(),
       name: p.name,
       schedule,
       ...(p.tz ? { tz: p.tz } : {}),
       message: p.message,
-      to: p.to ?? ctx.from,
-      channel: p.channel ?? ctx.channel ?? "telegram",
+      to,
+      channel,
+      // An administrator's job to their own conversation stays an
+      // administrator's turn when it fires (see CronJob.admin).
+      ...(ctx.isAdmin === true && !!ctx.from && to === ctx.from && channel === ctx.channel ? { admin: true } : {}),
       enabled: true,
       runOnce: p.runOnce || !!runAt,
       ...(runAt ? { runAt } : {}),

@@ -488,6 +488,8 @@ export class AgentRuntime {
         id: randomUUID(), text: job.message,
         from: job.to ?? "cron", channel: job.channel ?? "internal",
         ts: Date.now(), role: MessageRoleTypes.System,
+        // An administrator's own job, addressed to their own conversation.
+        ...(job.admin === true && job.to ? { admin: true } : {}),
       }), "self")
     })
     this.cron.start()

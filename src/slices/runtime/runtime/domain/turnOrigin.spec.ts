@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { turnFlags, type TurnOriginTypes } from "./turnOrigin"
+import { turnFlags, turnIsAdmin, type TurnOriginTypes } from "./turnOrigin"
 import { actorOfMessage } from "../../../setup/mcp/domain/actor"
 
 /**
@@ -89,5 +89,44 @@ describe("the actor of a turn, by origin", () => {
     expect(actorFor("self", "42", "telegram", true)).toEqual({ kind: "trusted", via: "channel-admin" })
     expect(actorFor("self", "42", "telegram", false)).toEqual({ kind: "guest" })
     expect(actorFor("self", "admin", "bridle", true)).toEqual({ kind: "guest" })
+  })
+})
+
+// CLEAN-236. Every Owner and Admin of the console used to arrive as
+// `from: "admin"`, which the runtime keeps in its admin ids. An Admin has a
+// conversation of their own now, under their own id; the hub says so instead.
+describe("turnIsAdmin", () => {
+  test("a sender the configuration names is an administrator: a Telegram admin, the Owner as `admin`", () => {
+    expect(turnIsAdmin({}, true, false)).toBe(true)
+  })
+
+  test("a sender the hub says is an administrator is one, under whatever id", () => {
+    expect(turnIsAdmin({ admin: true }, false, false)).toBe(true)
+  })
+
+  test("nobody else is: a User, a visitor, a hub older than the flag", () => {
+    expect(turnIsAdmin({}, false, false)).toBe(false)
+    expect(turnIsAdmin({ admin: false }, false, false)).toBe(false)
+    // Only `true` counts, not anything truthy a wire message might hold.
+    expect(turnIsAdmin({ admin: "true" as unknown as boolean }, false, false)).toBe(false)
+    expect(turnIsAdmin({ admin: 1 as unknown as boolean }, false, false)).toBe(false)
+  })
+
+  test("a turn the agent started for itself is, as before", () => {
+    expect(turnIsAdmin({}, false, true)).toBe(true)
+  })
+
+  test("another agent's question never is, whatever else the message carries", () => {
+    const handover = { token: "handover-1" }
+    expect(turnIsAdmin({ handover }, false, false)).toBe(false)
+    expect(turnIsAdmin({ handover, admin: true }, false, false)).toBe(false)
+    // Even under an id the configuration names: a question to the Ranch
+    // admin agent must not arrive as its Owner's.
+    expect(turnIsAdmin({ handover }, true, false)).toBe(false)
+    expect(turnIsAdmin({ handover, admin: true }, true, true)).toBe(false)
+  })
+
+  test("an empty hand-over is none", () => {
+    expect(turnIsAdmin({ handover: { token: "" }, admin: true }, false, false)).toBe(true)
   })
 })
