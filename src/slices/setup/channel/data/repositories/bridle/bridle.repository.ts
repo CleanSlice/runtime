@@ -190,6 +190,13 @@ export type BridleSyncHandler = () => Promise<{ pushed: number }>
 export type BridleSessionClearHandler = (channel: string) => void
 
 /**
+ * The hub wrote browser state for this agent into its storage (CLEAN-243):
+ * the Ranch Cookies extension's import. `path` is the file, relative to the
+ * agent dir (`browser-state/<user>-<profile>.json`).
+ */
+export type BridleBrowserStateHandler = (path: string) => void
+
+/**
  * Callback invoked when the hub reports that an MCP OAuth login finished
  * and the token is stored (CLEAN-75/79/80). `subject` is whose token it is
  * — the chat user's id, a share/anon client id, or the agent id for a
@@ -242,6 +249,7 @@ export class BridleRepository implements IChannelGateway {
   private syncHandler?: BridleSyncHandler
   private sessionClearHandler?: BridleSessionClearHandler
   private mcpConnectedHandler?: BridleMcpConnectedHandler
+  private browserStateHandler?: BridleBrowserStateHandler
   private socket: Socket | null = null
   private apiUrl: string
   /**
@@ -282,6 +290,16 @@ export class BridleRepository implements IChannelGateway {
    */
   onMcpConnected(handler: BridleMcpConnectedHandler): void {
     this.mcpConnectedHandler = handler
+  }
+
+  /**
+   * Register a handler to run when the hub says browser state was imported
+   * for this agent (`browser_state`). Wired to a pull of `browser-state/`:
+   * storage is restored only at boot, so without it the agent would sign in
+   * with nothing — or push a stale copy back over the import (CLEAN-243).
+   */
+  onBrowserState(handler: BridleBrowserStateHandler): void {
+    this.browserStateHandler = handler
   }
 
   async start(): Promise<void> {
@@ -623,6 +641,13 @@ export class BridleRepository implements IChannelGateway {
           error: (err as Error)?.message ?? "Unknown sync error",
         })
       }
+    })
+
+    this.socket.on("browser_state", (data: unknown) => {
+      const path = (data as { path?: unknown } | null)?.path
+      if (typeof path !== "string" || !path.startsWith("browser-state/")) return
+      log.info(`browser_state from hub: ${path}`)
+      this.browserStateHandler?.(path)
     })
 
     this.socket.on("session_clear", (data: unknown) => {
