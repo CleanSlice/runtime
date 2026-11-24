@@ -1,8 +1,9 @@
 import { z } from "zod"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { harvestStorageState } from "./cookieHarvest"
+import { resolveStatePath } from "./browserStatePath"
 import { createLogger } from "../../../../../setup/logger"
 
 const log = createLogger("browser_login")
@@ -40,20 +41,6 @@ async function openPoolSession(
   const data = "data" in body && body.data ? body.data : (body as ISessionPayload)
   if (!data?.session?.id) return { error: "Pool returned malformed payload" }
   return data
-}
-
-// Mirrors BrowserGateway.canonicalAccountKey and
-// UserBrowserStateGateway.objectKey on the ranch-api side — all three
-// must lowercase + apply the same character whitelist so a profile
-// passed as "Instagram" lands on the same file as one passed as
-// "instagram". Diverging here is how `admin-instagram.json` and
-// `admin-Instagram.json` ended up as separate files in S3.
-const localStatePath = (ctx: ToolContext, accountKey: string): string => {
-  const safe = accountKey.toLowerCase().replace(/[^a-z0-9_:\-.]/g, "_")
-  const userPart = ctx.from && ctx.from !== "cron" && ctx.from !== "heartbeat"
-    ? `${ctx.from.replace(/[^a-zA-Z0-9_\-.]/g, "_")}-`
-    : ""
-  return `${ctx.agentDir}/browser-state/${userPart}${safe}.json`
 }
 
 // Stopgap until the human-tasks refactor: browserless v2 spawns Chrome on
@@ -249,7 +236,7 @@ After this returns ok, subsequent browser_play calls with the same profile reuse
       }
     }
 
-    const path = localStatePath(ctx, profile)
+    const path = resolveStatePath(ctx, profile)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, JSON.stringify(state, null, 2))
 
@@ -275,41 +262,4 @@ After this returns ok, subsequent browser_play calls with the same profile reuse
 
 // Helper kept exported so playwright.repository can use the same path when
 // it restores state — single source of truth for "where the JSON lives".
-export const profileStatePath = localStatePath
-
-/** The two kinds of id a console person chats under (Ranch, CLEAN-236). */
-const CONSOLE_PERSON_RE = /^(admin|user-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
-
-/** What `localStatePath` makes of a profile name; a listed name must already be it. */
-const canonicalProfile = (p: string): string => p.toLowerCase().replace(/[^a-z0-9_:\-.]/g, "_")
-
-/**
- * The browser profiles this person's state files hold in this agent — what
- * the Ranch Cookies extension shared with it (CLEAN-243), plus any a
- * browser_play run saved. Read off the file names `localStatePath` writes:
- * `browser-state/<user>-<profile>.json`.
- *
- * For a console person only — the Owner (`admin`) or an account
- * (`user-<uuid>`), the identities the extension writes for. Neither can be
- * another id with a `-` and more after it, so the prefix match cannot reach
- * someone else's files; a share or anonymous visitor picks the tail of their
- * own id, and could. A name must be one `localStatePath` would write, and is
- * capped, so a stray file never puts arbitrary text in front of the model.
- */
-export function savedProfiles(ctx: ToolContext): string[] {
-  const from = ctx.from
-  if (!from || !CONSOLE_PERSON_RE.test(from)) return []
-  const prefix = `${from}-`
-  let names: string[]
-  try {
-    names = readdirSync(`${ctx.agentDir}/browser-state`)
-  } catch {
-    return []
-  }
-  return names
-    .filter((n) => n.startsWith(prefix) && n.endsWith(".json"))
-    .map((n) => n.slice(prefix.length, -".json".length))
-    .filter((p) => p.length > 0 && p.length <= 64 && p === canonicalProfile(p))
-    .sort()
-    .slice(0, 50)
-}
+export const profileStatePath = resolveStatePath

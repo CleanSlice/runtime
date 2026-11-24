@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { SessionModule } from "../../../../../setup/session/session.module"
-import { savedProfiles } from "../browser/browserLogin.repository"
+import { savedProfiles } from "../browser/browserStatePath"
 import type { IRuntimeSession } from "../../../../../setup/session/domain/session.types"
 
 /** A session the person shared with this agent from their own browser (CLEAN-243). */
