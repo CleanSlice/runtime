@@ -192,7 +192,7 @@ export type BridleSessionClearHandler = (channel: string) => void
 /**
  * The hub wrote browser state for this agent into its storage (CLEAN-243):
  * the Ranch Cookies extension's import. `path` is the file, relative to the
- * agent dir (`browser-state/<user>-<profile>.json`).
+ * agent dir (`browser-state/<user>/<profile>.json`, CLEAN-244).
  */
 export type BridleBrowserStateHandler = (path: string) => void
 
