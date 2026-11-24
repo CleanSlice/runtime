@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { existsSync, mkdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import type { Tool, ToolContext } from "../../../domain/tool.types"
 import { harvestStorageState } from "./cookieHarvest"
@@ -276,3 +276,27 @@ After this returns ok, subsequent browser_play calls with the same profile reuse
 // Helper kept exported so playwright.repository can use the same path when
 // it restores state — single source of truth for "where the JSON lives".
 export const profileStatePath = localStatePath
+
+/**
+ * The browser profiles this person's state files hold in this agent — what
+ * the Ranch Cookies extension shared with it (CLEAN-243), plus any a
+ * browser_play run saved. Read off the file names `localStatePath` writes:
+ * `browser-state/<user>-<profile>.json`. Empty for a turn with no person
+ * (cron, heartbeat) and for an agent with no such folder.
+ */
+export function savedProfiles(ctx: ToolContext): string[] {
+  const from = ctx.from
+  if (!from || from === "cron" || from === "heartbeat") return []
+  const prefix = `${from.replace(/[^a-zA-Z0-9_\-.]/g, "_")}-`
+  let names: string[]
+  try {
+    names = readdirSync(`${ctx.agentDir}/browser-state`)
+  } catch {
+    return []
+  }
+  return names
+    .filter((n) => n.startsWith(prefix) && n.endsWith(".json"))
+    .map((n) => n.slice(prefix.length, -".json".length))
+    .filter((p) => p.length > 0)
+    .sort()
+}

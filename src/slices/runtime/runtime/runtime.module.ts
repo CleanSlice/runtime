@@ -240,6 +240,16 @@ export class AgentRuntime {
         discard: (relPath) => s3sync.discard(relPath),
       })
       this.channel.onBridleSync(async () => ({ pushed: await s3sync.push() }))
+      // Ranch wrote browser state into this agent's storage (the Ranch
+      // Cookies extension, CLEAN-243). Storage is restored only at boot, so
+      // pull the folder now: otherwise browser_play signs in with nothing,
+      // or with a stale local copy it would push back over the import.
+      this.channel.onBridleBrowserState((path) => {
+        void s3sync
+          .pull("browser-state")
+          .then(() => s3Log.info(`browser state pulled after import of ${path}`))
+          .catch((err) => s3Log.warn(`browser state pull after import of ${path} failed — ${(err as Error).message}`))
+      })
     }
 
     // Bridle-hub-initiated "forget this conversation" — sent after the hub

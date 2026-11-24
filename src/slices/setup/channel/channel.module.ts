@@ -3,7 +3,7 @@ import type { ISource } from "../../runtime/loop/domain/loop.types"
 import { ChannelService } from "./domain/channel.service"
 import { ChannelGateway } from "./data/channel.gateway"
 import type { ChannelConfig } from "./domain/channel.types"
-import type { BridleSyncHandler, BridleSessionClearHandler, BridleMcpConnectedHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
+import type { BridleSyncHandler, BridleSessionClearHandler, BridleMcpConnectedHandler, BridleBrowserStateHandler, IBridleDebugPayload } from "./data/repositories/bridle/bridle.repository"
 import type { SessionActivity } from "../../agent/session/domain/activity"
 import { existsSync } from "fs"
 import {
@@ -185,6 +185,18 @@ export class ChannelModule {
     const bridle = this.service.get("bridle")
     if (bridle instanceof ChannelGateway) {
       bridle.onSessionClear(handler)
+    }
+  }
+
+  /**
+   * Register a handler that runs when the bridle hub reports browser state
+   * imported for this agent (CLEAN-243). No-op when the bridle channel isn't
+   * configured.
+   */
+  onBridleBrowserState(handler: BridleBrowserStateHandler): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.onBrowserState(handler)
     }
   }
 
