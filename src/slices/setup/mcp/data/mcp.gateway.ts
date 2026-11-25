@@ -159,6 +159,14 @@ export function isRanchServer(cfg: IMcpServerConfig, ranchToken = process.env.RA
 // Kept exported from here: it lived in this file before the retry rules moved to the domain.
 export { isLostSession }
 
+/** The values of a server's config that must not leave the pod in an error line. */
+function secretsOf(cfg: IMcpServerConfig): Array<string | undefined> {
+  const value = cfg.authValue
+  if (!value) return []
+  const colon = value.indexOf(":")
+  return [value, colon === -1 ? undefined : value.slice(colon + 1)]
+}
+
 /** One person's live connection to an OAuth server. */
 interface IOauthClient {
   client: Client
@@ -406,7 +414,7 @@ export class McpGateway extends IMcpGateway {
     try {
       return await run(await this.reopen(server, client))
     } catch (err) {
-      log.warn(`${server.cfg.name}: still failing after a reconnect — ${redactError(err)}`)
+      log.warn(`${server.cfg.name}: still failing after a reconnect — ${redactError(err, secretsOf(server.cfg))}`)
       const refused = isRefused(err) || server.state === "refused"
       if (server.client) this.drop(server, server.client, refused ? "refused" : "retrying", err)
       throw new McpUnavailableError(err, refused ? "refused" : "down")
@@ -486,8 +494,8 @@ export class McpGateway extends IMcpGateway {
       } catch (err) {
         log.warn(
           server.state === "refused"
-            ? `${server.cfg.name}: refused this agent's credentials — not trying again (${redactError(err)})`
-            : `${server.cfg.name}: connect failed — ${redactError(err)}${first ? "; will keep trying" : ` (attempt ${server.attempts})`}`,
+            ? `${server.cfg.name}: refused this agent's credentials — not trying again (${redactError(err, secretsOf(server.cfg))})`
+            : `${server.cfg.name}: connect failed — ${redactError(err, secretsOf(server.cfg))}${first ? "; will keep trying" : ` (attempt ${server.attempts})`}`,
         )
         return null
       }
@@ -498,7 +506,7 @@ export class McpGateway extends IMcpGateway {
       try {
         wrapped = server.ranch ? await this.catalogueFor(server, self) : await this.listStatic(server)
       } catch (err) {
-        log.warn(`${server.cfg.name}: tools/list failed — ${redactError(err)}`)
+        log.warn(`${server.cfg.name}: tools/list failed — ${redactError(err, secretsOf(server.cfg))}`)
         if (server.client) this.drop(server, server.client, isRefused(err) ? "refused" : "retrying", err)
         return null
       }
@@ -534,7 +542,7 @@ export class McpGateway extends IMcpGateway {
       server.attempts = 0
       server.lastError = undefined
     } else if (err !== undefined) {
-      server.lastError = redactError(err) || undefined
+      server.lastError = redactError(err, secretsOf(server.cfg)) || undefined
     }
     this.emitChange()
   }

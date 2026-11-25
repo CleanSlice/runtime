@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { McpError } from "@modelcontextprotocol/sdk/types.js"
 import { isBrokenConnection, isLostSession, isRefused, nextDelayMs } from "./retryPolicy"
 
 /** No jitter: the middle of the range. */
@@ -56,6 +57,32 @@ describe("isBrokenConnection", () => {
     expect(isBrokenConnection(new StreamableHTTPError(401, "Error POSTing to endpoint: Unauthorized"))).toBe(false)
     expect(isBrokenConnection(new Error("MCP error -32602: invalid params"))).toBe(false)
     expect(isBrokenConnection("ECONNREFUSED")).toBe(false)
+  })
+})
+
+describe("a tool's own error text is not the state of the server", () => {
+  test("words a tool relays from somewhere else change nothing", () => {
+    const relayed = [
+      new McpError(-32000, "fetch failed"),
+      new McpError(-32000, "upstream answered ECONNREFUSED"),
+      new McpError(-32603, "SSE error: Non-200 status code (HTTP 503)"),
+      new McpError(-32000, "SSE error: Non-200 status code (HTTP 401)"),
+      new McpError(-32000, "the page said (HTTP 403)"),
+      new McpError(-32000, "Session not found"),
+    ]
+    for (const err of relayed) {
+      expect(isBrokenConnection(err)).toBe(false)
+      expect(isRefused(err)).toBe(false)
+      expect(isLostSession(err)).toBe(false)
+    }
+  })
+
+  test("the SDK saying the transport closed under a request still counts", () => {
+    expect(isBrokenConnection(new McpError(-32000, "Connection closed"))).toBe(true)
+  })
+
+  test("a plain error that merely mentions a refusal is not one", () => {
+    expect(isRefused(new Error("the page said (HTTP 403)"))).toBe(false)
   })
 })
 

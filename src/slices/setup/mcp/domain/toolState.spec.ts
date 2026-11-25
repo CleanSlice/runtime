@@ -89,6 +89,11 @@ describe("redactError", () => {
     expect(redactError(new Error('headers {"x-api-key":"k-12345"} refused'))).not.toContain("k-12345")
   })
 
+  test("a value the config holds is removed wherever it stands", () => {
+    const err = new Error("server echoed zq81-opaque-value back in /path/zq81-opaque-value/x")
+    expect(redactError(err, ["zq81-opaque-value", undefined, ""])).toBe("server echoed [redacted] back in /path/[redacted]/x")
+  })
+
   test("not an Error", () => {
     expect(redactError("boom")).toBe("boom")
     expect(redactError(undefined)).toBe("")

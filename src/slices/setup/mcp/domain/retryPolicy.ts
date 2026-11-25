@@ -44,9 +44,22 @@ export function nextDelayMs(failed: number, rand: () => number = Math.random, ma
  * whatever the tool does.
  */
 export function isLostSession(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
+  if (!(err instanceof Error) || isToolAnswer(err)) return false
   if ((err as { code?: unknown }).code === 404) return true
   return /session not found|\(HTTP 404\)/i.test(err.message)
+}
+
+/**
+ * A JSON-RPC error: the server received the request and answered it, so the
+ * connection is fine whatever the words say. A tool's own failure text
+ * ("fetch failed", "upstream said (HTTP 403)") comes from the pages and
+ * services it touches, and must never read as the state of the server.
+ * The one exception is the SDK's own notice that the transport closed
+ * under a pending request.
+ */
+function isToolAnswer(err: Error): boolean {
+  if (err.name !== "McpError") return false
+  return !/^MCP error -32000: Connection closed$/.test(err.message)
 }
 
 const BROKEN_STATUS = new Set([502, 503, 504])
@@ -61,7 +74,7 @@ const BROKEN_WORDS =
  * why only a read is repeated after it.
  */
 export function isBrokenConnection(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
+  if (!(err instanceof Error) || isToolAnswer(err)) return false
   const code = (err as { code?: unknown }).code
   if (typeof code === "number" && BROKEN_STATUS.has(code)) return true
   if (typeof code === "string" && BROKEN_CODES.has(code)) return true
@@ -75,9 +88,10 @@ export function isBrokenConnection(err: unknown): boolean {
  * Waiting does not fix a credential, so such a server is not tried again.
  */
 export function isRefused(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
+  if (!(err instanceof Error) || isToolAnswer(err)) return false
   if (err.name === "UnauthorizedError") return true
   const code = (err as { code?: unknown }).code
   if (code === 401 || code === 403) return true
-  return /\(HTTP 40[13]\)/i.test(err.message)
+  // The SSE transport has no status field: it writes the code into its own message.
+  return /^SSE error: .*\(HTTP 40[13]\)$/i.test(err.message)
 }

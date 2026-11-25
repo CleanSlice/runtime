@@ -100,9 +100,17 @@ const MAX_ERROR_LENGTH = 300
  * could be a credential (an `Authorization` value, a bearer, a query
  * string), and never a page of HTML — a proxy's error page says nothing the
  * status code does not.
+ *
+ * `secrets` are the values this server's config holds (its token, its header
+ * value): each is removed wherever it stands, whatever surrounds it — the
+ * patterns below only know the usual shapes.
  */
-export function redactError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err ?? "")
+export function redactError(err: unknown, secrets: Array<string | undefined> = []): string {
+  let raw = err instanceof Error ? err.message : String(err ?? "")
+  for (const secret of secrets) {
+    const value = secret?.trim()
+    if (value && value.length >= 4) raw = raw.split(value).join("[redacted]")
+  }
   const code = (err as { code?: unknown } | null)?.code
   if (/<\s*(!doctype|html|head|body)\b/i.test(raw)) {
     return typeof code === "number" ? `HTTP ${code}` : "the server answered with an error page"
