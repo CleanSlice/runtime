@@ -340,6 +340,25 @@ describe("the catalogue of a turn", () => {
     expect(gateway.clients.get("Ranch")!.calls).toHaveLength(1)
   })
 
+  test("a Ranch that connected late is listed per caller like one that was there at start (CLEAN-245)", async () => {
+    let down = true
+    class LateGateway extends TestGateway {
+      protected override async open(cfg: IMcpServerConfig): Promise<IMcpClient> {
+        if (down) throw new Error("connect ECONNREFUSED")
+        return super.open(cfg)
+      }
+    }
+    const gateway = new LateGateway({ Ranch: ranchCatalogue })
+    const registry = [builtin("web_fetch"), ...(await gateway.connect(ranchCfg))]
+    expect(names(await gateway.scopeTools(registry, OWNER))).toEqual(["web_fetch"])
+
+    down = false
+    registry.push(...(await gateway.attempt("Ranch"))!)
+
+    expect(names(await gateway.scopeTools(registry, USER))).toEqual(["web_fetch", "Ranch__query_knowledge", "Ranch__pin_agent"])
+    expect(names(await gateway.scopeTools(registry, GUEST))).toEqual(["web_fetch", "Ranch__query_knowledge"])
+  })
+
   test("when listing for the actor fails the turn gets no Ranch tools, not all of them", async () => {
     let failing = false
     const gateway = new TestGateway({
@@ -357,7 +376,7 @@ describe("the catalogue of a turn", () => {
     // And a tool the model names anyway is not sent.
     const deleteAgent = registry.find((t) => t.name === "Ranch__delete_agent")!
     const result = (await deleteAgent.execute({}, ctxOf(OWNER))) as { error: string }
-    expect(result.error).toContain("ECONNREFUSED")
+    expect(result.error).toBe("Ranch is not reachable right now.")
     expect(gateway.clients.get("Ranch")!.calls).toEqual([])
 
     // A failure is not remembered for a minute: the next turn asks again.

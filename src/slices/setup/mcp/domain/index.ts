@@ -1,6 +1,8 @@
 export { IMcpGateway } from "./mcp.gateway"
 export type { IMcpReconnectResult } from "./mcp.gateway"
 export { McpService, swapServerTools, countFor } from "./mcp.service"
+export type { IMcpClock } from "./mcp.service"
+export type { IToolState, IToolServerState, ToolPhaseTypes, ToolServerStateTypes } from "./toolState"
 export { McpFetcher } from "./mcp.fetcher"
 export { actorOf, actorLabel, ACTOR_META_KEY } from "./actor"
 export type { IActor, IActorSource } from "./actor"

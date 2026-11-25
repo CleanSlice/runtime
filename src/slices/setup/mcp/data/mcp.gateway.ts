@@ -8,6 +8,8 @@ import type { Tool, ToolContext } from "../../../agent/tool"
 import { IMcpGateway, type IMcpReconnectResult } from "../domain/mcp.gateway"
 import type { IMcpServerConfig } from "../domain/mcp.types"
 import { ACTOR_META_KEY, actorLabel, type IActor } from "../domain/actor"
+import { connectTimeoutMs, isBrokenConnection, isLostSession, isRefused } from "../domain/retryPolicy"
+import { redactError, type IToolServerState, type ToolServerStateTypes } from "../domain/toolState"
 import {
   RuntimeMcpOauthProvider,
   mcpOauthSecretKey,
@@ -53,9 +55,20 @@ interface ICatalogue {
  */
 interface IStaticServer {
   cfg: IMcpServerConfig
-  client: IMcpClient
-  /** A reconnect in flight, shared by every call that found the session gone. */
-  reopening: Promise<IMcpClient> | null
+  /** Null while the server is not connected (CLEAN-245): it is known, and tried again. */
+  client: IMcpClient | null
+  /** An open in flight, shared by every call and every attempt that needs one. */
+  opening: Promise<IMcpClient> | null
+  /** A whole attempt (open, then `tools/list`) in flight, shared the same way. */
+  attempting: Promise<Tool[] | null> | null
+  state: ToolServerStateTypes
+  /** When it entered `state`. */
+  since: number
+  /** Opens tried since it last was connected. */
+  attempts: number
+  lastError?: string
+  /** Its tools were listed at least once: only then can a call bring it back by itself. */
+  listed: boolean
   /**
    * This is Ranch's own server: the agent authenticates to it with its own
    * Ranch token. Only such a server is told who a call is for, and only its
@@ -68,12 +81,33 @@ interface IStaticServer {
   catalogues: Map<string, ICatalogue>
 }
 
-/** The server forgot the session and a fresh one could not be opened, or failed the same way. */
-class McpUnavailableError extends Error {
-  constructor(cause: unknown) {
+/**
+ * Why a call could not be made (CLEAN-245):
+ * - `down` — the server is not connected, or did not come back for a repeat;
+ * - `unknown` — the connection broke under a call that changes something and
+ *   was not repeated, so whether it took effect is not known;
+ * - `refused` — the server refused this agent's credentials.
+ */
+export type McpUnavailableKind = "down" | "unknown" | "refused"
+
+/** The server could not be asked. What the model is told depends on `kind`. */
+export class McpUnavailableError extends Error {
+  constructor(
+    cause: unknown,
+    readonly kind: McpUnavailableKind = "down",
+  ) {
     super(`unavailable: ${(cause as Error)?.message ?? String(cause)}`)
     this.name = "McpUnavailableError"
   }
+}
+
+/** What the model receives for each kind (contracts/runtime.md). */
+export function unavailableText(serverName: string, kind: McpUnavailableKind): string {
+  if (kind === "refused") return `${serverName} refused this agent's credentials.`
+  if (kind === "unknown") {
+    return `${serverName} could not be reached while this ran; whether it took effect is unknown. Check before trying again.`
+  }
+  return `${serverName} is not reachable right now.`
 }
 
 const GUEST: IActor = { kind: "guest" }
@@ -122,20 +156,8 @@ export function isRanchServer(cfg: IMcpServerConfig, ranchToken = process.env.RA
   return !!token && cfg.authValue?.trim() === token
 }
 
-/**
- * The server no longer knows the session this client holds (CLEAN-232, R17).
- * Ranch keeps MCP sessions in memory, so every API restart answers the next
- * request with HTTP 404 and a JSON-RPC body `-32000 "Session not found"`.
- * The SDK's `StreamableHTTPClientTransport.send` turns a non-OK POST into
- * `StreamableHTTPError(response.status, "Error POSTing to endpoint: <body>")`,
- * so the status is on `code` and the body's words are in `message`; the SSE
- * transport puts `(HTTP 404)` in the message instead.
- */
-export function isLostSession(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
-  if ((err as { code?: unknown }).code === 404) return true
-  return /session not found|\(HTTP 404\)/i.test(err.message)
-}
+// Kept exported from here: it lived in this file before the retry rules moved to the domain.
+export { isLostSession }
 
 /** One person's live connection to an OAuth server. */
 interface IOauthClient {
@@ -197,6 +219,7 @@ export class McpGateway extends IMcpGateway {
   private statics = new Map<string, IStaticServer>()
   private oauth = new Map<string, IOauthServer>()
   private idleSweeper: ReturnType<typeof setInterval> | null = null
+  private listeners = new Set<() => void>()
 
   /**
    * @param secrets per-agent secret store — required for `oauth` MCP servers
@@ -214,35 +237,62 @@ export class McpGateway extends IMcpGateway {
     }
     if (cfg.authType === "oauth") return this.connectOauth(cfg)
 
-    let client: IMcpClient
-    try {
-      client = await this.open(cfg)
-    } catch (err) {
-      log.warn(`${cfg.name}: connect failed — ${(err as Error).message}`)
-      return []
-    }
+    // Known before it is opened (CLEAN-245): a server that does not answer
+    // at boot used to be forgotten here, and the agent ran without it until
+    // someone restarted the pod.
     const server: IStaticServer = {
       cfg,
-      client,
-      reopening: null,
+      client: null,
+      opening: null,
+      attempting: null,
+      state: "retrying",
+      since: Date.now(),
+      attempts: 0,
+      listed: false,
       ranch: isRanchServer(cfg),
       wrappers: new Map(),
       catalogues: new Map(),
     }
     this.statics.set(cfg.name, server)
+    return (await this.attemptServer(server)) ?? []
+  }
 
-    // The registry is filled as the agent itself: at boot nobody is asking.
-    // What a turn is offered is listed again for its own actor (`scopeTools`).
-    const self: IActor = { kind: "trusted", via: "internal" }
-    let wrapped: Tool[]
-    try {
-      wrapped = server.ranch ? await this.catalogueFor(server, self) : await this.listStatic(server)
-    } catch (err) {
-      log.warn(`${cfg.name}: tools/list failed — ${(err as Error).message}`)
-      return []
-    }
-    log.info(`${cfg.name}: registered ${wrapped.length} tools${server.ranch ? " (listed per caller)" : ""}`)
-    return wrapped
+  /**
+   * Try a server that is not connected, now. Its tools on success; null when
+   * it still does not answer, was refused, or is not one of this agent's.
+   * Concurrent callers share one attempt.
+   */
+  attempt(name: string): Promise<Tool[] | null> {
+    const server = this.statics.get(name)
+    if (!server || server.state === "refused") return Promise.resolve(null)
+    return this.attemptServer(server)
+  }
+
+  /** Every bearer/header/none server this agent was configured with, connected or not. */
+  status(): IToolServerState[] {
+    return [...this.statics.values()].map((server) => ({
+      ...(server.cfg.id ? { id: server.cfg.id } : {}),
+      name: server.cfg.name,
+      state: server.state,
+      since: new Date(server.since).toISOString(),
+      attempts: server.attempts,
+      ...(server.lastError ? { lastError: server.lastError } : {}),
+    }))
+  }
+
+  /** Called after every change of a server's state, attempt count or error. */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  /** Drop a server that is no longer configured: closed, and never tried again. */
+  async forget(name: string): Promise<void> {
+    const server = this.statics.get(name)
+    if (!server) return
+    this.statics.delete(name)
+    await server.client?.close().catch(() => undefined)
+    this.emitChange()
   }
 
   /**
@@ -302,44 +352,201 @@ export class McpGateway extends IMcpGateway {
   }
 
   /**
-   * Runs one request on the server's client. When the server answers that
-   * it does not know the session (CLEAN-232, R17), the client is dropped, a
-   * new one is opened and the request is sent once more. A second failure
-   * of either step is `McpUnavailableError`; any other error passes through
-   * as it came.
+   * Runs one request on the server's client, and decides what a failure is
+   * worth (CLEAN-232 R17, CLEAN-245):
+   *
+   * - the server does not know the session → reopen, repeat once, whatever
+   *   the request does: the server answered, so it did not run it;
+   * - the connection broke → reopen and repeat once only for a `read`. A
+   *   request that changes something may have run; it is not sent twice;
+   * - the server refused the credentials → nothing is tried again.
+   *
+   * Each of these ends as `McpUnavailableError` when it cannot be made good;
+   * any other error passes through as it came.
    */
-  private async withSession<T>(server: IStaticServer, run: (client: IMcpClient) => Promise<T>): Promise<T> {
-    const client = server.client
+  private async withSession<T>(
+    server: IStaticServer,
+    run: (client: IMcpClient) => Promise<T>,
+    effect: "read" | "write" = "read",
+  ): Promise<T> {
+    let client = server.client
+    if (!client) {
+      if (server.state === "refused") throw new McpUnavailableError(new Error(server.lastError ?? "refused"), "refused")
+      // Never listed: its tools are not in the registry yet, and connecting
+      // it here would hide it from the attempt that puts them there.
+      if (!server.listed) throw new McpUnavailableError(new Error(server.lastError ?? "not connected"), "down")
+      // Not connected, and somebody needs it now: one open, shared with the
+      // attempt the service may be making this very second. Nothing was
+      // sent yet, so this is safe whatever the request does.
+      try {
+        client = await this.reopen(server, null)
+      } catch (err) {
+        throw new McpUnavailableError(err, isRefused(err) ? "refused" : "down")
+      }
+    }
     try {
       return await run(client)
     } catch (err) {
-      if (!isLostSession(err)) throw err
-      log.warn(`${server.cfg.name}: the server no longer knows this session — reconnecting`)
+      if (isRefused(err)) {
+        this.drop(server, client, "refused", err)
+        throw new McpUnavailableError(err, "refused")
+      }
+      const lost = isLostSession(err)
+      if (!lost && !isBrokenConnection(err)) throw err
+      if (!lost && effect !== "read") {
+        this.drop(server, client, "retrying", err)
+        throw new McpUnavailableError(err, "unknown")
+      }
+      log.warn(
+        lost
+          ? `${server.cfg.name}: the server no longer knows this session — reconnecting`
+          : `${server.cfg.name}: the connection broke — reconnecting`,
+      )
     }
     try {
       return await run(await this.reopen(server, client))
     } catch (err) {
-      log.warn(`${server.cfg.name}: still failing after a reconnect — ${(err as Error).message}`)
-      throw new McpUnavailableError(err)
+      log.warn(`${server.cfg.name}: still failing after a reconnect — ${redactError(err)}`)
+      const refused = isRefused(err) || server.state === "refused"
+      if (server.client) this.drop(server, server.client, refused ? "refused" : "retrying", err)
+      throw new McpUnavailableError(err, refused ? "refused" : "down")
     }
   }
 
   /** Replace `stale` with a fresh client; concurrent callers share one reconnect. */
-  private reopen(server: IStaticServer, stale: IMcpClient): Promise<IMcpClient> {
+  private async reopen(server: IStaticServer, stale: IMcpClient | null): Promise<IMcpClient> {
     // Somebody else already replaced it while this call was failing.
-    if (server.client !== stale) return Promise.resolve(server.client)
-    if (server.reopening) return server.reopening
-    const reopening = (async () => {
-      await stale.close().catch(() => undefined)
-      const fresh = await this.open(server.cfg)
-      server.client = fresh
-      log.info(`${server.cfg.name}: reconnected`)
-      return fresh
+    if (server.client && server.client !== stale) return server.client
+    if (stale && server.client === stale) {
+      server.client = null
+      void stale.close().catch(() => undefined)
+    }
+    const fresh = await this.openShared(server)
+    if (server.state !== "connected") this.mark(server, "connected")
+    else server.attempts = 0
+    log.info(`${server.cfg.name}: reconnected`)
+    return fresh
+  }
+
+  /**
+   * One open of the server, shared by whoever asks while it runs, and never
+   * longer than `MCP_CONNECT_TIMEOUT_MS`: an address that swallows packets
+   * would otherwise hold the attempt for minutes. A failure is recorded on
+   * the server; success is left to the caller, which knows whether the
+   * tools still have to be listed.
+   */
+  private openShared(server: IStaticServer): Promise<IMcpClient> {
+    if (server.opening) return server.opening
+    const opening = (async () => {
+      server.attempts++
+      try {
+        const fresh = await this.openWithin(server.cfg, connectTimeoutMs())
+        server.client = fresh
+        return fresh
+      } catch (err) {
+        this.mark(server, isRefused(err) ? "refused" : "retrying", err)
+        throw err
+      }
     })().finally(() => {
-      server.reopening = null
+      server.opening = null
     })
-    server.reopening = reopening
-    return reopening
+    server.opening = opening
+    return opening
+  }
+
+  private openWithin(cfg: IMcpServerConfig, timeoutMs: number): Promise<IMcpClient> {
+    return new Promise<IMcpClient>((resolve, reject) => {
+      let late = false
+      const timer = setTimeout(() => {
+        late = true
+        reject(new Error(`connect ETIMEDOUT: no answer within ${Math.round(timeoutMs / 1000)} s`))
+      }, timeoutMs)
+      this.open(cfg).then(
+        (client) => {
+          clearTimeout(timer)
+          // Opened after everyone stopped waiting: nobody holds it, so it is closed.
+          if (late) void client.close().catch(() => undefined)
+          else resolve(client)
+        },
+        (err) => {
+          clearTimeout(timer)
+          if (!late) reject(err)
+        },
+      )
+    })
+  }
+
+  /** Open the server and list its tools; null when either step fails. */
+  private attemptServer(server: IStaticServer): Promise<Tool[] | null> {
+    if (server.attempting) return server.attempting
+    const attempting = (async () => {
+      const first = server.attempts === 0
+      try {
+        if (!server.client) await this.openShared(server)
+      } catch (err) {
+        log.warn(
+          server.state === "refused"
+            ? `${server.cfg.name}: refused this agent's credentials — not trying again (${redactError(err)})`
+            : `${server.cfg.name}: connect failed — ${redactError(err)}${first ? "; will keep trying" : ` (attempt ${server.attempts})`}`,
+        )
+        return null
+      }
+      // The registry is filled as the agent itself: nobody is asking yet.
+      // What a turn is offered is listed again for its own actor (`scopeTools`).
+      const self: IActor = { kind: "trusted", via: "internal" }
+      let wrapped: Tool[]
+      try {
+        wrapped = server.ranch ? await this.catalogueFor(server, self) : await this.listStatic(server)
+      } catch (err) {
+        log.warn(`${server.cfg.name}: tools/list failed — ${redactError(err)}`)
+        if (server.client) this.drop(server, server.client, isRefused(err) ? "refused" : "retrying", err)
+        return null
+      }
+      const back = server.attempts > 1 || !first
+      server.listed = true
+      this.mark(server, "connected")
+      log.info(
+        `${server.cfg.name}: registered ${wrapped.length} tools${server.ranch ? " (listed per caller)" : ""}${back ? " — connected after retrying" : ""}`,
+      )
+      return wrapped
+    })().finally(() => {
+      server.attempting = null
+    })
+    server.attempting = attempting
+    return attempting
+  }
+
+  /** The client is gone: close it and record why the server is not connected. */
+  private drop(server: IStaticServer, client: IMcpClient, state: "retrying" | "refused", err: unknown): void {
+    if (server.client === client) server.client = null
+    void client.close().catch(() => undefined)
+    // What it listed for whom is asked again once it is back.
+    server.catalogues.clear()
+    this.mark(server, state, err)
+  }
+
+  private mark(server: IStaticServer, state: ToolServerStateTypes, err?: unknown): void {
+    if (server.state !== state) {
+      server.state = state
+      server.since = Date.now()
+    }
+    if (state === "connected") {
+      server.attempts = 0
+      server.lastError = undefined
+    } else if (err !== undefined) {
+      server.lastError = redactError(err) || undefined
+    }
+    this.emitChange()
+  }
+
+  private emitChange(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener()
+      } catch (err) {
+        log.warn(`tool state listener failed — ${(err as Error).message}`)
+      }
+    }
   }
 
   /** The tools of a server that lists the same for everyone. */
@@ -401,12 +608,15 @@ export class McpGateway extends IMcpGateway {
               return { error: `"${tool.name}" is not available to this person.` }
             }
           }
-          const result = await this.withSession(server, (client) =>
-            client.callTool({
-              name: mcpTool.name,
-              arguments: (params ?? {}) as Record<string, unknown>,
-              ...(server.ranch ? { _meta: ranchMeta(actor, ctx) } : {}),
-            }),
+          const result = await this.withSession(
+            server,
+            (client) =>
+              client.callTool({
+                name: mcpTool.name,
+                arguments: (params ?? {}) as Record<string, unknown>,
+                ...(server.ranch ? { _meta: ranchMeta(actor, ctx) } : {}),
+              }),
+            tool.effect === "read" ? "read" : "write",
           )
           // MCP returns a `content` array. Hand it back as-is — the LLM cycle
           // serializes whatever we return to JSON before the next turn.
@@ -414,7 +624,7 @@ export class McpGateway extends IMcpGateway {
         } catch (err) {
           // Nothing to suggest: there is no other route to this server, and
           // the model must not go looking for one.
-          if (err instanceof McpUnavailableError) return { error: `${serverName} is not reachable right now.` }
+          if (err instanceof McpUnavailableError) return { error: unavailableText(serverName, err.kind) }
           const message = (err as Error).message ?? String(err)
           return { error: `MCP ${serverName}.${mcpTool.name} failed: ${message}` }
         }
@@ -507,7 +717,7 @@ export class McpGateway extends IMcpGateway {
     this.idleSweeper = null
     const closes: Promise<void>[] = []
     for (const server of this.statics.values()) {
-      closes.push(server.client.close().catch((err) => log.warn("close error", err)))
+      if (server.client) closes.push(server.client.close().catch((err) => log.warn("close error", err)))
     }
     for (const server of this.oauth.values()) {
       for (const entry of server.clients.values()) {
@@ -517,6 +727,7 @@ export class McpGateway extends IMcpGateway {
     }
     await Promise.all(closes)
     this.statics.clear()
+    this.listeners.clear()
   }
 
   // ── OAuth internals ─────────────────────────────────────────────

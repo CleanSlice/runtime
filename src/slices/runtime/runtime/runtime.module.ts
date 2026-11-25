@@ -52,6 +52,11 @@ export interface RuntimeConfig {
    * turn's actor (CLEAN-232). The entrypoint passes `McpModule.scopeTools`.
    */
   scopeTools?: (tools: Tool[], actor: IActor) => Promise<Tool[]>
+  /**
+   * Before a turn: one attempt at the tool servers that are not connected,
+   * waited for briefly (CLEAN-245). The entrypoint passes `McpModule.settle`.
+   */
+  settleTools?: () => Promise<void>
   s3?: S3SyncConfig
 }
 
@@ -218,6 +223,7 @@ export class AgentRuntime {
       llm: this.llm, loop: this.loop, tasks, tools, access,
       agentDir, config: this.config, instincts: this.instincts,
       ...(config.scopeTools ? { scopeTools: config.scopeTools } : {}),
+      ...(config.settleTools ? { settleTools: config.settleTools } : {}),
     })
 
     // ── Optional: S3 backup ────────────────────────────────────────

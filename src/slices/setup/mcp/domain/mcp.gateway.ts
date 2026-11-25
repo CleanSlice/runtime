@@ -1,6 +1,7 @@
 import type { Tool } from "../../../agent/tool"
 import type { IMcpServerConfig } from "./mcp.types"
 import type { IActor } from "./actor"
+import type { IToolServerState } from "./toolState"
 
 /** What `reconnect` hands back after a login landed (CLEAN-79). */
 export interface IMcpReconnectResult {
@@ -23,9 +24,26 @@ export abstract class IMcpGateway {
    * Connect to a single MCP server and return its tools wrapped as runtime
    * `Tool` objects. Tool names are namespaced as `${cfg.name}__${toolName}`.
    * Returns `[]` (and logs) if the connection fails — runtime continues
-   * without that MCP rather than aborting boot.
+   * without that MCP rather than aborting boot. The server stays known:
+   * `status()` lists it as `retrying` (or `refused`) and `attempt()` tries
+   * it again (CLEAN-245).
    */
   abstract connect(cfg: IMcpServerConfig): Promise<Tool[]>
+  /**
+   * Try a server that is not connected, now. Its tools when it answered;
+   * null when it did not, was refused, or is not one of this agent's.
+   */
+  attempt(_name: string): Promise<Tool[] | null> {
+    return Promise.resolve(null)
+  }
+  /** Every bearer/header/none server this agent runs, connected or not. */
+  status(): IToolServerState[] {
+    return []
+  }
+  /** Called after every change of a server's state, attempt count or error. Returns the unsubscribe. */
+  onChange(_listener: () => void): () => void {
+    return () => undefined
+  }
   /**
    * An OAuth login for `subject` just completed on Ranch (hub
    * `mcp_connected`, CLEAN-79/81): open their client in this session and,
