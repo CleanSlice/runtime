@@ -209,6 +209,7 @@ if (llmAuxiliary) {
 // the MCP module swaps a server's tools in place when a login lands
 // (CLEAN-79) — a copy would be one they never see.
 const tools = [...toolGateway.getAll()]
+const PRE_TURN_SETTLE_MS = 3_000
 
 const runtime = new AgentRuntime({
   init,
@@ -221,6 +222,10 @@ const runtime = new AgentRuntime({
   // Ranch lists its tools per caller: each turn sees what it lists for the
   // person the turn is for (CLEAN-232).
   scopeTools: (turnTools, actor) => mcp.scopeTools(turnTools, actor),
+  // A tool server that is not connected gets one attempt before each turn,
+  // waited for at most this long (CLEAN-245).
+  settleTools: () => mcp.settle(PRE_TURN_SETTLE_MS),
+  toolServers: () => mcp.state().servers,
 })
 
 // A finished OAuth login (Ranch pushes `mcp_connected`) brings that person's
@@ -235,6 +240,12 @@ runtime.onBridleMcpConnected((event) => {
 // connect tool until someone logged in again (CLEAN-79). Channels are not up
 // yet, so no message can arrive before the tools are in place.
 await runtime.restore()
+// The hub hears every change of the tool servers, and their state at every
+// (re)connection of the socket: a console can say what a start waits for.
+mcp.onState((state) => runtime.reportToolState(state))
+// From here a server that does not answer is tried again for as long as the
+// agent runs, and its tools land in `tools` when it does (CLEAN-245).
+mcp.bind(tools)
 tools.push(
   ...(await mcp.loadAll({
     fromConfig: init.config.mcps ?? [],

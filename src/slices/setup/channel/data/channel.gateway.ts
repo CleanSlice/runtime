@@ -105,6 +105,13 @@ export class ChannelGateway implements IChannelGateway {
     }
   }
 
+  /** Report the tool servers' state to the hub — only effective when this is a bridle channel. */
+  reportToolState(state: unknown): void {
+    if (this.repository instanceof BridleRepository) {
+      this.repository.reportToolState(state)
+    }
+  }
+
   /** Register an mcp_connected handler — only effective when this is a bridle channel. */
   onMcpConnected(handler: BridleMcpConnectedHandler): void {
     if (this.repository instanceof BridleRepository) {

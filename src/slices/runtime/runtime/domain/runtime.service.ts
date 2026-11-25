@@ -24,6 +24,7 @@ import type { InstinctModule } from "../../../agent/instinct"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { actorOfMessage, type IActor } from "../../../setup/mcp/domain/actor"
 import { audienceOf, type IAudience } from "../../../agent/agent/domain/prompts/audience.prompt"
+import { buildToolServersPrompt, type IPromptToolServer } from "../../../agent/agent/domain/prompts/toolServers.prompt"
 import { turnIsAdmin } from "./turnOrigin"
 import { isMcpTool } from "../../../agent/tool/domain/toolEnabled"
 import { randomUUID } from "crypto"
@@ -53,6 +54,18 @@ interface RuntimeDeps {
    * (CLEAN-232; `McpModule.scopeTools`). Absent, every turn sees the registry.
    */
   scopeTools?: (tools: Tool[], actor: IActor) => Promise<Tool[]>
+  /**
+   * Gives the tool servers that are not connected one attempt before the
+   * turn's tools are read (CLEAN-245; `McpModule.settle`). It answers within
+   * its own budget and puts a recovered server's tools into `tools`.
+   */
+  settleTools?: () => Promise<void>
+  /**
+   * The tool servers as they are now (`McpModule.state().servers`). A turn
+   * with one missing tells the model which, so it does not answer in its
+   * place (CLEAN-245).
+   */
+  toolServers?: () => IPromptToolServer[]
 }
 
 export class RuntimeService {
@@ -205,6 +218,10 @@ export class RuntimeService {
    * (Ranch's own, CLEAN-232), exactly what it lists for this actor.
    */
   private async visibleToolsFor(isAdmin: boolean, actor: IActor): Promise<Tool[]> {
+    // First: a server that came back is in the registry before it is read.
+    await this.deps.settleTools?.().catch((err) => {
+      log.warn(`tool servers could not be tried before this turn: ${(err as Error).message}`)
+    })
     const base = isAdmin ? this.deps.tools : this.deps.tools.filter(t => !t.adminOnly)
     if (!this.deps.scopeTools) return base
     try {
@@ -396,6 +413,7 @@ export class RuntimeService {
       // Only a client that can draw sources is asked to cite (CLEAN-138).
       ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
       instincts: this.deps.instincts?.render(),
+      toolServersPrompt: buildToolServersPrompt(this.deps.toolServers?.() ?? []),
     })
     let systemPrompt = built.prompt
     const sections = [...built.sections]
