@@ -51,7 +51,8 @@ export const LATER_DROP_MS = 15_000
  * - nothing missing → `ready`;
  * - within the waiting limit with a server still being tried → `connecting`;
  * - a refused server → `limited` (waiting changes nothing);
- * - past the limit, a server away for `LATER_DROP_MS` or more → `limited`.
+ * - past the limit, a server that was already missing when the limit ran
+ *   out, or has been away for `LATER_DROP_MS` or more → `limited`.
  */
 export function phaseOf(
   servers: IToolServerState[],
@@ -64,7 +65,14 @@ export function phaseOf(
   if (retrying.length === 0 && !refused) return "ready"
   if (retrying.length > 0 && now - startedAt < graceMs) return "connecting"
   if (refused) return "limited"
-  return retrying.some((s) => now - Date.parse(s.since) >= LATER_DROP_MS) ? "limited" : "ready"
+  return retrying.some((s) => isMark(Date.parse(s.since), startedAt, now, graceMs)) ? "limited" : "ready"
+}
+
+/** Past the waiting limit: does a server missing since `since` count against the agent yet? */
+function isMark(since: number, startedAt: number, now: number, graceMs: number): boolean {
+  // Missing since before the limit ran out: it was waited for already.
+  if (since < startedAt + graceMs) return true
+  return now - since >= LATER_DROP_MS
 }
 
 /**
@@ -80,8 +88,9 @@ export function nextPhaseCheckAt(
   const retrying = servers.filter((s) => s.state === "retrying")
   if (retrying.length === 0) return null
   if (now - startedAt < graceMs) return startedAt + graceMs
-  const pending = retrying.map((s) => Date.parse(s.since) + LATER_DROP_MS).filter((at) => at > now)
-  return pending.length > 0 ? Math.min(...pending) : null
+  const sinces = retrying.map((s) => Date.parse(s.since))
+  if (sinces.some((since) => isMark(since, startedAt, now, graceMs))) return null
+  return Math.min(...sinces.map((since) => since + LATER_DROP_MS))
 }
 
 const MAX_ERROR_LENGTH = 300

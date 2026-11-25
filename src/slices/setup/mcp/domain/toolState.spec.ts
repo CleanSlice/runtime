@@ -37,6 +37,12 @@ describe("phaseOf", () => {
     expect(phaseOf(servers, START, START + GRACE, GRACE)).toBe("limited")
   })
 
+  test("a server lost just before the limit is limited at the limit: it does not read as ready in between", () => {
+    const servers = [server("retrying", START + GRACE - 5_000)]
+    expect(phaseOf(servers, START, START + GRACE - 1, GRACE)).toBe("connecting")
+    expect(phaseOf(servers, START, START + GRACE, GRACE)).toBe("limited")
+  })
+
   test("a later drop is not a mark for its first fifteen seconds", () => {
     const droppedAt = START + 3_600_000
     const servers = [server("retrying", droppedAt)]

@@ -232,6 +232,9 @@ export interface IBridleDebugPayload {
   latencyMs: number
 }
 
+/** A burst of tool-state changes is sent as one event, this long after the first. */
+const TOOL_STATE_DEBOUNCE_MS = 500
+
 /**
  * Bridle channel — agent connects TO the Bridle hub (NestJS API) as a socket.io client.
  * The hub relays messages between browser users and this agent.
@@ -251,6 +254,9 @@ export class BridleRepository implements IChannelGateway {
   private mcpConnectedHandler?: BridleMcpConnectedHandler
   private browserStateHandler?: BridleBrowserStateHandler
   private socket: Socket | null = null
+  /** The latest tool state handed in, and the timer that sends it (CLEAN-245). */
+  private toolState: unknown = null
+  private toolStateTimer: ReturnType<typeof setTimeout> | null = null
   private apiUrl: string
   /**
    * Server-pushed debug flag. Updated via "debug_set" WS event from the
@@ -406,6 +412,34 @@ export class BridleRepository implements IChannelGateway {
     this.socket.emit("session_activity", activity)
   }
 
+  /**
+   * Tell the hub what the tool servers look like (`tool_state`, CLEAN-245):
+   * a console can then say why a start takes long, or that an agent runs
+   * without some of its tools. Best effort, and at most once per
+   * `TOOL_STATE_DEBOUNCE_MS`: a burst of changes travels as its last state.
+   * Not sent while the socket is down — the next `register` carries it.
+   */
+  reportToolState(state: unknown): void {
+    this.toolState = state
+    if (this.toolStateTimer) return
+    this.toolStateTimer = setTimeout(() => {
+      this.toolStateTimer = null
+      this.sendToolState()
+    }, TOOL_STATE_DEBOUNCE_MS)
+    this.toolStateTimer.unref?.()
+  }
+
+  private sendToolState(): void {
+    if (this.toolState === null || !this.socket?.connected) return
+    this.socket.emit("tool_state", this.toolState)
+  }
+
+  /** Every time the hub learns this agent is here, it learns its tool state too. */
+  private register(): void {
+    this.socket?.emit("register", {})
+    this.sendToolState()
+  }
+
   onMessage(handler: (msg: Message) => Promise<void>): void {
     this.handler = handler
   }
@@ -510,7 +544,7 @@ export class BridleRepository implements IChannelGateway {
 
     this.socket.on("connect", () => {
       log.info("connected to hub")
-      this.socket?.emit("register", {})
+      this.register()
     })
 
     this.socket.on("disconnect", (reason) => {
@@ -519,7 +553,7 @@ export class BridleRepository implements IChannelGateway {
 
     this.socket.on("reconnect", () => {
       log.info("reconnected to hub")
-      this.socket?.emit("register", {})
+      this.register()
     })
 
     this.socket.on("message", (data: unknown) => {

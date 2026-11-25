@@ -225,6 +225,7 @@ const runtime = new AgentRuntime({
   // A tool server that is not connected gets one attempt before each turn,
   // waited for at most this long (CLEAN-245).
   settleTools: () => mcp.settle(PRE_TURN_SETTLE_MS),
+  toolServers: () => mcp.state().servers,
 })
 
 // A finished OAuth login (Ranch pushes `mcp_connected`) brings that person's
@@ -239,6 +240,9 @@ runtime.onBridleMcpConnected((event) => {
 // connect tool until someone logged in again (CLEAN-79). Channels are not up
 // yet, so no message can arrive before the tools are in place.
 await runtime.restore()
+// The hub hears every change of the tool servers, and their state at every
+// (re)connection of the socket: a console can say what a start waits for.
+mcp.onState((state) => runtime.reportToolState(state))
 // From here a server that does not answer is tried again for as long as the
 // agent runs, and its tools land in `tools` when it does (CLEAN-245).
 mcp.bind(tools)

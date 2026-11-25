@@ -24,6 +24,7 @@ import type { InstinctModule } from "../../../agent/instinct"
 import { limitForUserEvent, truncateUserText } from "./messageTruncation"
 import { actorOfMessage, type IActor } from "../../../setup/mcp/domain/actor"
 import { audienceOf, type IAudience } from "../../../agent/agent/domain/prompts/audience.prompt"
+import { buildToolServersPrompt, type IPromptToolServer } from "../../../agent/agent/domain/prompts/toolServers.prompt"
 import { turnIsAdmin } from "./turnOrigin"
 import { isMcpTool } from "../../../agent/tool/domain/toolEnabled"
 import { randomUUID } from "crypto"
@@ -59,6 +60,12 @@ interface RuntimeDeps {
    * its own budget and puts a recovered server's tools into `tools`.
    */
   settleTools?: () => Promise<void>
+  /**
+   * The tool servers as they are now (`McpModule.state().servers`). A turn
+   * with one missing tells the model which, so it does not answer in its
+   * place (CLEAN-245).
+   */
+  toolServers?: () => IPromptToolServer[]
 }
 
 export class RuntimeService {
@@ -406,6 +413,7 @@ export class RuntimeService {
       // Only a client that can draw sources is asked to cite (CLEAN-138).
       ...(citeSources ? { citationsPrompt: CITATIONS_PROMPT } : {}),
       instincts: this.deps.instincts?.render(),
+      toolServersPrompt: buildToolServersPrompt(this.deps.toolServers?.() ?? []),
     })
     let systemPrompt = built.prompt
     const sections = [...built.sections]

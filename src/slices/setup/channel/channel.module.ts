@@ -201,6 +201,17 @@ export class ChannelModule {
   }
 
   /**
+   * Tell the bridle hub what the tool servers look like (CLEAN-245). No-op
+   * when the bridle channel isn't configured.
+   */
+  reportBridleToolState(state: unknown): void {
+    const bridle = this.service.get("bridle")
+    if (bridle instanceof ChannelGateway) {
+      bridle.reportToolState(state)
+    }
+  }
+
+  /**
    * Register a handler that runs when the bridle hub reports a finished MCP
    * OAuth login (CLEAN-79): the MCP module brings that person's client up
    * in the running session. No-op when the bridle channel isn't configured.

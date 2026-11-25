@@ -37,6 +37,11 @@ export interface BuildPromptOpts {
    */
   extraHint?: string
   /**
+   * Which tool servers are missing this turn and whether waiting helps
+   * (CLEAN-245; `buildToolServersPrompt`). Absent when none is.
+   */
+  toolServersPrompt?: string
+  /**
    * Integrator-supplied context from the embed's `data-prompt` (Bridle).
    * Folded into the system prompt as untrusted page/user/tenant context so
    * the agent is aware of what the embedding site passed in.
@@ -137,6 +142,7 @@ export class AgentService {
     if (opts?.channelContext) push("channel", `# Channel\n\n${opts.channelContext}`)
     if (opts?.audience)    push("audience", buildAudiencePrompt(opts.audience))
     if (opts?.extraHint)   push("hint", opts.extraHint)
+    if (opts?.toolServersPrompt) push("toolServers", opts.toolServersPrompt)
     if (opts?.toolingPrompt) push("tooling", opts.toolingPrompt)
     if (opts?.citationsPrompt) push("citations", opts.citationsPrompt)
     if (agents)            push("agents", `# Agent Instructions\n\n${agents}`)
@@ -216,7 +222,7 @@ export class AgentService {
     return { prompt, sections }
   }
 
-  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; audience?: IAudience; citationsPrompt?: string; instincts?: string }): Promise<IBuiltPrompt> {
+  async buildPrompt(agentDir: string, opts?: { userId?: string; toolingPrompt?: string; secretKeys?: string[]; dailyMemory?: string; skills?: SkillSummary[]; isAdmin?: boolean; extraHint?: string; integratorPrompt?: string; channelContext?: string; audience?: IAudience; citationsPrompt?: string; instincts?: string; toolServersPrompt?: string }): Promise<IBuiltPrompt> {
     const config = await this.load(agentDir)
 
     // Override user context with per-user file if it exists
@@ -238,6 +244,7 @@ export class AgentService {
       audience: opts?.audience,
       citationsPrompt: opts?.citationsPrompt,
       instincts: opts?.instincts,
+      toolServersPrompt: opts?.toolServersPrompt,
     })
   }
 }

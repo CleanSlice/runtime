@@ -9,7 +9,7 @@ export interface AgentFile {
 export type PromptSectionName =
   | "soul" | "channel" | "audience" | "hint" | "tooling" | "citations" | "agents" | "user" | "integrator"
   | "memory" | "dailyNotes" | "heartbeat" | "skillsCatalog" | "credentials" | "runtime" | "silent"
-  | "alwaysSkills" | "activeSkill" | "instincts"
+  | "alwaysSkills" | "activeSkill" | "instincts" | "toolServers"
 
 export interface IPromptSection {
   name: PromptSectionName
