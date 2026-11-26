@@ -190,6 +190,29 @@ describe("buildAudiencePrompt: the assistant's level", () => {
     expect(block).toContain(NO_OTHER_ROUTE)
   })
 
+  // CLEAN-254: a setting applies to the next message, and the model used to
+  // answer from the refusal it had given earlier in the same conversation.
+  test("a person with a level is told that it can change mid-conversation, and never to start a new chat", () => {
+    const CAN_CHANGE =
+      "What this person may do can change between messages. An earlier refusal in this conversation says nothing about now: " +
+      "go by the tools you have in this turn, and never tell them to start a new chat to get an ability."
+    for (const level of ["basic", "standard", "full", "custom"] as const) {
+      for (const role of ["Admin", "User"] as const) {
+        const lines = buildAudiencePrompt({ role, surface: "app", assistant: { level } }).split("\n")
+        // The last line, after how to say no: it is what corrects that line.
+        expect(lines.at(-1)).toBe(CAN_CHANGE)
+        expect(lines.at(-2)).toContain("get_my_assistant_access")
+      }
+    }
+  })
+
+  test("nobody else is: the Owner's access does not change, and without a level nothing is said about one", () => {
+    const sentence = "can change between messages"
+    expect(buildAudiencePrompt({ role: "Owner", assistant: { level: "owner" } })).not.toContain(sentence)
+    expect(buildAudiencePrompt({ role: "User", surface: "app" })).not.toContain(sentence)
+    expect(buildAudiencePrompt({ role: "Admin" })).not.toContain(sentence)
+  })
+
   test("no tool is named but the two that explain", () => {
     for (const level of ["owner", "basic", "standard", "full", "custom"] as const) {
       const block = buildAudiencePrompt({ role: level === "owner" ? "Owner" : "Admin", assistant: { level } })

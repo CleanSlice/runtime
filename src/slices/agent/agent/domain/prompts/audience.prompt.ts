@@ -41,13 +41,22 @@ const WHEN_NOT_INCLUDED =
   "say that it is not included for their account and that the Owner decides; never describe what other people have. " +
   "When they ask what you can do for them or what their level means, answer from that tool."
 
+/**
+ * A setting applies to the person's next message (CLEAN-254): the tool list
+ * of this turn is already the new one, while the conversation still holds
+ * the refusal from before the Owner changed it.
+ */
+const ACCESS_CAN_CHANGE =
+  "What this person may do can change between messages. An earlier refusal in this conversation says nothing about now: " +
+  "go by the tools you have in this turn, and never tell them to start a new chat to get an ability."
+
 function levelLines(level: AssistantLevel): string[] {
   if (level === "owner") return [OWNER_LEVELS]
   const uses =
     level === "custom"
       ? "This person uses you with a custom set of abilities chosen for them."
       : `This person uses you at the ${LEVEL_NAMES[level]} level.`
-  return [uses, WHEN_NOT_INCLUDED]
+  return [uses, WHEN_NOT_INCLUDED, ACCESS_CAN_CHANGE]
 }
 
 const CONSOLE: Record<"app" | "admin", string> = {
